@@ -20,6 +20,7 @@ internal static class ColorPickerEscapeTests
         {
             AppTheme.Apply(theme);
             using var fixture = new Fixture(Path.Combine(output, theme, "colors.json"));
+            RestoreOpeningColor(fixture, theme, check);
             foreach (string origin in new[] { "window", "caption", "caption button", "outer border", "hex", "spectrum" })
             {
                 var popup = fixture.Open();
@@ -69,6 +70,26 @@ internal static class ColorPickerEscapeTests
         handled = Escape(popup);
         check(theme + " a second Escape closes the unchanged " + (numeric ? "opacity" : "hue lever") + " gesture's window",
             handled && !fixture.Field.IsPickerOpen && fixture.Owner.IsVisible);
+    }
+
+    private static void RestoreOpeningColor(Fixture fixture, string theme, Action<string, bool> check)
+    {
+        foreach (uint original in new uint[] { 0x80336699, 0x00778899 })
+        {
+            fixture.Field.Value = original;
+            var window = fixture.Open();
+            var restore = Field<Button>(fixture.Picker, "restoreOpeningColor");
+            var swatch = (Grid)Field<Border>(fixture.Picker, "openingSwatch").Child;
+            var ink = ((System.Windows.Media.SolidColorBrush)((Border)swatch.Children[1]).Background).Color;
+            Field<TextBox>(fixture.Picker, "hex").Text = "#FFF08A12";
+            check(theme + " opening-color button previews the original ARGB even when the draft changes",
+                ink.A == (byte)(original >> 24) && ink.R == (byte)(original >> 16) && ink.G == (byte)(original >> 8) && ink.B == (byte)original &&
+                fixture.Field.Value == 0xFFF08A12);
+            restore.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            check(theme + " restoring the opening color keeps the same picker and its exact alpha", fixture.Field.Value == original &&
+                fixture.Picker.TryGetDraft(out var draft) && draft == original && fixture.Field.IsPickerOpen && ReferenceEquals(window, Window.GetWindow(fixture.Picker)));
+            fixture.Field.ClosePicker();
+        }
     }
 
     private static void FocusedHex(Fixture fixture, string theme, Action<string, bool> check)

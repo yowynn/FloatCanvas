@@ -5,12 +5,12 @@ namespace FloatCanvas.Rendering;
 
 internal sealed partial class TextRenderer
 {
-    private const double GlyphStroke = .11, LabelBorder = .052, LabelRadius = .19;
+    private const double LabelBorder = .052, LabelRadius = .19;
     private readonly record struct Insets(double Horizontal, double Top, double Bottom)
     {
-        public static Insets For(string? variant, double size) => variant switch
+        public static Insets For(string? variant, double size, double outlineWidth) => variant switch
         {
-            ElementAppearance.TextOutline => new(size * GlyphStroke / 2, size * GlyphStroke / 2, size * GlyphStroke / 2),
+            ElementAppearance.TextOutline => new(outlineWidth, outlineWidth, outlineWidth),
             ElementAppearance.TextLabel => new(size * (.38 + LabelBorder), size * (.12 + LabelBorder), size * (.16 + LabelBorder)),
             _ => default
         };
@@ -28,10 +28,12 @@ internal sealed partial class TextRenderer
 
         bool label = style.Variant == ElementAppearance.TextLabel;
         byte inkAlpha = (byte)(style.PrimaryColor >> 24), edgeAlpha = (byte)(style.SecondaryColor >> 24);
-        if (inkAlpha == 0 && (label || edgeAlpha == 0)) return;
+        double outlineWidth = label ? 0 : style.TextOutlineWidthAt(style.FontSize);
+        bool drawOutline = outlineWidth > 0 && edgeAlpha > 0;
+        if (inkAlpha == 0 && !drawOutline) return;
         var runs = GetLayout(element.Text, style, element.Width).Runs;
         int layer = -1;
-        if (inkAlpha < 255 && (label || edgeAlpha > 0))
+        if (inkAlpha < 255 && (label || drawOutline))
         {
             var bounds = SKRect.Create((float)element.Width, (float)element.Height);
             foreach (var run in runs)
@@ -40,7 +42,7 @@ internal sealed partial class TextRenderer
                 ink.Offset(run.X, run.Y);
                 bounds = SKRect.Union(bounds, ink);
             }
-            bounds.Inflate((float)(style.FontSize * GlyphStroke / 2 + 1), (float)(style.FontSize * GlyphStroke / 2 + 1));
+            bounds.Inflate((float)(outlineWidth + 1), (float)(outlineWidth + 1));
             using var opacity = label ? new SKPaint { Color = SKColors.White.WithAlpha(inkAlpha) } : null;
             layer = canvas.SaveLayer(bounds, opacity);
         }
@@ -66,11 +68,11 @@ internal sealed partial class TextRenderer
             }
             else
             {
-                if (edgeAlpha > 0)
+                if (drawOutline)
                 {
                     paint.Color = new SKColor(style.SecondaryColor);
                     paint.Style = SKPaintStyle.Stroke;
-                    paint.StrokeWidth = (float)(style.FontSize * GlyphStroke);
+                    paint.StrokeWidth = (float)(2 * outlineWidth);
                     paint.StrokeJoin = SKStrokeJoin.Round;
                     foreach (var run in runs) canvas.DrawText(run.Blob, run.X, run.Y, paint);
                     paint.Style = SKPaintStyle.Fill;

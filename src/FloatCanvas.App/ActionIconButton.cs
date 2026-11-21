@@ -45,8 +45,11 @@ internal static class ActionIconButton
         }
     }
     internal static Button Create(PanelActionIcon icon, string label, Action action, string? shortcut = null)
+        => Create(Glyph(icon), label, action, shortcut);
+
+    internal static Button Create(FrameworkElement glyph, string label, Action action, string? shortcut = null)
     {
-        var button = new Button { Content = Glyph(icon), Width = 30, Height = 30, MinWidth = 0, MinHeight = 0,
+        var button = new Button { Content = glyph, Width = 30, Height = 30, MinWidth = 0, MinHeight = 0,
             Padding = new Thickness(6), Margin = new Thickness(2), Background = Brushes.Transparent,
             BorderThickness = new Thickness(0), HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center,
             ToolTip = string.IsNullOrWhiteSpace(shortcut) ? label : label + " (" + shortcut + ")" };

@@ -101,7 +101,7 @@ internal sealed partial class LayersWindow : Wpf.Window
             HorizontalScrollBarVisibility = Controls.ScrollBarVisibility.Hidden, Height = 32, ClipToBounds = true };
         breadcrumbViewport.SizeChanged += (_, _) => SizeBreadcrumbs();
         navigation.Children.Add(breadcrumbViewport);
-        var navigationFrame = new Controls.Border { Child = navigation, CornerRadius = new(6), BorderThickness = new(1), Height = 34 };
+        var navigationFrame = new RoundedSurfaceBorder { Child = navigation, CornerRadius = new(6), BorderThickness = new(1), Height = 34 };
         navigationFrame.SetResourceReference(Controls.Border.BackgroundProperty, "CanvasInput");
         navigationFrame.SetResourceReference(Controls.Border.BorderBrushProperty, "CanvasBorder");
         header.Children.Add(navigationFrame);

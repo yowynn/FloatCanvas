@@ -6,6 +6,7 @@ internal static class TextStyleRenderingTests
 {
     internal static void Run(SceneRenderer renderer, Action<string, bool> check, string? output)
     {
+        CheckOutlineWidths(renderer, check);
         var variants = AppearanceRegistry.VariantsFor(ElementKind.Text);
         var sample = new CanvasElement { Kind = ElementKind.Text, Text = "集合点", Style = new() { FontSize = 40, PrimaryColor = BuiltInColors.Blue } };
         var scene = new SceneDocument { Viewport = new(0, 0, 230, 100), Elements = [sample] };
@@ -103,5 +104,31 @@ internal static class TextStyleRenderingTests
             File.WriteAllBytes(Path.Combine(output, "text-styles.png"), png.ToArray());
         }
         SKBitmap Render() => SKBitmap.Decode(renderer.ExportPng(scene, new(), transparent: true));
+    }
+
+    private static void CheckOutlineWidths(SceneRenderer renderer, Action<string, bool> check)
+    {
+        var text = new CanvasElement { Kind = ElementKind.Text, Text = "O", Width = 110, Height = 90,
+            Style = new() { FontSize = 36, Variant = ElementAppearance.TextOutline, PrimaryColor = 0, SecondaryColor = 0x80FF0000 } };
+        var scene = new SceneDocument { Viewport = new(0, 0, 110, 90), Elements = [text] };
+        var style = text.Style;
+        double baseWidth = renderer.MeasureText("O", new ElementStyle { FontSize = 36 }).Width;
+        int previous = -1;
+        foreach (double width in new[] { 0d, 1d, 5d })
+        {
+            style.TextOutlineWidth = width;
+            var metrics = renderer.MeasureText("O", style);
+            var caret = renderer.TextEditingGeometry("O", style, text.Width).Caret(0);
+            using var bitmap = SKBitmap.Decode(renderer.ExportPng(scene, new(), transparent: true));
+            int ink = bitmap.Pixels.Count(p => p.Alpha > 0);
+            check($"{width}px text outline updates metrics, caret and actual translucent ink together",
+                Math.Abs(metrics.Width - baseWidth - 2 * width) < .001 && caret.X == width && caret.Top == width &&
+                caret.Bottom <= metrics.Height && ink > previous && (width == 0 ? ink == 0 : bitmap.Pixels.Max(p => p.Alpha) == 128));
+            previous = ink;
+        }
+        style.TextOutlineWidth = null;
+        check("the default text outline follows the font size", renderer.TextEditingGeometry("O", style, text.Width).Caret(0).Top is > 1.979 and < 1.981);
+        style.TextOutlineWidth = 1;
+        check("returning to a previous outline width also restores its cached glyph placement", renderer.TextEditingGeometry("O", style, text.Width).Caret(0).Top == 1);
     }
 }

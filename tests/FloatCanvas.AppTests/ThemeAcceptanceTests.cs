@@ -33,13 +33,12 @@ internal static class ThemeAcceptanceTests
             var tile = new SelectionTileButton { Width = 38, Height = 38, Content = ToolParameterIcon.Create(new() { Tool = EditorTool.Select }, 24) };
             var tools = new[] { EditorTool.Select, EditorTool.Eraser, EditorTool.Blur, EditorTool.Pixelate };
             var icons = tools.ToDictionary(tool => tool, tool => (FrameworkElement)ToolParameterIcon.Create(new() { Tool = tool, Style = new() { Stroke = 0xFFFF0000, Fill = 0xFF00FF00 } }, 24));
-            var previewMethod = typeof(CanvasPresetGallery).GetMethod("Preview", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;
-            FrameworkElement CanvasIcon(bool perspective) => (FrameworkElement)previewMethod.Invoke(null, [new CanvasPresetParameters { ProjectionEnabled = perspective, GridVisible = true, GridColor = 0xFF2383E2 }])!;
+            static CanvasParameterIcon CanvasIcon(bool perspective) => new(new() { ProjectionEnabled = perspective, GridVisible = true, GridColor = 0xFF2383E2 });
             var flatCanvas = Render(CanvasIcon(false), 24, 24, Path.Combine(output, "canvas-flat-before.png"));
             var projectedCanvas = Render(CanvasIcon(true), 24, 24, Path.Combine(output, "canvas-perspective-before.png"));
             Observe("canvas preview distinguishes a perspective frame from a flat frame", !flatCanvas.Bytes.SequenceEqual(projectedCanvas.Bytes));
-            var calibrated=(FrameworkElement)previewMethod.Invoke(null,[new CanvasPresetParameters { ProjectionEnabled=true, GridVisible=true, GridColor=0xFF2383E2,
-                Columns=32,Rows=15,Calibration=CanvasCalibration.CreateInitial(new(0,0,1400,600),32,15) }])!;
+            var calibrated = new CanvasParameterIcon(new() { ProjectionEnabled=true, GridVisible=true, GridColor=0xFF2383E2,
+                Columns=32,Rows=15,Calibration=CanvasCalibration.CreateInitial(new(0,0,1400,600),32,15) });
             Observe("canvas preview keeps four-by-four cells independent of concrete perspective calibration",projectedCanvas.Bytes.SequenceEqual(Render(calibrated,24,24,Path.Combine(output,"canvas-calibration-independent.png")).Bytes));
             var warmCanvas = CanvasIcon(true);
             foreach (string mode in new[] { initial, initial == "light" ? "dark" : "light", initial })

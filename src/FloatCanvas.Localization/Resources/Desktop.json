@@ -117,10 +117,6 @@
     "zh": "黑",
     "en": "Black"
   },
-  "Toolbar.StrokeWidth": {
-    "zh": "画笔宽度",
-    "en": "Stroke width"
-  },
   "Toolbar.Undo": {
     "zh": "撤销 · Ctrl+Z",
     "en": "Undo · Ctrl+Z"

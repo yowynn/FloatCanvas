@@ -74,6 +74,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
     private bool refreshing = true;
     private bool invalidDraft; // Field validation can fail before an edit transaction exists.
     private EditorSession? scrubSession;
+    private SceneRenderer? textMeasurements;
     private CanvasElement[] scrubSources = [];
     private double scrubStartValue;
     private long scrubTransaction;
@@ -301,6 +302,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
         AppWindowChrome.SetHeaderActions(this,pin);UpdatePin();
         foreach(var color in colorFields.Values)color.PickerClosed+=QueueFocusCheck;
         fontPicker.DropDownClosed+=(_,_)=>QueueFocusCheck();
+        Closed += (_, _) => textMeasurements?.Dispose();
         foreach (var (key, row) in fieldContainers) Automation.AutomationProperties.SetAutomationId(row, key);
         refreshing = false;
     }
@@ -317,7 +319,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
     }
     private void QueueFocusCheck()=>Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input,()=>
     {
-        if(SessionWindowCoordinator.Find(this)?.IsInputMethodSwitchPending==true)return;
+        if(SessionWindowCoordinator.Find(this)?.IsInputMethodSwitchPending==true || SessionWindowCoordinator.HasModalChild(this))return;
         if(!IsVisible||IsPinned||IsActive||IsKeyboardFocusWithin||contextMenus.Any(menu=>menu.IsOpen)||colorFields.Values.Any(color=>color.IsPickerOpen)||
             fontPicker.IsDropDownOpen || numberFormatPicker.IsDropDownOpen)return;
         if(Wpf.Application.Current.Windows.Cast<Wpf.Window>().Any(window=>window.IsActive&&IsChildWindow(window)))return;
@@ -664,6 +666,23 @@ internal sealed partial class InspectorWindow : Wpf.Window
         finally { refreshing = false; }
     }
 
+    private static void SetStrokeWidth(CanvasElement element, double width)
+    {
+        switch (element.Kind)
+        {
+            case ElementKind.Image: element.ImageBorderWidth = width; break;
+            case ElementKind.Text: element.Style.TextOutlineWidth = width; break;
+            default: element.Style.StrokeWidth = width; break;
+        }
+    }
+
+    private void ReflowText(CanvasElement source, CanvasElement edited)
+    {
+        var renderer = textMeasurements ??= new SceneRenderer();
+        if (edited.TextFrameFixed) TextFrameLayout.Fit(edited, edited.Style.FontSize, renderer);
+        else TextFrameLayout.Reflow(edited, TextFrameLayout.UsesAutoWidth(source, renderer), renderer);
+    }
+
     private CanvasElement EditElement(CanvasElement source)
     {
         var edited = source.Clone();
@@ -694,8 +713,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
         if (dirtyFields.Contains("StrokeWidth"))
         {
             double width = Number("StrokeWidth", L.Get("Inspector.StrokeWidth"), 0, source.Kind == ElementKind.Image ? 10000000 : 1024);
-            if (source.Kind == ElementKind.Image) edited.ImageBorderWidth = width;
-            else edited.Style.StrokeWidth = width;
+            SetStrokeWidth(edited, width);
         }
         if (dirtyFields.Contains("EffectStrength") && SelectedEffect(edited) is { } effect)
             effect.Amount = Number("EffectStrength", L.Get("ToolOptions.EffectStrength"), .01, 1024);
@@ -746,12 +764,8 @@ internal sealed partial class InspectorWindow : Wpf.Window
         if (dirtyFields.Contains("TextAlignment") && source.Kind == ElementKind.Text && alignment.SelectedIndex is >= 0 and <= 2)
             edited.Style.TextAlignment = (FloatCanvas.Core.TextAlignment)alignment.SelectedIndex;
         if (dirtyFields.Contains("Text") && source.Kind == ElementKind.Text) edited.Text = fields["Text"].Text;
-        if (source.Kind == ElementKind.Text && dirtyFields.Overlaps(["Text", "FontFamily", "FontSize", "StyleVariant"]))
-        {
-            using var renderer = new SceneRenderer();
-            if(edited.TextFrameFixed)TextFrameLayout.Fit(edited,edited.Style.FontSize,renderer);
-            else TextFrameLayout.Reflow(edited, TextFrameLayout.UsesAutoWidth(source, renderer), renderer);
-        }
+        if (source.Kind == ElementKind.Text && dirtyFields.Overlaps(["Text", "FontFamily", "FontSize", "StyleVariant", "StrokeWidth"]))
+            ReflowText(source, edited);
         if (source.Kind == ElementKind.Number && dirtyFields.Contains("FontSize"))
         {
             double diameter = Math.Max(12, edited.Style.FontSize / .58);
@@ -1074,7 +1088,8 @@ internal sealed partial class InspectorWindow : Wpf.Window
                     double sy = key == "H" || constrainAspect ? factor : 1;
                     ResizeElement(edited, sx, sy); break;
                 case "StrokeWidth":
-                    if (edited.Kind == ElementKind.Image) edited.ImageBorderWidth = value; else edited.Style.StrokeWidth = value;
+                    SetStrokeWidth(edited, value);
+                    if (edited.Kind == ElementKind.Text) ReflowText(source, edited);
                     break;
                 case "CornerRadius": edited.CornerRadius = value; break;
             }
@@ -1100,9 +1115,14 @@ internal sealed partial class InspectorWindow : Wpf.Window
         try
         {
             SetField(key, displayValue);
-            if (key is "W" or "H")
+            string[] related = key switch
             {
-                string peer = key == "W" ? "H" : "W";
+                "W" => ["H"], "H" => ["W"],
+                "StrokeWidth" when changes.Any(change => change.Target.Kind == ElementKind.Text) => ["X", "Y", "W", "H", "FontSize"],
+                _ => []
+            };
+            foreach (string peer in related.Where(IsFieldVisible))
+            {
                 var value = PropertyValue(changes[0].Target, peer);
                 if (changes.Skip(1).Any(change => !Equals(PropertyValue(change.Target, peer), value))) SetMixedField(peer, value);
                 else SetField(peer, Convert.ToDouble(value, CultureInfo.InvariantCulture));
@@ -1186,7 +1206,8 @@ internal sealed partial class InspectorWindow : Wpf.Window
             "Fill" => AppearanceRegistry.Resolve(element).BackgroundActive,
             "LinkColors" => ElementGeometry.IsBoxShape(element.Kind) || number,
             "StyleVariant" => number || text && !EmojiGlyphs.IsEmoji(element.Text, element.Style),
-            "StrokeWidth" => !ElementGeometry.IsLiveEffect(element.Kind) && !text && !number && element.Kind != ElementKind.Presentation &&
+            "StrokeWidth" when text => element.Style.Variant == ElementAppearance.TextOutline,
+            "StrokeWidth" => !ElementGeometry.IsLiveEffect(element.Kind) && !number && element.Kind != ElementKind.Presentation &&
                 (!ElementGeometry.IsBoxShape(element.Kind) || ElementAppearance.HasShapeStroke(element.Style)),
             "StrokePattern" => !image && !text && !number && element.Kind != ElementKind.Presentation &&
                 (!ElementGeometry.IsBoxShape(element.Kind) || ElementAppearance.HasShapeStroke(element.Style)),
@@ -1219,7 +1240,12 @@ internal sealed partial class InspectorWindow : Wpf.Window
         "W" => GeometricSize(e).X, "H" => GeometricSize(e).Y, "Angle" => ElementAngle(e),
         "Stroke" => e.Style.PrimaryColor,
         "Fill" => e.Style.SecondaryColor,
-        "StrokeWidth" => e.Kind == ElementKind.Image ? e.ImageBorderWidth : e.Style.StrokeWidth,
+        "StrokeWidth" => e.Kind switch
+        {
+            ElementKind.Image => e.ImageBorderWidth,
+            ElementKind.Text => e.Style.TextOutlineWidthAt(e.Style.FontSize),
+            _ => e.Style.StrokeWidth
+        },
         "CornerRadius" => ElementGeometry.CornerRadius(e), "Opacity" => e.Style.Opacity,
         "ArrowHeadStyle" => e.Style.ArrowHeadStyle, "ArrowHeadSize" => e.Style.ArrowHeadSize,
         "StartArrowHead" => ElementGeometry.ArrowStyle(e, reverse: true), "EndArrowHead" => ElementGeometry.ArrowStyle(e),
@@ -1261,11 +1287,9 @@ internal sealed partial class InspectorWindow : Wpf.Window
         linkedColorsGroup.Visibility = new[] { "Stroke", "Fill", "LinkColors", "StyleVariant", "StrokeWidth", "StrokePattern" }.Any(key => fieldContainers[key].Visibility == Wpf.Visibility.Visible) ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
         object paletteContext = selected.Length > 0 && selected.All(e => e.Kind == selected[0].Kind) ? selected[0].Kind : "mixed";
         colorFields["Stroke"].SetPaletteContext(paletteContext); colorFields["Fill"].SetPaletteContext(paletteContext);
-        bool images = selected.Length > 0 && selected.All(e => e.Kind == ElementKind.Image);
         bool presentation = selected.Length > 0 && selected.All(e => e.Kind == ElementKind.Presentation);
         ((Controls.TextBlock)textSection.Child).Text = L.Get(presentation ? "Presentation.Text" : "Inspector.TextSection");
         SetColorLabel("Stroke", SelectionColorLabel(selected, secondary: false));
-        ((Controls.TextBlock)((Controls.Grid)fieldContainers["StrokeWidth"]).Children[0]).Text = L.Get(images ? "Property.BorderWidth" : "Inspector.StrokeWidth");
         SetColorLabel("Fill", SelectionColorLabel(selected, secondary: true));
         var placementGraph = SceneGraph.Read(getSession().Document);
         bool insideCard = hasSharedCardContext() || selected.Any(element => placementGraph.ScopeContainerPlacement(element.GroupId).Surface is not null);

@@ -19,6 +19,34 @@ public static partial class ElementGeometry
         return (centered ? 0 : Dot(offset, along), Dot(offset, normal));
     }
 
+    // Invert the handle construction below for a fitted conjugate radius, in half-chord units.
+    internal static (double Offset, double Bulge) LineArcHandleForRadius(double shear, double lift)
+    {
+        if (lift == 0) return (0, 0);
+        double s = Math.Abs(shear);
+        if (s < 1e-8) return (0, lift / 2);
+
+        // Between the arc's apex and its lateral extreme, the handle satisfies
+        // s * dx/dt = x * roundness. Mirror that interval for a left-leaning arc.
+        double low = 0, high = 1 / double.Hypot(1, s);
+        double x = 0, height = 0;
+        for (int i = 0; i < 30; i++)
+        {
+            double sin = (low + high) * .5, cos = Math.Sqrt((1 - sin) * (1 + sin));
+            x = s * cos + sin;
+            height = lift * cos;
+            if (s * (cos - s * sin) > x * ArcHandleRoundness(x, height)) low = sin;
+            else high = sin;
+        }
+        return (Math.CopySign(x, shear) / 2, height / 2);
+    }
+
+    private static double ArcHandleRoundness(double x, double height)
+    {
+        double opening = 2 * Math.Abs(height), dot = x * x + height * height - 1;
+        return opening / double.Hypot(double.Hypot(dot, opening), 1);
+    }
+
     private static IReadOnlyList<PointD> LineCenterline(CanvasElement element)
     {
         if (TryLineEllipse(element, out var arc)) return arc.Sample(element.Points);
@@ -78,8 +106,7 @@ public static partial class ElementGeometry
         // and dot product of CA and CB give the opening angle. The unit term
         // also fades the lateral excursion when C approaches either endpoint.
         double x = 2 * element.Style.LineArcOffset, h = 2 * bulge;
-        double opening = 2 * Math.Abs(h), dot = x * x + h * h - 1;
-        double roundness = opening / double.Hypot(double.Hypot(dot, opening), 1);
+        double roundness = ArcHandleRoundness(x, h);
         double difference = 1 - x * x, product = x * roundness;
         double span = double.Hypot(difference, 2 * product);
         // At C, the horizontal derivative is positive. Solve shear * advance = product

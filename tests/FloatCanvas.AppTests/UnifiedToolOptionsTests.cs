@@ -100,7 +100,25 @@ internal static class UnifiedToolOptionsTests
                     CheckMargins(language + theme + tool, (FrameworkElement)viewport.Content);
                     check(language + theme + tool + " uses the common parameter and preset host", !ReferenceEquals(viewport.Content, canvas) && LogicalDescendants(panel).OfType<ScrollViewer>().Count() == 2);
                     check(language + theme + tool + " clears previous canvas help", ((Button)window.Template.FindName("Help", window)).Visibility == Visibility.Collapsed);
-                    if (tool == EditorTool.Presentation) check(language + theme + " keyboard sections share standard headings", Descendants(panel).OfType<TextBlock>().Count(text => Equals(text.Tag, "ToolSection")) == 3);
+                    if (tool == EditorTool.Highlighter)
+                    {
+                        var rows = Field<Dictionary<string, FrameworkElement>>(panel, "rows");
+                        var row = (Grid)rows["StrokePattern"];
+                        var options = row.Children.OfType<SegmentedChoice>().Single();
+                        window.Width = window.MinWidth; Pump();
+                        check(language + theme + " highlighter keeps all four patterns at minimum width",
+                            options.Items.Count == 4 && Grid.GetRow(options) == (language == "en" ? 1 : 0) &&
+                            options.Items.All(item => ((StackPanel)item.Content).Orientation == Orientation.Horizontal));
+                        window.Width = ToolOptionsPanel.PreferredWidth + 2; Pump();
+                        check(language + theme + " highlighter brings its caption and four patterns inline at default width",
+                            Grid.GetRow(options) == 0 && options.Items.All(item => ((StackPanel)item.Content).Orientation == Orientation.Horizontal));
+                    }
+                    if (tool == EditorTool.Presentation)
+                    {
+                        var headings = Descendants(panel).OfType<TextBlock>().Where(text => Equals(text.Tag, "ToolSection")).Select(text => text.Text);
+                        check(language + theme + " keyboard sections use the display and appearance headings",
+                            headings.SequenceEqual([L.Get("ToolOptions.Section.Display"), L.Get("ToolOptions.Section.Appearance")]));
+                    }
                 }
 
                 void CheckMargins(string name, FrameworkElement parameters)

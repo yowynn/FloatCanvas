@@ -100,7 +100,7 @@ internal sealed class NumericValueField : UserControl
         editor.Children.Add(DragAnchor); Grid.SetColumn(Input, 1); editor.Children.Add(Input); Grid.SetColumn(suffix, 2); editor.Children.Add(suffix);
         panel.Children.Add(editor); Grid.SetRow(Slider, 1); panel.Children.Add(Slider);
         outside.SetResourceReference(TextBlock.ForegroundProperty, "CanvasAccent"); Grid.SetRow(outside, 1); outside.FontSize = 9; outside.Margin = new(0); panel.Children.Add(outside);
-        var frame = new Border { Child = panel };
+        var frame = new RoundedSurfaceBorder { Child = panel };
         frame.SetResourceReference(StyleProperty, "CanvasNumericFrame"); Content = frame;
         PreviewMouseLeftButtonDown += (_, e) =>
         {

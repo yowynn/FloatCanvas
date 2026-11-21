@@ -72,7 +72,7 @@ internal sealed partial class TextRenderer
         }
         bool EstimatedFit(double size)
         {
-            var insets = Insets.For(style.Variant, size);
+            var insets = Insets.For(style.Variant, size, style.TextOutlineWidthAt(size));
             double innerWidth = width - 2 * insets.Horizontal, innerHeight = height - insets.Top - insets.Bottom;
             if (innerWidth <= 0 || innerHeight <= 0) return false;
             double scale = referenceSize / size, usedHeight = 0;
@@ -86,7 +86,7 @@ internal sealed partial class TextRenderer
         }
         bool ExactFit(double size)
         {
-            var metrics = GetLayout(new(text, style.FontFamily, size, width, style.TextAlignment, style.Variant)).Metrics;
+            var metrics = GetLayout(text, style, width, size).Metrics;
             return metrics.Width <= width + .001 && metrics.Height <= height + .001;
         }
         static double Refine(double low, double high, double tolerance, Func<double, bool> fits)

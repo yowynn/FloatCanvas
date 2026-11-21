@@ -15,7 +15,10 @@ internal sealed class ColorPickerPanel : UserControl
     private readonly TextBox hex = new() { Height = PropertyPanelLayout.ControlHeight, MinHeight = PropertyPanelLayout.ControlHeight, Padding = new(8, 0, 8, 0), MaxLength = 9, MinWidth = 130, VerticalContentAlignment = VerticalAlignment.Center };
     private readonly NumericValueField alphaField = new(0, 100) { Unit = "%" };
     private readonly Slider alpha;
-    private readonly Border preview = new() { Height = PropertyPanelLayout.ControlHeight, Width = 42, CornerRadius = new(5), Margin = new Thickness(0, 0, 8, 0), BorderThickness = new Thickness(1), Background = Brushes.Transparent };
+    private readonly RoundedSurfaceBorder preview = new() { Height = PropertyPanelLayout.ControlHeight, Width = 42, CornerRadius = new(5), Margin = new Thickness(0, 0, 8, 0), BorderThickness = new Thickness(1) };
+    private readonly Border previewFill = new() { IsHitTestVisible = false };
+    private readonly Border openingSwatch = new() { Width = 14, Height = 14, Clip = new EllipseGeometry(new Point(7, 7), 7, 7) };
+    private readonly Button restoreOpeningColor;
     private readonly ColorClipboardMenu clipboard;
     private readonly ColorSpectrum spectrum = new();
     private readonly ColorHueSlider hue = new() { Height = 28, Margin = new Thickness(0, 6, 0, 8) };
@@ -24,7 +27,7 @@ internal sealed class ColorPickerPanel : UserControl
     private readonly TextBlock historyHeading = Heading("Color.History"), pinnedHeading = Heading("Color.Pinned");
     private bool syncing;
     private bool valueDirty = true, collectionsDirty = true, previewDirty, preparing;
-    private uint value, previewColor;
+    private uint value, previewColor, openingColor;
     private uint ClipboardColor => TryGetDraft(out uint color) ? color : previewColor;
     private string? revealSwatch;
     private uint gestureStart;
@@ -81,7 +84,11 @@ internal sealed class ColorPickerPanel : UserControl
         AutomationProperties.SetName(hue, L.Get("Color.Hue"));
         hue.SetResourceReference(StyleProperty, "CanvasHueSlider"); body.Children.Add(hue);
         var input = new Grid(); input.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); input.ColumnDefinitions.Add(new ColumnDefinition());
-        preview.SetResourceReference(Border.BorderBrushProperty, "CanvasBorder"); input.Children.Add(preview);
+        preview.SetResourceReference(Border.BorderBrushProperty, "CanvasBorder");
+        preview.SetResourceReference(Border.BackgroundProperty, "CanvasBorder");
+        preview.Child = previewFill;
+        previewFill.SizeChanged += (_, _) => ClipSwatch(previewFill, preview);
+        input.Children.Add(preview);
         input.Children.Add(hex); Grid.SetColumn(hex, 1); body.Children.Add(input);
         hex.ToolTip = "#RGB / #RRGGBB / #AARRGGBB"; AutomationProperties.SetName(hex, L.Get("Color.Hex"));
         var alphaName = new PropertyLabel(L.Get("Color.Alpha"));
@@ -93,6 +100,12 @@ internal sealed class ColorPickerPanel : UserControl
         var actions = new WrapPanel();
         actions.Children.Add(IconButton(PanelActionIcon.Eyedropper, "Color.Eyedropper", () => EyedropperRequested?.Invoke()));
         actions.Children.Add(IconButton(PanelActionIcon.Transparent, "Color.Transparent", () => Choose(0)));
+        var original = new Grid { Width = 16, Height = 16, IsHitTestVisible = false };
+        var rim = new System.Windows.Shapes.Ellipse { Margin = new Thickness(.5), StrokeThickness = 1.5 };
+        rim.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, "CanvasText");
+        original.Children.Add(openingSwatch); original.Children.Add(rim);
+        restoreOpeningColor = ActionIconButton.Create(original, L.Get("Color.RestoreOpening"), () => Run(() => Choose(openingColor)));
+        actions.Children.Add(restoreOpeningColor);
         body.Children.Add(actions);
         error.SetResourceReference(TextBlock.ForegroundProperty, "CanvasErrorText"); body.Children.Add(error);
         AutomationProperties.SetLiveSetting(error, AutomationLiveSetting.Polite);
@@ -127,10 +140,20 @@ internal sealed class ColorPickerPanel : UserControl
         hue.ValueChanged += (_, _) => { if (!syncing) spectrum.ChangeHue(hue.Value); };
         spectrum.ColorChanged += color => { if (!syncing) hex.Text = ColorLibrary.ToHtml(color, false); };
         preview.MouseLeftButtonDown += (_, e) => { spectrum.Focus(); clipboard.Copy(ColorClipboardFormat.HexArgb); e.Handled = true; };
-        Value = role == ColorRole.Background ? 0u : ColorLibrary.ForegroundRed;
+        BeginSession(role == ColorRole.Background ? 0u : ColorLibrary.ForegroundRed);
         RefreshCollections();
         IsVisibleChanged += (_, _) => { if (IsVisible) PrepareForShow(); };
         Loaded += (_, _) => { if (IsVisible) PrepareForShow(); };
+    }
+
+    internal void BeginSession(uint color)
+    {
+        openingColor = color;
+        openingSwatch.Child = CreateSwatch(color);
+        string hint = L.Get("Color.RestoreOpening") + " · " + ColorLibrary.ToHtml(color);
+        restoreOpeningColor.ToolTip = hint;
+        AutomationProperties.SetHelpText(restoreOpeningColor, hint);
+        Value = color;
     }
 
     internal bool BeginGesture() => BeginGesture(null);
@@ -292,7 +315,7 @@ internal sealed class ColorPickerPanel : UserControl
         if (TryRead(out var color))
         {
             previewColor = color;
-            preview.Child = CreateSwatch(color);
+            previewFill.Child = CreateSwatch(color);
             bool wasSyncing = syncing; syncing = true;
             try
             {
@@ -335,6 +358,14 @@ internal sealed class ColorPickerPanel : UserControl
     }
     private static TextBlock Heading(string key)
     { var label = PropertyPanelLayout.SectionTitle(L.Get(key)); label.Margin = new(0, 7, 0, 5); return label; }
+    internal static void ClipSwatch(FrameworkElement swatch, Border frame)
+    {
+        var inset = swatch.TranslatePoint(new Point(), frame);
+        double radius = frame.CornerRadius.TopLeft;
+        swatch.Clip = new RectangleGeometry(new Rect(swatch.RenderSize),
+            Math.Max(0, radius - inset.X / 2), Math.Max(0, radius - inset.Y / 2));
+    }
+
     internal static Grid CreateSwatch(uint color)
     {
         var grid = new Grid { IsHitTestVisible = false };

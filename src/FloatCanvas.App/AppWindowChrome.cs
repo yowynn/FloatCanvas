@@ -224,8 +224,9 @@ internal static class AppWindowChrome
     private const string TemplateMarkup = """
         <ControlTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                          xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:ui="clr-namespace:FloatCanvas.App;assembly=FloatCanvas"
                          xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework" TargetType="Window">
-          <Border x:Name="WindowBorder" Background="{TemplateBinding Background}" BorderBrush="__WINDOW_EDGE_BRUSH__" BorderThickness="1" CornerRadius="__WINDOW_EDGE_RADIUS__">
+          <ui:RoundedSurfaceBorder x:Name="WindowBorder" Background="{TemplateBinding Background}" BorderBrush="__WINDOW_EDGE_BRUSH__" BorderThickness="1" CornerRadius="__WINDOW_EDGE_RADIUS__">
             <Grid>
               <Grid.RowDefinitions><RowDefinition Height="36"/><RowDefinition Height="*"/></Grid.RowDefinitions>
               <Grid x:Name="TitleBar" Margin="12,0,6,0" TextElement.Foreground="{TemplateBinding Foreground}">
@@ -252,15 +253,15 @@ internal static class AppWindowChrome
                 <Path Data="M 1,11 L 11,1 M 6,11 L 11,6" Width="12" Height="12" Margin="0,0,3,3" HorizontalAlignment="Right" VerticalAlignment="Bottom" IsHitTestVisible="False" Stroke="{DynamicResource CanvasMuted}" StrokeThickness="1" Opacity="0.65"/>
               </Border>
               <Popup x:Name="HelpPopup" Placement="Custom" PlacementTarget="{Binding ElementName=Help}" AllowsTransparency="True" StaysOpen="False" Focusable="False">
-                <Border Background="{DynamicResource CanvasSurface}" BorderBrush="{DynamicResource CanvasBorder}" BorderThickness="1" CornerRadius="10" Padding="12" MaxWidth="280">
+                <ui:RoundedSurfaceBorder Background="{DynamicResource CanvasSurface}" BorderBrush="{DynamicResource CanvasBorder}" BorderThickness="1" CornerRadius="10" Padding="12" MaxWidth="280">
                   <StackPanel>
                     <TextBlock Text="{DynamicResource CanvasWindowHelpTitle}" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource CanvasText}" Margin="0,0,0,8"/>
                     <TextBlock Text="{DynamicResource CanvasWindowHelpText}" FontSize="12" Foreground="{DynamicResource CanvasText}" TextWrapping="Wrap"/>
                   </StackPanel>
-                </Border>
+                </ui:RoundedSurfaceBorder>
               </Popup>
             </Grid>
-          </Border>
+          </ui:RoundedSurfaceBorder>
           <ControlTemplate.Triggers>
             <Trigger Property="ResizeMode" Value="NoResize"><Setter TargetName="ResizeGrip" Property="Visibility" Value="Collapsed"/></Trigger>
             <Trigger Property="ResizeMode" Value="CanMinimize"><Setter TargetName="ResizeGrip" Property="Visibility" Value="Collapsed"/></Trigger>

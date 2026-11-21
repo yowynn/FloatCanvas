@@ -36,7 +36,6 @@ internal sealed class StampLibraryWindow : Wpf.Window
     private readonly Controls.WrapPanel slotShelf = new() { HorizontalAlignment = Wpf.HorizontalAlignment.Left, Margin = new(0, 0, 0, 6) };
     private readonly Dictionary<int, Controls.Button> slotButtons = [];
     private readonly Dictionary<int, Controls.Button> slotClearButtons = [];
-    private readonly Dictionary<int, Controls.Border> slotFrames = [];
     private readonly Controls.WrapPanel actions = new() { VerticalAlignment = Wpf.VerticalAlignment.Center };
     private readonly Controls.DockPanel commandRow = new() { Margin = new(0, 0, 0, 8) };
     private readonly Controls.Button sourceButton;
@@ -159,7 +158,7 @@ internal sealed class StampLibraryWindow : Wpf.Window
     {
         // TextBox lays out its own padding inside PART_ContentHost. Applying the
         // same padding to the surrounding border would clip a compact search row.
-        var chrome = new Wpf.FrameworkElementFactory(typeof(Controls.Border), "SearchChrome");
+        var chrome = new Wpf.FrameworkElementFactory(typeof(RoundedSurfaceBorder), "SearchChrome");
         chrome.SetValue(Controls.Border.CornerRadiusProperty, new Wpf.CornerRadius(6));
         foreach (var (target, source) in new[] { (Controls.Border.BackgroundProperty, "Background"),
             (Controls.Border.BorderBrushProperty, "BorderBrush"), (Controls.Border.BorderThicknessProperty, "BorderThickness") })
@@ -241,7 +240,7 @@ internal sealed class StampLibraryWindow : Wpf.Window
 
     private void RefreshSlots(CancellationToken token)
     {
-        slotShelf.Children.Clear(); slotButtons.Clear(); slotClearButtons.Clear(); slotFrames.Clear();
+        slotShelf.Children.Clear(); slotButtons.Clear(); slotClearButtons.Clear();
         for (int index = 0; index < 10; index++)
         {
             int slotIndex = index, digit = (index + 1) % 10;
@@ -249,21 +248,21 @@ internal sealed class StampLibraryWindow : Wpf.Window
             var artwork = new Controls.Grid();
             var image = new Controls.Image { Width = 26, Height = 26, Stretch = Media.Stretch.Uniform, Margin = new(2, 14, 2, 0) };
             artwork.Children.Add(image); artwork.Children.Add(Badge(digit.ToString(), Wpf.HorizontalAlignment.Left));
-            var button = new SelectionTileButton { Content = artwork, MinWidth = 0, MinHeight = 0, Padding = new(0),
+            var button = new SelectionTileButton { Content = artwork, MinWidth = 0, MinHeight = 0, BorderThickness = new(2), Padding = new(1),
                 HorizontalContentAlignment = Wpf.HorizontalAlignment.Stretch, Tag = index,
                 ToolTip = entry is null ? L.Format("StampShelf.EmptySlot", digit) : StampPreviewTooltip.Create(library, entry, digit.ToString()) };
             Wpf.Automation.AutomationProperties.SetName(button, L.Format("StampShelf.Slot", digit, entry?.Name ?? L.Get("StampShelf.Empty")));
             button.Click += (_, _) => SelectSlot(slotIndex);
             var clear = new Controls.Button { Content = ActionIconButton.Glyph(PanelActionIcon.Close, 8), Width = 14, Height = 14,
-                MinWidth = 0, MinHeight = 0, Padding = new(2), Margin = new(0, 1, 1, 0),
+                MinWidth = 0, MinHeight = 0, Padding = new(2), Margin = new(0, 3, 3, 0),
                 HorizontalAlignment = Wpf.HorizontalAlignment.Right, VerticalAlignment = Wpf.VerticalAlignment.Top,
                 Visibility = entry is null ? Wpf.Visibility.Collapsed : Wpf.Visibility.Visible, ToolTip = L.Format("StampShelf.ClearSlot", digit) };
             clear.SetResourceReference(StyleProperty, "CanvasCaptionButton");
             Wpf.Automation.AutomationProperties.SetName(clear, L.Format("StampShelf.ClearSlot", digit));
             clear.Click += (_, e) => { e.Handled = true; RunAsync(() => library.PinAsync(slotIndex, null)); };
-            var content = new Controls.Grid(); content.Children.Add(button); content.Children.Add(clear);
-            var frame = new Controls.Border { Child = content, Width = 46, Height = 46, CornerRadius = new(6), BorderThickness = new(2), Margin = new(2), Tag = index };
-            slotShelf.Children.Add(frame); slotButtons.Add(index, button); slotClearButtons.Add(index, clear); slotFrames.Add(index, frame);
+            var slot = new Controls.Grid { Width = 46, Height = 46, Margin = new(2), Tag = index };
+            slot.Children.Add(button); slot.Children.Add(clear);
+            slotShelf.Children.Add(slot); slotButtons.Add(index, button); slotClearButtons.Add(index, clear);
             if (entry is not null) LoadThumbnail(entry, image, button, token);
         }
         RefreshSlotSelection();
@@ -304,11 +303,8 @@ internal sealed class StampLibraryWindow : Wpf.Window
     private void RefreshSlotSelection()
     {
         if (!IsVisible && !preparing) { refreshPending = true; return; }
-        foreach (var (index, frame) in slotFrames)
-        {
-            frame.SetResourceReference(Controls.Border.BorderBrushProperty, selectedSlot == index ? "CanvasAccent" : "CanvasBorder");
-            ((SelectionTileButton)slotButtons[index]).SetSelected(selectedSlot == index);
-        }
+        foreach (var (index, button) in slotButtons)
+            ((SelectionTileButton)button).SetSelected(selectedSlot == index);
     }
 
     private void ActivateTile(Guid id)

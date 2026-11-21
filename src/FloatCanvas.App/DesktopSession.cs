@@ -250,6 +250,7 @@ internal sealed partial class DesktopSession : IDisposable
                 UpdateBrushTipDamage();
             });
         _keyboardRouter.CommandInput = OnCommandInput;
+        _keyboardRouter.CancelScreenSampling = () => CancelEyedropper();
         _keyboardRouter.KeyReleased = ReleaseEditorKey;
         _keyboardRouter.Cancelled = () => { FinishKeyboardNudge(); CancelBorrowedTool(); };
         _windowCoordinator.ModalEntering += () => { _keyboardRouter.Cancel(); CancelCanvasNavigationGesture(); };
@@ -260,6 +261,8 @@ internal sealed partial class DesktopSession : IDisposable
         _host.InputActivated += ()=>{ClearSystemInputEntryHint();if(_host.UsesSystemInput)ShowEditingWindows();RaiseVisibleToolWindows();};
         _host.EditingFocusLost += () =>
         {
+            _diagnostics.Write("Editing.FocusLost", new { _host.UsesSystemInput, Modal = SessionWindowCoordinator.HasModalInput,
+                Foreground = SessionWindowCoordinator.CurrentForeground.ToInt64() });
             _keyboardRouter?.Cancel();
             CloseEditingDialogs();
             _overlayWindows?.ClosePopups();
@@ -694,6 +697,7 @@ internal sealed partial class DesktopSession : IDisposable
     {
         var modifiers = _commandModifiers ?? OverlayHost.CurrentModifiers;
         if (SessionKeyboardRouter.IsModal) return;
+        if (key == 0x1B && modifiers == OverlayModifiers.None && CancelEyedropper()) return;
         if (HandleCanvasSampleKey(key, modifiers)) return;
         var command = EditorCommandCatalog.Resolve(key, modifiers);
         if (command is null) return;

@@ -9,7 +9,7 @@
   "Snapshot.Source.BackgroundAndCanvas": { "zh": "背景＋画布", "en": "Background + canvas" },
   "Snapshot.Source.CanvasOnly": { "zh": "仅画布（透明）", "en": "Canvas only (transparent)" },
   "Snapshot.BorderColor": { "zh": "描边颜色", "en": "Border color" },
-  "Snapshot.BorderWidth": { "zh": "描边宽度（0 为关闭）", "en": "Border width (0 = off)" },
+  "Snapshot.BorderWidthHint": { "zh": "设为 0 可关闭描边。", "en": "Set to 0 to turn off the outline." },
   "Snapshot.Empty": { "zh": "选区内没有可截取内容", "en": "There is no content to capture in the selection." },
   "Snapshot.Inserted": { "zh": "静像已原位插入，可继续圈选或调整图片。", "en": "Snapshot inserted in place. Select another region or adjust the image." },
   "Snapshot.Failed": { "zh": "截图失败，原有画布内容已保留：", "en": "Snapshot failed. Existing canvas content is preserved: " },

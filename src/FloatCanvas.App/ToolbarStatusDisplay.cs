@@ -6,7 +6,7 @@ using System.Windows.Media.Animation;
 namespace FloatCanvas.App;
 
 /// <summary>A compact status readout; long messages scroll only while being inspected.</summary>
-internal sealed class ToolbarStatusDisplay : Border
+internal sealed class ToolbarStatusDisplay : RoundedSurfaceBorder
 {
     private readonly TextBlock text;
     private readonly TranslateTransform scroll = new();

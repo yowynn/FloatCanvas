@@ -14,6 +14,8 @@ namespace FloatCanvas.App;
 /// <summary>Named, mutually exclusive choices with native radio semantics and no popup.</summary>
 internal sealed class SegmentedChoice : Grid
 {
+    private const double IconSize = 18;
+    private const double IconLabelGap = 4;
     private static readonly Style OptionStyle = (Style)XamlReader.Parse("""
         <Style xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" TargetType="RadioButton">
           <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
@@ -35,7 +37,7 @@ internal sealed class SegmentedChoice : Grid
         """);
     private readonly UniformGrid options = new() { Rows = 1 };
     private readonly Grid track = new();
-    private readonly Border indicator = new() { CornerRadius = new(6), BorderThickness = new(1), HorizontalAlignment = HorizontalAlignment.Left, IsHitTestVisible = false, Visibility = Visibility.Collapsed };
+    private readonly RoundedSurfaceBorder indicator = new() { CornerRadius = new(6), BorderThickness = new(1), HorizontalAlignment = HorizontalAlignment.Left, IsHitTestVisible = false, Visibility = Visibility.Collapsed };
     private readonly TranslateTransform slide = new();
     private readonly List<RadioButton> items = [];
     private readonly string groupName = "Segmented_" + Guid.NewGuid().ToString("N");
@@ -46,6 +48,7 @@ internal sealed class SegmentedChoice : Grid
     internal IReadOnlyList<RadioButton> Items => items;
     internal bool IconOnly { get; set; }
     internal double PreferredWidth => items.Count * optionWidth + 8;
+    internal bool FitsInline(double width) => width >= PreferredWidth - .5;
     internal event EventHandler? SelectionChanged;
     internal event Action? OptionsChanged;
 
@@ -71,7 +74,7 @@ internal sealed class SegmentedChoice : Grid
     internal SegmentedChoice()
     {
         MinHeight = PropertyPanelLayout.ControlHeight;
-        var border = new Border { CornerRadius = new(9), BorderThickness = new(1), Padding = new(3), Child = track };
+        var border = new RoundedSurfaceBorder { CornerRadius = new(9), BorderThickness = new(1), Padding = new(3), Child = track };
         border.SetResourceReference(Border.BackgroundProperty, "CanvasInput");
         border.SetResourceReference(Border.BorderBrushProperty, "CanvasBorder");
         indicator.SetResourceReference(Border.BackgroundProperty, "CanvasHover");
@@ -96,10 +99,12 @@ internal sealed class SegmentedChoice : Grid
 
     internal void Add(string label, object value, FrameworkElement icon)
     {
-        icon.Width = icon.Height = 18; icon.Margin = new(0, 0, 5, 0); icon.IsHitTestVisible = false;
-        var caption = new TextBlock { Text = label, FontSize = 12, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
+        icon.Width = icon.Height = IconSize; icon.Margin = new(0, 0, IconLabelGap, 0); icon.IsHitTestVisible = false;
+        // The first measurement happens before the option inherits the panel's typography.
+        var caption = new TextBlock { Text = label, FontFamily = PropertyPanelLayout.LabelFontFamily, FontSize = PropertyPanelLayout.LabelFontSize,
+            TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
         caption.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-        optionWidth = Math.Max(optionWidth, caption.DesiredSize.Width + 18 + 5 + 6);
+        optionWidth = Math.Max(optionWidth, caption.DesiredSize.Width + IconSize + IconLabelGap + 6);
         var content = new StackPanel { Orientation = Orientation.Horizontal };
         content.Children.Add(icon); content.Children.Add(caption);
         var option = new RadioButton { Content = content, Tag = value, GroupName = groupName, Style = OptionStyle, ToolTip = label };
@@ -113,20 +118,20 @@ internal sealed class SegmentedChoice : Grid
     internal void SetIcon(int index, FrameworkElement icon)
     {
         var content = (StackPanel)items[index].Content;
-        icon.Width = icon.Height = 18; icon.IsHitTestVisible = false;
+        icon.Width = icon.Height = IconSize; icon.IsHitTestVisible = false;
         content.Children.RemoveAt(0); content.Children.Insert(0, icon); InvalidateMeasure();
     }
 
     protected override Size MeasureOverride(Size constraint)
     {
-        bool vertical = !IconOnly && constraint.Width < PreferredWidth - .5;
+        bool vertical = !IconOnly && !FitsInline(constraint.Width);
         foreach (var item in items)
         {
             var content = (StackPanel)item.Content;
             ((TextBlock)content.Children[1]).Visibility = IconOnly ? Visibility.Collapsed : Visibility.Visible;
             content.Orientation = vertical ? Orientation.Vertical : Orientation.Horizontal;
             item.Padding = vertical ? new(0, 3, 0, 3) : new(2, 3, 2, 3);
-            ((FrameworkElement)content.Children[0]).Margin = IconOnly ? new(0) : vertical ? new(0, 0, 0, 2) : new(0, 0, 5, 0);
+            ((FrameworkElement)content.Children[0]).Margin = IconOnly ? new(0) : vertical ? new(0, 0, 0, 2) : new(0, 0, IconLabelGap, 0);
             ((TextBlock)content.Children[1]).TextAlignment = vertical ? System.Windows.TextAlignment.Center : System.Windows.TextAlignment.Left;
         }
         return base.MeasureOverride(constraint);

@@ -11,6 +11,7 @@ internal static class Preview4InlineTextTests
         _=Application.Current??new Application {ShutdownMode=ShutdownMode.OnExplicitShutdown};
         AppTheme.Apply("light");
         using var renderer=new SceneRenderer();
+        InitialFrame(check, renderer);
         EditingRegressions(check, renderer);
         var text=new CanvasElement {Kind=ElementKind.Text,Text="Edit here",Width=180,Height=50,Transform=Affine2D.Translation(100,100)};
         var session=new EditorSession(new SceneDocument {Elements=[text]});session.SetSelection([text.Id]);
@@ -128,6 +129,25 @@ internal static class Preview4InlineTextTests
             check("Repeated Shift Right extends from the active visual caret", edit.Input.SelectionStart == 0 && edit.Input.SelectionLength == 2);
         }
     }
+    private static void InitialFrame(Action<string, bool> check, SceneRenderer renderer)
+    {
+        foreach (string variant in new[] { ElementAppearance.TextLabel, ElementAppearance.TextOutline, ElementAppearance.Default })
+        foreach (double size in new[] { 14d, 36d, 96d })
+        {
+            var style = new ElementStyle { Variant = variant, FontFamily = "Microsoft YaHei UI", FontSize = size };
+            using var edit = new InlineTextEdit(new EditorSession(), null, new(80, 50), style, renderer);
+            var caret = edit.Caret;
+            double width = edit.Target.Width, height = edit.Target.Height;
+            check($"{variant} {size}px empty frame fits the very first caret", caret.Left >= 0 && caret.Right <= width &&
+                caret.Top >= 0 && caret.Bottom <= height + .001 && Math.Abs(height - renderer.MeasureText("", style, width).Height) < .001);
+            edit.Input.Text = "字";
+            check($"{variant} {size}px first character uses the same single-line height", Math.Abs(edit.Target.Height - height) < .001);
+            edit.Input.Clear();
+            check($"{variant} {size}px deleting the first character restores the opening frame and caret",
+                edit.Target.Width == width && edit.Target.Height == height && edit.Caret == caret);
+        }
+    }
+
     private static void EditingRegressions(Action<string, bool> check, SceneRenderer renderer)
     {
         var style = new ElementStyle { FontSize = 36 };

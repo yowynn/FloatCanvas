@@ -466,7 +466,8 @@ internal sealed partial class CanvasToolOptions : UserControl, IToolOptionsConte
     private static void AddField(Panel panel, string key, FrameworkElement field, NumericValueField? numeric = null)
     {
         numeric ??= field as NumericValueField;
-        var label = new PropertyLabel(L.Get(key == "Canvas.Background" ? "Property.Background" : key)) { ToolTip = L.Get(key) };
+        var caption = key switch { "Canvas.Background" => "Property.Background", "Canvas.GridWidth" => "Inspector.StrokeWidth", _ => key };
+        var label = new PropertyLabel(L.Get(caption)) { ToolTip = L.Get(key) };
         var row = PropertyPanelLayout.Row(label, field); panel.Children.Add(row);
         field.MinHeight = 34;
         if (numeric is not null)

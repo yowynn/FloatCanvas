@@ -25,7 +25,7 @@ internal sealed class RootCanvasToolbarHeader : Grid
     private readonly Button overflow = InlineButton();
     private readonly List<(Button Button, TextBlock Text, FrameworkElement Separator)> ancestors = [];
     private readonly TextBlock current = Label();
-    private readonly Border modeBadge = new() { Height = 18, CornerRadius = new(3), BorderThickness = new(1), Padding = new(3,0,3,0), Margin = new(6,0,0,0), VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
+    private readonly RoundedSurfaceBorder modeBadge = new() { Height = 18, CornerRadius = new(3), BorderThickness = new(1), Padding = new(3,0,3,0), Margin = new(6,0,0,0), VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
     private readonly TextBlock modeLabel = new() { FontSize = 10, FontWeight = FontWeights.Medium, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 114, VerticalAlignment = VerticalAlignment.Center };
     private readonly ContentControl modeIcon = new() { Margin = new(0,0,3,0), VerticalAlignment = VerticalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
     private readonly FrameworkElement dropdown = CommandGlyphs.Create("M4,6 L8,10 L12,6");

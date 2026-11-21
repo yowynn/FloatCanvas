@@ -33,7 +33,7 @@ internal sealed class ColorCopyFeedback
         ownerScope = new OverlayWindowScope(source.Handle, () => false, installAsCurrent: false);
         var message = new TextBlock { Text = L.Get("Color.Copied"), FontSize = 12 };
         message.SetResourceReference(TextBlock.ForegroundProperty, "CanvasText");
-        var bubble = new Border { Child = message, CornerRadius = new(6), Padding = new(9, 5, 9, 5), BorderThickness = new(1) };
+        var bubble = new RoundedSurfaceBorder { Child = message, CornerRadius = new(6), Padding = new(9, 5, 9, 5), BorderThickness = new(1) };
         bubble.SetResourceReference(Border.BackgroundProperty, "CanvasInput");
         bubble.SetResourceReference(Border.BorderBrushProperty, "CanvasBorder");
         window = new OverlayPopupWindow(bubble, target, PlacementMode.Bottom, 0, 4, Close,

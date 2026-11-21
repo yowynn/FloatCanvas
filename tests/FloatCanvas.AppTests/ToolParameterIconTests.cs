@@ -42,6 +42,17 @@ internal static class ToolParameterIconTests
             return Hash(Rasterize(ToolParameterIcon.Create(textSample, 24), 24));
         }).ToArray();
         check("text toolbar and preset previews distinguish plain, outline and label at display size", textIcons.Distinct().Count() == 3);
+        textSample.Style.Variant = ElementAppearance.TextOutline;
+        textSample.Style.SecondaryColor = 0xFFFF0000;
+        foreach (int size in new[] { 16, 24 })
+        {
+            var widths = new[] { 0d, 2d, 6d }.Select(width =>
+            {
+                textSample.Style.TextOutlineWidth = width;
+                return Hash(Rasterize(ToolParameterIcon.Create(textSample, size), size));
+            }).ToArray();
+            check($"{size}-DIP text preview reflects the authored line width", widths.Distinct().Count() == widths.Length);
+        }
 
         var keys = new ToolParameters { Tool = EditorTool.Presentation, Presentation = new() { DisplayStyle = PresentationDisplayStyle.Log, RecentChordLimit = 1 }, Style = new() { Foreground = 0xffff4400, Background = 0xff113388 } };
         string Icon() => Hash(Rasterize(ToolParameterIcon.Create(keys,72),72));

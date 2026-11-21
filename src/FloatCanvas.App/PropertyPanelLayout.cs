@@ -34,7 +34,8 @@ internal static class PropertyPanelLayout
 
     internal static Grid Row(TextBlock label, FrameworkElement control)
     {
-        var row = new Grid { Margin = RowMargin };
+        var row = control is SegmentedChoice choice ? new SegmentedRow(label, choice) : new Grid();
+        row.Margin = RowMargin;
         AutomationProperties.SetLabeledBy(row, label);
         if (control is ComboBox or ColorField or NumericValueField || control is TextBox { AcceptsReturn: false })
             control.Height = control.MinHeight = ControlHeight;
@@ -46,22 +47,41 @@ internal static class PropertyPanelLayout
         label.VerticalAlignment = VerticalAlignment.Center;
         row.Children.Add(label); Grid.SetColumn(control, 1); row.Children.Add(control);
         control.VerticalAlignment = VerticalAlignment.Center;
-        if (control is SegmentedChoice choice)
-        {
-            row.RowDefinitions.Add(new() { Height = GridLength.Auto }); row.RowDefinitions.Add(new() { Height = GridLength.Auto });
-            row.SizeChanged += (_, _) => ArrangeChoice();
-            choice.OptionsChanged += ArrangeChoice;
-            void ArrangeChoice()
-            {
-                if (row.ActualWidth <= 0) return;
-                bool stacked = row.ActualWidth < LabelWidth + LabelGap + choice.PreferredWidth;
-                Grid.SetColumnSpan(label, stacked ? 2 : 1);
-                Grid.SetRow(control, stacked ? 1 : 0); Grid.SetColumn(control, stacked ? 0 : 1); Grid.SetColumnSpan(control, stacked ? 2 : 1);
-                label.Margin = stacked ? new(0, 0, 0, 4) : new(0, 0, LabelGap, 0);
-                label.SetCurrentValue(FrameworkElement.MaxWidthProperty, stacked ? row.ActualWidth : (double)row.GetValue(LabelMaximumProperty));
-            }
-        }
         return row;
+    }
+
+    private sealed class SegmentedRow : Grid
+    {
+        private readonly TextBlock label;
+        private readonly SegmentedChoice choice;
+
+        internal SegmentedRow(TextBlock label, SegmentedChoice choice)
+        {
+            this.label = label;
+            this.choice = choice;
+            RowDefinitions.Add(new() { Height = GridLength.Auto });
+            RowDefinitions.Add(new() { Height = GridLength.Auto });
+            choice.OptionsChanged += InvalidateArrange;
+        }
+
+        protected override Size ArrangeOverride(Size size)
+        {
+            var arranged = base.ArrangeOverride(size);
+            // A stacked label spans both columns. Include its inline width when deciding
+            // whether to bring it back, even if all the other labels are shorter.
+            double labelLimit = (double)GetValue(LabelMaximumProperty);
+            double ownLabel = Math.Min(labelLimit, label.DesiredSize.Width - label.Margin.Right) + LabelGap;
+            double labelColumn = Math.Max(ownLabel, ColumnDefinitions[0].ActualWidth);
+            bool stacked = !choice.FitsInline(size.Width - labelColumn);
+            if (stacked != (GetRow(choice) == 1))
+            {
+                SetColumnSpan(label, stacked ? 2 : 1);
+                SetRow(choice, stacked ? 1 : 0); SetColumn(choice, stacked ? 0 : 1); SetColumnSpan(choice, stacked ? 2 : 1);
+                label.Margin = stacked ? new(0, 0, 0, 4) : new(0, 0, LabelGap, 0);
+                label.SetCurrentValue(MaxWidthProperty, stacked ? double.PositiveInfinity : labelLimit);
+            }
+            return arranged;
+        }
     }
 
     internal static TextBlock Label(string name) => new() { Text = name, FontSize = LabelFontSize, FontFamily = LabelFontFamily, FontWeight = FontWeights.Normal, VerticalAlignment = VerticalAlignment.Center };

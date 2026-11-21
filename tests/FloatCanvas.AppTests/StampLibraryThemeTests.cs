@@ -34,11 +34,14 @@ internal static class StampLibraryThemeTests
         var library = Task.Run(async () =>
         {
             var saved = new StampLibrary(Path.Combine(output, "profile")); await saved.LoadAsync();
-            if (saved.Items.Count > 0) return saved;
-            var session = new EditorSession();
-            session.Add(new() { Kind = ElementKind.Rectangle, Width = 100, Height = 64,
-                Style = new() { StrokeWidth = 0, Fill = 0xFF367DC4 } });
-            for (int index = 0; index < 31; index++) await saved.SaveSelectionAsync(session, "Theme specimen " + (index + 1).ToString("00"));
+            if (saved.Items.Count == 0)
+            {
+                var session = new EditorSession();
+                session.Add(new() { Kind = ElementKind.Rectangle, Width = 100, Height = 64,
+                    Style = new() { StrokeWidth = 0, Fill = 0xFF367DC4 } });
+                for (int index = 0; index < 31; index++) await saved.SaveSelectionAsync(session, "Theme specimen " + (index + 1).ToString("00"));
+            }
+            await saved.PinAsync(9, null);
             return saved;
         }).GetAwaiter().GetResult();
         var window = new StampLibraryWindow(library, () => new EditorSession(), _ => { })
@@ -61,6 +64,11 @@ internal static class StampLibraryThemeTests
             foreach (string theme in new[] { "dark", "light", "dark" })
             {
                 AppTheme.Apply(theme); Pump();
+                foreach (double scale in new[] { 1.25, 1.75, 2 })
+                {
+                    Layout(scale);
+                    CheckSlots(theme + "-" + (int)(96 * scale), scale);
+                }
                 foreach (double scale in new[] { 1d, 1.5 })
                 {
                     Layout(scale);
@@ -70,6 +78,7 @@ internal static class StampLibraryThemeTests
                     var selected = (ListBoxItem)list.ItemContainerGenerator.ContainerFromIndex(0)!;
                     var chrome = selected.Template.FindName("Chrome", selected) as Border;
                     Observe(name + " keeps the production selection border blue and its text readable", chrome is not null && Same(chrome.BorderBrush, Brush("CanvasAccent")) && Same(selected.Foreground, Brush("CanvasText")));
+                    CheckSlots(name, scale);
                     var scroll = Visuals(list).OfType<ScrollViewer>().First();
                     Observe(name + " retains a usable themed scrollbar for the real catalog", scroll.ScrollableHeight > 0 && Visuals(scroll).OfType<ScrollBar>().Any(bar => bar.Orientation == Orientation.Vertical && bar.IsVisible));
                     var search = Field<TextBox>(window, "search");
@@ -98,6 +107,48 @@ internal static class StampLibraryThemeTests
             VisualTreeHelper.SetRootDpi(window, new DpiScale(scale, scale));
             window.Width = StampLibraryWindow.WidthForColumns(StampLibraryWindow.DefaultTileColumns, scale);
             window.InvalidateMeasure(); window.InvalidateArrange(); window.UpdateLayout(); Pump();
+        }
+        void CheckSlots(string name, double scale)
+        {
+            var shelf = Field<WrapPanel>(window, "slotShelf");
+            var slots = Field<Dictionary<int, Button>>(window, "slotButtons");
+            var hover = (DependencyPropertyKey)typeof(UIElement).GetField("IsMouseOverPropertyKey", BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!;
+            var press = (DependencyPropertyKey)typeof(ButtonBase).GetField("IsPressedPropertyKey", BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!;
+            foreach (bool selectThird in new[] { false, true })
+            {
+                if (selectThird) slots[2].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                window.UpdateLayout();
+                var image = new RenderTargetBitmap((int)Math.Ceiling(window.ActualWidth * scale), (int)Math.Ceiling(window.ActualHeight * scale),
+                    96 * scale, 96 * scale, PixelFormats.Pbgra32);
+                image.Render(window);
+                bool correct = slots.Count == 10 && library.Pins[2] is not null && library.Pins[9] is null;
+                foreach (FrameworkElement host in shelf.Children)
+                {
+                    var button = slots[(int)host.Tag];
+                    var frame = (Border)button.Template.FindName("Chrome", button);
+                    var origin = host.TranslatePoint(new Point(), window);
+                    int x = (int)Math.Floor((origin.X + host.ActualWidth / 2) * scale);
+                    int y = (int)Math.Round(origin.Y * scale);
+                    int thickness = (int)Math.Round(2 * scale);
+                    var row = new byte[4 * (thickness + 1)];
+                    image.CopyPixels(new Int32Rect(x, y, 1, thickness + 1), row, 4, 0);
+                    var edge = ((SolidColorBrush)Brush(selectThird && (int)host.Tag == 2 ? "CanvasAccent" : "CanvasBorder")).Color;
+                    var fill = ((SolidColorBrush)frame.Background).Color;
+                    bool ColorAt(int i, Color c) => row[i * 4] == c.B && row[i * 4 + 1] == c.G && row[i * 4 + 2] == c.R;
+                    correct &= ColorAt(0, edge) && ColorAt(thickness - 1, edge) && ColorAt(thickness, fill)
+                        && frame.RenderSize == host.RenderSize;
+                }
+                Observe(name + $" all ten slots paint one 2-DIP outline (third selected={selectThird})", correct);
+            }
+            var third = slots[2];
+            var selectedFrame = (Border)third.Template.FindName("Chrome", third);
+            third.SetValue(hover, true);
+            bool hovered = Same(selectedFrame.Background, Brush("CanvasButtonHover")) && Same(selectedFrame.BorderBrush, Brush("CanvasAccent"));
+            third.SetValue(press, true);
+            Observe(name + " hover and press change the slot fill and retain the selected outline",
+                hovered && Same(selectedFrame.Background, Brush("CanvasPressed")) && Same(selectedFrame.BorderBrush, Brush("CanvasAccent")));
+            third.SetValue(press, false); third.SetValue(hover, false);
+            slots[2].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         }
         void Snapshot(string name, string theme, double scale)
         {

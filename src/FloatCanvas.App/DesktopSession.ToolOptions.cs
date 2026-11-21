@@ -278,7 +278,7 @@ internal sealed partial class DesktopSession
     private void CheckToolOptionsFocus()
     {
         if (_eyedropper is not null) return;
-        if (_host.IsInputMethodSwitchPending) return;
+        if (_host.IsInputMethodSwitchPending || SessionWindowCoordinator.HasModalChild(_toolOptionsWindow)) return;
         if (IsToolOptionsOpen && !_toolOptionsPinned && !_toolOptionsWindow.IsActive && !HasActiveOptionsDialog() &&
             !_toolOptionsPanel.IsColorPickerOpen && !IsOptionsInput(Keyboard.FocusedElement as DependencyObject) &&
             !IsOptionsInput(Mouse.DirectlyOver as DependencyObject) && !_toolbar.IsActive) CloseToolOptions();

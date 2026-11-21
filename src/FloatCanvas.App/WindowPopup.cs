@@ -88,6 +88,7 @@ internal sealed class WindowPopup(UIElement child, UIElement target, string titl
         shown.Deactivated += (_, _) => shown.Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
         {
             if (ReferenceEquals(window, shown) && suspensionDepth == 0 && !StaysOpen && !shown.IsActive && !shown.IsKeyboardFocusWithin &&
+                !SessionWindowCoordinator.HasModalChild(shown) &&
                 !Application.Current.Windows.Cast<Window>().Any(candidate => candidate.IsActive && IsOwnedBy(candidate, shown)))
                 CloseOutside();
         });

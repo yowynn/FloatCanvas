@@ -62,7 +62,11 @@ internal sealed partial class EditorController
         Move(point, modifiers, finishStroke);
         var mapping = CurrentCanvasMapping;
         var graph = new SceneGraph(Session.Document);
-        if (!IsPointerBlocked && changed.All(pair => mapping.IsElementSafe(graph.ToWorld(graph.FindElement(pair.Item.Id) ?? pair.Item)))) return;
+        if (!IsPointerBlocked && changed.All(pair => mapping.IsElementSafe(graph.ToWorld(graph.FindElement(pair.Item.Id) ?? pair.Item))))
+        {
+            creationArcFit?.Accept(point - start, pointerScreen - startScreen);
+            return;
+        }
         foreach (var (item, state) in changed) state.Restore(graph.FindElement(item.Id) ?? item);
         if (drawing is not null && drawingParents.ContainsKey(drawing.Id) && new SceneGraph(Session.Document).FindElement(drawing.Id) is { } restored)
             drawing = new SceneGraph(Session.Document).ToWorld(restored);

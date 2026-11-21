@@ -72,8 +72,9 @@ internal sealed class InlineTextEdit : IDisposable
         if(existing is not null&&(existing.Kind!=ElementKind.Text||!session.Document.Elements.Contains(existing)||graph.IsLocked(existing.Id)))
             throw new InvalidOperationException(L.Get("Text.CannotEdit"));
         if (isNew && session.EditScopeId is { } scope && graph.IsLocked(scope)) throw new InvalidOperationException(L.Get("Text.CannotEdit"));
-        var draft=existing??new CanvasElement {Kind=ElementKind.Text,TextAutoWidth=true,Width=40,Height=style.FontSize*1.35,
+        var draft=existing??new CanvasElement {Kind=ElementKind.Text,
             Style=style.Clone(),Transform=Affine2D.Translation(point.X,point.Y)};
+        if (isNew) TextFrameLayout.Reflow(draft, autoWidth: true, renderer);
         creationDepth = isNew ? billboardDepth : null; creationTransform = draft.Transform;
         if (creationDepth is { } depth)
             BillboardGeometry.TryPlaceFromScreen(draft, CurrentCanvasMapping, depth,

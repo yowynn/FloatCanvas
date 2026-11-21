@@ -39,6 +39,10 @@ public sealed class ElementStyle
         set { if (Variant is null or ElementAppearance.Default or ElementAppearance.ShapeIndependent or ElementAppearance.ShapeUniform) Variant = value ? ElementAppearance.ShapeUniform : ElementAppearance.ShapeIndependent; }
     }
     public double StrokeWidth { get; set; } = 4;
+    /// <summary>Visible width outside a glyph in local pixels. The default follows the font size.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? TextOutlineWidth { get; set; }
+    public double TextOutlineWidthAt(double fontSize) => TextOutlineWidth ?? fontSize * .055;
     public ArrowHeadStyle ArrowHeadStyle { get; set; } = ArrowHeadStyle.FilledTriangle;
     /// <summary>Head length in local document pixels; zero preserves automatic max(10, StrokeWidth * 4).</summary>
     public double ArrowHeadSize { get; set; }

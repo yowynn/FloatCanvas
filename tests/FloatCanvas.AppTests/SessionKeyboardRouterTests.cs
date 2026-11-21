@@ -49,11 +49,22 @@ internal static class SessionKeyboardRouterTests
             using var coordinator = new SessionWindowCoordinator(host, window);
             using var router = new SessionKeyboardRouter(() => active, coordinator.OwnsKeyboardSource, () => false, commands.Add, value => pan = value);
             routing = router;
-            ToolOptionsKeyboardRoute.Attach(window, () => true, commands.Add);
+            int dismissed = 0;
+            ToolOptionsKeyboardRoute.Attach(window, () => { dismissed++; return true; }, commands.Add);
             WindowFocusLifecycle.Attach(window);
             try
             {
                 window.Show(); window.Activate(); Pump();
+                ordinary.Focus(); Pump();
+                bool sampling = true;
+                router.CancelScreenSampling = () => { bool wasSampling = sampling; sampling = false; return wasSampling; };
+                Transition(Key.Escape, true); Transition(Key.Escape, true, repeat: true); Transition(Key.Escape, false);
+                check(theme + " one Escape cancels sampling without dismissing the restored window on repeat", !sampling && dismissed == 0);
+                sampling = true;
+                router.CanvasKey(new(0x1B, OverlayModifiers.None, false));
+                Transition(Key.Escape, true, repeat: true); Transition(Key.Escape, false);
+                check(theme + " canvas Escape also owns its repeat after focus returns to WPF", !sampling && dismissed == 0);
+                router.CancelScreenSampling = null;
                 var pin = ((ToggleButton[])typeof(CanvasPinSelector).GetField("points", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(pins)!)[0];
                 foreach (var control in new UIElement[] { ordinary, mode, segment.Items[0], pin, combo, numeric.Slider, readOnly, list })
                 {

@@ -557,7 +557,7 @@ internal sealed partial class DesktopSession
     }
     private static Controls.Border Surface(UIElement child, double radius, Thickness padding)
     {
-        var border = new Controls.Border { Child = child, CornerRadius = new CornerRadius(radius), Padding = padding, BorderThickness = new Thickness(1) };
+        var border = new RoundedSurfaceBorder { Child = child, CornerRadius = new CornerRadius(radius), Padding = padding, BorderThickness = new Thickness(1) };
         border.SetResourceReference(Controls.Border.BackgroundProperty, "CanvasSurface"); border.SetResourceReference(Controls.Border.BorderBrushProperty, "CanvasBorder"); return border;
     }
 

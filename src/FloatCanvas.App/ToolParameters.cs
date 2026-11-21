@@ -109,6 +109,7 @@ internal sealed class ToolParameters
         (CornerRadius is null || NumericParameterDomain.ForTool(nameof(CornerRadius)).Contains(CornerRadius.Value)) &&
         NumericParameterDomain.ForTool(nameof(EffectStrength)).Contains(EffectStrength) &&
         NumericParameterDomain.ForStyle(nameof(s.StrokeWidth)).Contains(s.StrokeWidth) &&
+        (s.TextOutlineWidth is not { } outlineWidth || NumericParameterDomain.ForStyle(nameof(s.StrokeWidth)).Contains(outlineWidth)) &&
         NumericParameterDomain.ForStyle(nameof(s.Opacity)).Contains(s.Opacity) &&
         NumericParameterDomain.ForStyle(nameof(s.FontSize)).Contains(s.FontSize) &&
         s.FontFamily is { Length: > 0 and <= 1024 } && Enum.IsDefined(s.TextAlignment) &&

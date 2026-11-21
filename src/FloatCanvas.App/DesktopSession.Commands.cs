@@ -99,7 +99,7 @@ internal sealed partial class DesktopSession
         {
             case "Interaction.Cancel":
                 if (_globalCapture is not null) CompleteGlobalCapture(inserted:false);
-                else if (_eyedropper is not null) EndEyedropper();
+                else if (CancelEyedropper()) { }
                 else if (_toolOptionsPanel.CloseColorPicker()) { }
                 else if (Active.IsTransactionActive || _editor.HasPointerGesture || _editor.HasPendingBillboardOperation || _editor.IsBorrowingSelection) _editor.Cancel();
                 else if (_borrowedTool is not null) CancelBorrowedTool();

@@ -99,13 +99,14 @@ internal static class StampLibraryUiTests
         string catalogPath = Path.Combine(library.DirectoryPath, "library.json"); var catalog = JsonNode.Parse(await File.ReadAllTextAsync(catalogPath))!;
         var entries = catalog["Items"]!.AsArray(); var prototype = entries.Single(item => item!["Id"]!.GetValue<Guid>() == editable.Id)!.DeepClone();
         string sourceBase = Path.Combine(library.DirectoryPath, editable.Id.ToString("N") + "-" + editable.Revision.ToString("N"));
+        var revisionFiles = Directory.GetFiles(library.DirectoryPath, Path.GetFileName(sourceBase) + ".*");
         for (int i = 0; i < 49; i++)
         {
             Guid id = Guid.NewGuid(), revision = Guid.NewGuid(); var item = prototype.DeepClone();
             item["Id"] = id; item["Revision"] = revision; item["Name"] = "Archive " + i.ToString("00"); item["UpdatedAtUtc"] = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddDays(i);
             entries.Add(item);
             string destination = Path.Combine(library.DirectoryPath, id.ToString("N") + "-" + revision.ToString("N"));
-            File.Copy(sourceBase + ".floatcanvas", destination + ".floatcanvas"); File.Copy(sourceBase + ".png", destination + ".png");
+            foreach (string file in revisionFiles) File.Copy(file, destination + file[sourceBase.Length..]);
         }
         catalog.AsObject().Remove("Order"); // Existing catalogs predate explicit drag ordering.
         await File.WriteAllTextAsync(catalogPath, catalog.ToJsonString());
@@ -141,10 +142,10 @@ internal static class StampLibraryUiTests
                 item.Content is Controls.StackPanel tile && tile.Children.Count == 3 && tile.Children[0] is Controls.Grid && tile.Children[1] is Controls.TextBlock && tile.Children[2] is Controls.TextBlock { Tag: "Stamp.Mode" }));
             PumpUntil(() => Realized(list).All(item => Thumbnail(item).Source is not null));
             check(locale + " all realized continuous-list thumbnails load from the isolated real revisions", Realized(list).All(item => Thumbnail(item).Source is not null));
-            check(locale + " shelf matches toolbar digit order one through nine then zero", Field<Controls.WrapPanel>(window, "slotShelf").Children.OfType<Controls.Border>()
+            check(locale + " shelf matches toolbar digit order one through nine then zero", Field<Controls.WrapPanel>(window, "slotShelf").Children.Cast<Wpf.FrameworkElement>()
                 .Select(frame => ((int)frame.Tag + 1) % 10).SequenceEqual(Enumerable.Range(0, 10).Select(index => (index + 1) % 10)) && Field<int?>(window, "selectedSlot") is null);
             check(locale + " fixed compact slots stay left aligned with small independent clear buttons", Field<Controls.WrapPanel>(window, "slotShelf").HorizontalAlignment == Wpf.HorizontalAlignment.Left &&
-                Field<Controls.WrapPanel>(window, "slotShelf").Children.OfType<Controls.Border>().All(frame => frame.Width == 46 && frame.Height == 46) &&
+                Field<Controls.WrapPanel>(window, "slotShelf").Children.Cast<Wpf.FrameworkElement>().All(slot => slot.Width == 46 && slot.Height == 46) &&
                 Field<Dictionary<int, Controls.Button>>(window, "slotClearButtons").Values.All(button => button.Width == 14 && button.Height == 14));
             check(locale + " shelf slot number badges remain plain digits without duplicated pin glyphs", Field<Dictionary<int, Controls.Button>>(window, "slotButtons").Values.All(button =>
                 ((Controls.Grid)button.Content).Children.OfType<Controls.Border>().Single().Child is Controls.TextBlock));
@@ -303,7 +304,7 @@ internal static class StampLibraryUiTests
             var firstCharacter = search.GetRectFromCharacterIndex(0);
             check(locale + " compact search text fits fully inside its content box", !firstCharacter.IsEmpty && firstCharacter.Left >= 24 &&
                 firstCharacter.Top >= 0 && firstCharacter.Bottom <= search.ActualHeight && firstCharacter.Height >= 14);
-            check(locale + " all ten compact slots fit on one row at the minimum supported width", Field<Controls.WrapPanel>(window, "slotShelf").Children.OfType<Controls.Border>()
+            check(locale + " all ten compact slots fit on one row at the minimum supported width", Field<Controls.WrapPanel>(window, "slotShelf").Children.Cast<Wpf.FrameworkElement>()
                 .All(frame => frame.ActualWidth == 46 && frame.ActualHeight == 46 && Math.Abs(Bounds(frame).Top - Bounds(Field<Controls.WrapPanel>(window, "slotShelf")).Top - 2) < 1 && Bounds(frame).Right <= background.Width));
         }
         finally { background.Child = null; window.Content = content; }

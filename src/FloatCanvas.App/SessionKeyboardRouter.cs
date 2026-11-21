@@ -18,6 +18,7 @@ internal sealed class SessionKeyboardRouter : IDisposable
     private readonly Action<int> command;
     private readonly Action<bool> pan;
     internal Action<OverlayKeyEvent>? CommandInput { get; set; }
+    internal Func<bool>? CancelScreenSampling { get; set; }
     internal Action<int>? KeyReleased { get; set; }
     internal Action? Cancelled { get; set; }
     private void Dispatch(OverlayKeyEvent input) { if (CommandInput is { } dispatch) dispatch(input); else command(input.VirtualKey); }
@@ -60,6 +61,8 @@ internal sealed class SessionKeyboardRouter : IDisposable
             router.KeyReleased?.Invoke(code);
             return;
         }
+        if (router.active() && !IsModal && router.TryCancelScreenSampling(code, modifiers, AppInputPolicy.IsRepeat(e)))
+        { e.Handled = true; return; }
         bool local = !router.active() || IsModal || OverlayContextMenu.HasOpenMenu || router.localText() ||
             !EditorShortcutPolicy.ShouldRoute(code, (ModifierKeys)modifiers, source) ||
             // These windows own Escape and their list commands (including rename,
@@ -108,11 +111,22 @@ internal sealed class SessionKeyboardRouter : IDisposable
     {
         if (key.VirtualKey == 0x20) { Space(true, key.IsRepeat, key.Modifiers, null, canvas: true); return; }
         if (!active() || IsModal || OverlayContextMenu.HasOpenMenu) return;
+        if (TryCancelScreenSampling(key.VirtualKey, key.Modifiers, key.IsRepeat)) return;
         if (presses.TryGetValue(key.VirtualKey, out var owner) && key.IsRepeat && owner != Owner.Editor) return;
         if (!EditorShortcutPolicy.IsCommand(key.VirtualKey, key.Modifiers) ||
             key.IsRepeat && !EditorShortcutPolicy.AllowsRepeat(key.VirtualKey, key.Modifiers)) return;
         presses[key.VirtualKey] = Owner.Editor;
         Dispatch(key);
+    }
+
+    private bool TryCancelScreenSampling(int key, OverlayModifiers modifiers, bool repeat)
+    {
+        if (key != 0x1B || modifiers != OverlayModifiers.None) return false;
+        if (repeat) return presses.TryGetValue(key, out var owner) && owner == Owner.Suppressed;
+        if (CancelScreenSampling?.Invoke() != true) return false;
+        // The picker may own keyboard focus again before this physical key is released.
+        presses[key] = Owner.Suppressed;
+        return true;
     }
 
     internal void Release(int key)

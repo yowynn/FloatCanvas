@@ -75,12 +75,11 @@ internal static class AppTheme
         if(OverlayWindowScope.Current is not null)
         {
             overlayStyles??=(ResourceDictionary)XamlReader.Parse(StyleMarkup
-                .Replace("<ResourceDictionary ","<ResourceDictionary xmlns:overlay=\"clr-namespace:FloatCanvas.App;assembly=FloatCanvas\" ")
                 .Replace("<Style x:Key=\"CanvasControlBase\" TargetType=\"Control\">",
                     "<Style x:Key=\"CanvasControlBase\" TargetType=\"Control\"><Setter Property=\"InputMethod.IsInputMethodEnabled\" Value=\"False\"/>")
                 .Replace("<Style TargetType=\"TextBox\" BasedOn=\"{StaticResource CanvasControlBase}\">",
                     "<Style TargetType=\"TextBox\" BasedOn=\"{StaticResource CanvasControlBase}\"><Setter Property=\"InputMethod.IsInputMethodEnabled\" Value=\"True\"/>")
-                .Replace("<Popup ","<overlay:OverlayPopup ").Replace("</Popup>","</overlay:OverlayPopup>"));
+                .Replace("<Popup ","<ui:OverlayPopup ").Replace("</Popup>","</ui:OverlayPopup>"));
             selected=overlayStyles;
         }
         else selected=styles??=(ResourceDictionary)XamlReader.Parse(StyleMarkup);
@@ -200,6 +199,7 @@ internal static class AppTheme
 
     private const string StyleMarkup = """
         <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:sys="clr-namespace:System;assembly=System.Runtime"
+                            xmlns:ui="clr-namespace:FloatCanvas.App;assembly=FloatCanvas"
                             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
           <CornerRadius x:Key="CanvasButtonCornerRadius">6</CornerRadius>
           <Style x:Key="CanvasNumericFrame" TargetType="Border">
@@ -245,11 +245,11 @@ internal static class AppTheme
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="Template"><Setter.Value>
               <ControlTemplate TargetType="Button">
-                <Border x:Name="Chrome" CornerRadius="{DynamicResource CanvasButtonCornerRadius}" Background="{TemplateBinding Background}"
+                <ui:RoundedSurfaceBorder x:Name="Chrome" CornerRadius="{DynamicResource CanvasButtonCornerRadius}" Background="{TemplateBinding Background}"
                         BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
                   <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
                                     RecognizesAccessKey="True" ContentSource="Content"/>
-                </Border>
+                </ui:RoundedSurfaceBorder>
                 <ControlTemplate.Triggers>
                   <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasButtonHover}"/></Trigger>
                   <Trigger Property="IsPressed" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasPressed}"/></Trigger>
@@ -261,11 +261,11 @@ internal static class AppTheme
           </Style>
           <ControlTemplate x:Key="CanvasSelectionTileButtonTemplate" TargetType="Button">
             <Grid x:Name="TileChrome">
-              <Border x:Name="Chrome" CornerRadius="{DynamicResource CanvasButtonCornerRadius}" Background="{TemplateBinding Background}"
+              <ui:RoundedSurfaceBorder x:Name="Chrome" CornerRadius="{DynamicResource CanvasButtonCornerRadius}" Background="{TemplateBinding Background}"
                       BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
                 <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
                                   RecognizesAccessKey="True" ContentSource="Content"/>
-              </Border>
+              </ui:RoundedSurfaceBorder>
               <Path x:Name="ModifiedCorner" Width="10" Height="10" HorizontalAlignment="Right" VerticalAlignment="Top" Data="M0,0 H4 A6,6 0 0 1 10,6 V10 Z"
                        Fill="{DynamicResource CanvasAccent}" Visibility="Collapsed" IsHitTestVisible="False" UseLayoutRounding="True"/>
             </Grid>
@@ -302,10 +302,10 @@ internal static class AppTheme
             <Setter Property="Foreground" Value="{DynamicResource CanvasOnAccent}"/>
             <Setter Property="Template"><Setter.Value>
               <ControlTemplate TargetType="Button">
-                <Border x:Name="Chrome" CornerRadius="{DynamicResource CanvasButtonCornerRadius}" Background="{TemplateBinding Background}"
+                <ui:RoundedSurfaceBorder x:Name="Chrome" CornerRadius="{DynamicResource CanvasButtonCornerRadius}" Background="{TemplateBinding Background}"
                         BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
                   <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                </Border>
+                </ui:RoundedSurfaceBorder>
                 <ControlTemplate.Triggers>
                   <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasDangerHover}"/></Trigger>
                   <Trigger Property="IsPressed" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasDangerPressed}"/></Trigger>
@@ -319,7 +319,7 @@ internal static class AppTheme
             <Setter Property="Background" Value="{DynamicResource CanvasButton}"/>
             <Setter Property="Template"><Setter.Value>
               <ControlTemplate TargetType="Button">
-                <Border x:Name="Chrome" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="7"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+                <ui:RoundedSurfaceBorder x:Name="Chrome" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="7"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></ui:RoundedSurfaceBorder>
                 <ControlTemplate.Triggers>
                   <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasButtonHover}"/></Trigger>
                   <Trigger Property="IsPressed" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasPressed}"/></Trigger>
@@ -340,9 +340,9 @@ internal static class AppTheme
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Template"><Setter.Value>
               <ControlTemplate TargetType="Button">
-                <Border x:Name="Chrome" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="3" Padding="{TemplateBinding Padding}">
+                <ui:RoundedSurfaceBorder x:Name="Chrome" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="3" Padding="{TemplateBinding Padding}">
                   <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center"/>
-                </Border>
+                </ui:RoundedSurfaceBorder>
                 <ControlTemplate.Triggers>
                   <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasButtonHover}"/></Trigger>
                   <Trigger Property="IsPressed" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasPressed}"/></Trigger>
@@ -369,7 +369,7 @@ internal static class AppTheme
               <ControlTemplate TargetType="CheckBox">
                 <Grid Background="Transparent">
                   <Grid Height="20" VerticalAlignment="Center">
-                    <Border x:Name="Track" CornerRadius="10" Background="{DynamicResource CanvasBorder}" BorderBrush="{DynamicResource CanvasMuted}" BorderThickness="1"/>
+                    <ui:RoundedSurfaceBorder x:Name="Track" CornerRadius="10" Background="{DynamicResource CanvasBorder}" BorderBrush="{DynamicResource CanvasMuted}" BorderThickness="1"/>
                     <Ellipse x:Name="Knob" Width="14" Height="14" Margin="3,0" VerticalAlignment="Center" HorizontalAlignment="Left" Fill="{DynamicResource CanvasSurface}"/>
                     <Path x:Name="MixedMark" Visibility="Collapsed" Data="M15 10 H21" Stroke="{DynamicResource CanvasText}" StrokeThickness="1.4" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
                   </Grid>
@@ -396,12 +396,12 @@ internal static class AppTheme
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="Template"><Setter.Value>
               <ControlTemplate TargetType="ToggleButton">
-                <Border x:Name="Frame" CornerRadius="5" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1">
+                <ui:RoundedSurfaceBorder x:Name="Frame" CornerRadius="5" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1">
                   <Grid Width="16" Height="16">
                     <Path x:Name="Chain" Data="M6 5 H4 A3 3 0 0 0 4 11 H6 M10 5 H12 A3 3 0 0 1 12 11 H10 M5 8 H7 M9 8 H11" Stroke="{DynamicResource CanvasMuted}" StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
                     <Path x:Name="Mixed" Visibility="Collapsed" Data="M4 8 H12" Stroke="{DynamicResource CanvasAccent}" StrokeThickness="2"/>
                   </Grid>
-                </Border>
+                </ui:RoundedSurfaceBorder>
                 <ControlTemplate.Triggers>
                   <Trigger Property="IsChecked" Value="True"><Setter TargetName="Chain" Property="Data" Value="M6 5 H4 A3 3 0 0 0 4 11 H6 M10 5 H12 A3 3 0 0 1 12 11 H10 M5 8 H11"/><Setter TargetName="Chain" Property="Stroke" Value="{DynamicResource CanvasOnAccent}"/><Setter TargetName="Frame" Property="Background" Value="{DynamicResource CanvasAccent}"/><Setter TargetName="Frame" Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/></Trigger>
                   <Trigger Property="IsChecked" Value="{x:Null}"><Setter TargetName="Chain" Property="Visibility" Value="Collapsed"/><Setter TargetName="Mixed" Property="Visibility" Value="Visible"/></Trigger>
@@ -422,11 +422,11 @@ internal static class AppTheme
               <ControlTemplate TargetType="CheckBox">
                 <Grid Background="Transparent">
                   <Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                  <Border x:Name="CheckBorder" Width="18" Height="18" VerticalAlignment="Center" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="4">
+                  <ui:RoundedSurfaceBorder x:Name="CheckBorder" Width="18" Height="18" VerticalAlignment="Center" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="4">
                     <Grid><Path x:Name="Check" Visibility="Collapsed" Data="M 2,7 L 6,11 L 13,3" Stroke="{DynamicResource CanvasAccent}" StrokeThickness="1.8"/>
                       <Border x:Name="Mixed" Visibility="Collapsed" Margin="3,7" Background="{DynamicResource CanvasAccent}" CornerRadius="1"/>
                     </Grid>
-                  </Border>
+                  </ui:RoundedSurfaceBorder>
                   <ContentPresenter Grid.Column="1" Margin="{TemplateBinding Padding}" RecognizesAccessKey="True" VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
                 </Grid>
                 <ControlTemplate.Triggers>
@@ -511,7 +511,7 @@ internal static class AppTheme
                   <Border x:Name="Rail" Height="4" Background="{DynamicResource CanvasBorder}" CornerRadius="2" VerticalAlignment="Center"/>
                   <Track x:Name="PART_Track" Orientation="{TemplateBinding Orientation}" IsDirectionReversed="{TemplateBinding IsDirectionReversed}">
                     <Track.DecreaseRepeatButton><RepeatButton Style="{StaticResource CanvasSliderPageButton}" Command="{x:Static Slider.DecreaseLarge}"/></Track.DecreaseRepeatButton>
-                    <Track.Thumb><Thumb Width="14" Height="14"><Thumb.Template><ControlTemplate TargetType="Thumb"><Border x:Name="Handle" CornerRadius="7" Background="{DynamicResource CanvasAccent}" BorderBrush="{DynamicResource CanvasInput}" BorderThickness="2"/><ControlTemplate.Triggers><Trigger Property="IsDragging" Value="True"><Setter TargetName="Handle" Property="BorderBrush" Value="{DynamicResource CanvasText}"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Thumb.Template></Thumb></Track.Thumb>
+                    <Track.Thumb><Thumb Width="14" Height="14"><Thumb.Template><ControlTemplate TargetType="Thumb"><ui:RoundedSurfaceBorder x:Name="Handle" CornerRadius="7" Background="{DynamicResource CanvasAccent}" BorderBrush="{DynamicResource CanvasInput}" BorderThickness="2"/><ControlTemplate.Triggers><Trigger Property="IsDragging" Value="True"><Setter TargetName="Handle" Property="BorderBrush" Value="{DynamicResource CanvasText}"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Thumb.Template></Thumb></Track.Thumb>
                     <Track.IncreaseRepeatButton><RepeatButton Style="{StaticResource CanvasSliderPageButton}" Command="{x:Static Slider.IncreaseLarge}"/></Track.IncreaseRepeatButton>
                   </Track>
                 <Border x:Name="KeyboardFocusRing" BorderBrush="{DynamicResource CanvasAccent}" BorderThickness="1" CornerRadius="4" IsHitTestVisible="False" Visibility="Collapsed"/>
@@ -591,10 +591,10 @@ internal static class AppTheme
             <Setter Property="VerticalContentAlignment" Value="Center"/>
             <Setter Property="Template"><Setter.Value>
               <ControlTemplate TargetType="TextBox">
-                <Border x:Name="Chrome" CornerRadius="6" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                <ui:RoundedSurfaceBorder x:Name="Chrome" CornerRadius="6" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
                         BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}">
                   <ScrollViewer x:Name="PART_ContentHost" Focusable="False" HorizontalScrollBarVisibility="{TemplateBinding ScrollViewer.HorizontalScrollBarVisibility}" VerticalScrollBarVisibility="{TemplateBinding ScrollViewer.VerticalScrollBarVisibility}"/>
-                </Border>
+                </ui:RoundedSurfaceBorder>
                 <ControlTemplate.Triggers>
                   <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/></Trigger>
                   <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Chrome" Property="Opacity" Value="0.45"/></Trigger>
@@ -612,11 +612,11 @@ internal static class AppTheme
             <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
             <Setter Property="Template"><Setter.Value>
               <ControlTemplate TargetType="ListBox">
-                <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                <ui:RoundedSurfaceBorder Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" Padding="{TemplateBinding Padding}">
                   <ScrollViewer x:Name="PART_ScrollViewer" Focusable="False" CanContentScroll="True" HorizontalScrollBarVisibility="{TemplateBinding ScrollViewer.HorizontalScrollBarVisibility}" VerticalScrollBarVisibility="{TemplateBinding ScrollViewer.VerticalScrollBarVisibility}">
                     <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained"/>
                   </ScrollViewer>
-                </Border>
+                </ui:RoundedSurfaceBorder>
               </ControlTemplate>
             </Setter.Value></Setter>
           </Style>
@@ -629,9 +629,9 @@ internal static class AppTheme
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="Template"><Setter.Value>
               <ControlTemplate TargetType="ListBoxItem">
-                <Border x:Name="Chrome" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                <ui:RoundedSurfaceBorder x:Name="Chrome" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4" Padding="{TemplateBinding Padding}">
                   <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center"/>
-                </Border>
+                </ui:RoundedSurfaceBorder>
                 <ControlTemplate.Triggers>
                   <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasHover}"/></Trigger>
                   <Trigger Property="IsSelected" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasHover}"/><Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/></Trigger>
@@ -648,9 +648,9 @@ internal static class AppTheme
             <Setter Property="MinWidth" Value="180"/>
             <Setter Property="Template"><Setter.Value>
               <ControlTemplate TargetType="ContextMenu">
-                <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}" CornerRadius="8" Grid.IsSharedSizeScope="True">
+                <ui:RoundedSurfaceBorder Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}" CornerRadius="8" Grid.IsSharedSizeScope="True">
                   <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle"/>
-                </Border>
+                </ui:RoundedSurfaceBorder>
               </ControlTemplate>
             </Setter.Value></Setter>
           </Style>
@@ -663,7 +663,7 @@ internal static class AppTheme
             <Setter Property="Template"><Setter.Value>
               <ControlTemplate TargetType="MenuItem">
                 <Grid>
-                <Border x:Name="Chrome" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}" CornerRadius="4">
+                <ui:RoundedSurfaceBorder x:Name="Chrome" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}" CornerRadius="4">
                   <Grid>
                     <Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto" SharedSizeGroup="Gesture"/><ColumnDefinition Width="12"/></Grid.ColumnDefinitions>
                     <ContentPresenter x:Name="Icon" Content="{TemplateBinding Icon}" VerticalAlignment="Center"/>
@@ -672,12 +672,12 @@ internal static class AppTheme
                     <TextBlock Grid.Column="2" HorizontalAlignment="Right" Text="{TemplateBinding InputGestureText}" Foreground="{DynamicResource CanvasMuted}" FontSize="12" VerticalAlignment="Center"/>
                     <Path x:Name="SubmenuArrow" Grid.Column="3" Data="M 0,0 L 4,4 L 0,8" Stroke="{DynamicResource CanvasMuted}" StrokeThickness="1.3" HorizontalAlignment="Right" VerticalAlignment="Center" Visibility="Collapsed"/>
                   </Grid>
-                </Border>
+                </ui:RoundedSurfaceBorder>
                 <Popup x:Name="PART_Popup" Placement="Right" PlacementTarget="{Binding ElementName=Chrome}" HorizontalOffset="-2" VerticalOffset="-4"
                        IsOpen="{Binding IsSubmenuOpen, RelativeSource={RelativeSource TemplatedParent}}" AllowsTransparency="True" Focusable="False" PopupAnimation="None">
-                  <Border Background="{DynamicResource CanvasInput}" BorderBrush="{DynamicResource CanvasBorder}" BorderThickness="1" CornerRadius="8" Padding="4" MinWidth="180" Grid.IsSharedSizeScope="True">
+                  <ui:RoundedSurfaceBorder Background="{DynamicResource CanvasInput}" BorderBrush="{DynamicResource CanvasBorder}" BorderThickness="1" CornerRadius="8" Padding="4" MinWidth="180" Grid.IsSharedSizeScope="True">
                     <ScrollViewer CanContentScroll="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle"/></ScrollViewer>
-                  </Border>
+                  </ui:RoundedSurfaceBorder>
                 </Popup>
                 </Grid>
                 <ControlTemplate.Triggers>
@@ -725,7 +725,7 @@ internal static class AppTheme
             <Setter Property="Template"><Setter.Value>
               <ControlTemplate TargetType="ComboBox">
                 <Grid>
-                  <Border x:Name="Chrome" CornerRadius="6" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"/>
+                  <ui:RoundedSurfaceBorder x:Name="Chrome" CornerRadius="6" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"/>
                   <ToggleButton x:Name="DropDownToggle" Focusable="False" ClickMode="Press" Background="Transparent"
                                 IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
                     <ToggleButton.Template><ControlTemplate TargetType="ToggleButton">
@@ -738,12 +738,12 @@ internal static class AppTheme
                            IsReadOnly="{TemplateBinding IsReadOnly}" VerticalContentAlignment="Center"/>
                   <Popup x:Name="PART_Popup" Placement="Bottom" AllowsTransparency="True" Focusable="False"
                          IsOpen="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}" PopupAnimation="None">
-                    <Border Background="{DynamicResource CanvasInput}" BorderBrush="{DynamicResource CanvasBorder}" BorderThickness="1" CornerRadius="6" Padding="4"
+                    <ui:RoundedSurfaceBorder Background="{DynamicResource CanvasInput}" BorderBrush="{DynamicResource CanvasBorder}" BorderThickness="1" CornerRadius="6" Padding="4"
                             MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}" MaxHeight="{TemplateBinding MaxDropDownHeight}">
                       <ScrollViewer CanContentScroll="True" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
                         <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained"/>
                       </ScrollViewer>
-                    </Border>
+                    </ui:RoundedSurfaceBorder>
                   </Popup>
                 </Grid>
                 <ControlTemplate.Triggers>
@@ -763,7 +763,7 @@ internal static class AppTheme
             <Setter Property="Padding" Value="10,7"/>
             <Setter Property="FontSize" Value="12"/>
             <Setter Property="Template"><Setter.Value>
-              <ControlTemplate TargetType="ToolTip"><Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="{TemplateBinding Padding}"><ContentPresenter/></Border></ControlTemplate>
+              <ControlTemplate TargetType="ToolTip"><ui:RoundedSurfaceBorder Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="{TemplateBinding Padding}"><ContentPresenter/></ui:RoundedSurfaceBorder></ControlTemplate>
             </Setter.Value></Setter>
           </Style>
         </ResourceDictionary>

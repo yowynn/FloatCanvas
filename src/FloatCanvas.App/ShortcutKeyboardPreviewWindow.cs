@@ -75,7 +75,7 @@ internal sealed class ShortcutKeyboardPreviewWindow : Window
             keyboard.Children.Add(button);
             keyViews.Add((key, button, command));
         }
-        var frame = new Border
+        var frame = new RoundedSurfaceBorder
         {
             Child = new Viewbox { Child = keyboard, Stretch = Stretch.Uniform, StretchDirection = StretchDirection.DownOnly },
             BorderThickness = new(1), CornerRadius = new(8), Padding = new(8)

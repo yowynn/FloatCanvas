@@ -197,6 +197,7 @@ internal sealed partial class EditorController
     private Dictionary<Guid, Affine2D> transforms = [];
     private SingleLayerResize? singleResize;
     private CanvasElement? billboardEndpointSource;
+    private LineArcFit? creationArcFit;
     private PointD arcHandleGrabOffset;
     private (double Offset, double Bulge) arcHandleStart;
     private SceneRenderer? resizeTextRenderer;
@@ -304,6 +305,7 @@ internal sealed partial class EditorController
         resizeTextSources.Clear();
         nodeTransform = null; nodeOriginalElements.Clear(); nodeOriginalAuthoredElements.Clear(); drawingParents.Clear();
         singleResize = null;
+        creationArcFit = null;
         gesture = null; drawing = effectTarget = billboardEndpointSource = null; Marquee = imageRegion = null; EffectPreviewPolygon = null;
         cornerRadiusDrag = null;
         lastGestureMove = null;
@@ -485,6 +487,7 @@ internal sealed partial class EditorController
             { drawing.Presentation = (Presentation ?? new()).Clone(); drawing.Presentation.Modules = PresentationModules.Keys; }
             if(ElementGeometry.IsBoxShape(drawing.Kind) || drawing.Kind == ElementKind.Presentation)drawing.ConstrainAspect=drawing.Kind is ElementKind.Symbol or ElementKind.Presentation || ConstrainAspect;
             if (Tool == EditorTool.Highlighter) drawing.Style.StrokeWidth = Math.Max(16, Style.StrokeWidth);
+            if (ElementGeometry.IsLine(drawing.Kind) && drawing.Style.LineArcBulge.HasValue) creationArcFit = new();
             if (drawing.Kind == ElementKind.Freehand && SmoothFreehand) freehandCorrection = new(drawing.Style.StrokeWidth);
             if(drawing.Kind is ElementKind.Freehand or ElementKind.Highlighter&&(e.Modifiers&OverlayModifiers.Shift)!=0)straightStrokeStart=0;
             if (UsesDefaultSize(Tool)) ApplyDefaultSize(drawing, start, e.Modifiers);
@@ -559,6 +562,7 @@ internal sealed partial class EditorController
             resizeTextRenderer?.Dispose(); resizeTextRenderer = null;
             resizeTextSources.Clear();
             straightStrokeStart=null;gestureModifiers=OverlayModifiers.None;modifierTime=null; freehandCorrection = null;
+            creationArcFit = null;
             cornerRadiusDrag = null;
             drawing = effectTarget = null; Marquee = imageRegion = null; EffectPreviewPolygon = null; Changed?.Invoke();
             strokeInterrupted = false; strokeLocalBounds = null; strokeFragmentIds.Clear();
@@ -831,7 +835,11 @@ internal sealed partial class EditorController
                 UpdateStroke(drawing.Points, local, modifiers, finishStroke);
             }
             else if (drawing.Kind is ElementKind.Line or ElementKind.Arrow or ElementKind.DoubleArrow)
+            {
                 drawing.Points = [new(0, 0), (modifiers&OverlayModifiers.Shift)!=0?EightDirectionEnd(start,p)-start:local];
+                if (creationArcFit?.Estimate(local, pointerScreen - startScreen) is { } fit)
+                    (drawing.Style.LineArcOffset, drawing.Style.LineArcBulge) = fit;
+            }
             else
             {
                 if (drawing.Kind == ElementKind.Presentation)

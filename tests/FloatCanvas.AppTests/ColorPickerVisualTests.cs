@@ -35,6 +35,7 @@ internal static class ColorPickerVisualTests
                 picker.DragHandle.Visibility = Visibility.Collapsed;
                 using var surface = new ColorPickerTestSurface(picker);
                 picker.UpdateLayout();
+                CheckSwatchCorners(picker, theme, check);
                 var spectrum = Field<ColorSpectrum>(picker, "spectrum");
                 var hue = Field<Slider>(picker, "hue");
                 var hex = Field<TextBox>(picker, "hex");
@@ -78,6 +79,43 @@ internal static class ColorPickerVisualTests
             }
         }
         finally { L.Initialize(language); }
+    }
+
+    private static void CheckSwatchCorners(ColorPickerPanel picker, string theme, Action<string, bool> check)
+    {
+        var frame = Field<Border>(picker, "preview");
+        uint original = picker.Value;
+        foreach (uint color in new uint[] { 0x00000000, 0xFFFF00FF })
+        {
+            picker.Value = color; picker.UpdateLayout();
+            var fill = (FrameworkElement)frame.Child;
+            var painted = Render();
+            fill.Opacity = 0;
+            var rim = Render();
+            fill.Opacity = 1;
+            int w = painted.PixelWidth, h = painted.PixelHeight;
+            bool SamePixel(int x, int y)
+            {
+                var rect = new Int32Rect(x, y, 1, 1);
+                byte[] a = new byte[4], b = new byte[4];
+                painted.CopyPixels(rect, a, 4, 0); rim.CopyPixels(rect, b, 4, 0);
+                return a.SequenceEqual(b);
+            }
+            check(theme + $" preview {color:X8} keeps all four rounded corners clear of the swatch",
+                SamePixel(6, 6) && SamePixel(w - 7, 6) && SamePixel(6, h - 7) && SamePixel(w - 7, h - 7) && !SamePixel(w / 2, h / 2));
+        }
+        picker.Value = original;
+
+        RenderTargetBitmap Render()
+        {
+            var bounds = new Rect(frame.RenderSize);
+            var visual = new DrawingVisual();
+            using (var drawing = visual.RenderOpen())
+                drawing.DrawRectangle(new VisualBrush(frame) { ViewboxUnits = BrushMappingMode.Absolute, Viewbox = bounds }, null, bounds);
+            var bitmap = new RenderTargetBitmap((int)Math.Round(bounds.Width * 4), (int)Math.Round(bounds.Height * 4), 384, 384, PixelFormats.Pbgra32);
+            bitmap.Render(visual);
+            return bitmap;
+        }
     }
 
     private static void HuePointer(ColorPickerPanel picker, Slider hue, Border lane, string theme, Action<string, bool> check)

@@ -61,7 +61,7 @@ internal sealed class PresentationGlobalSettingsPanel : StackPanel
             Conditional("TrailEnabled", () =>
             {
                 Color("TrailColor", "Presentation.Global.TrailColor");
-                Number("TrailWidthPixels", "Presentation.TrailWidth", 1, 64, 1, 20, "px");
+                Number("TrailWidthPixels", "Inspector.StrokeWidth", 1, 64, 1, 20, "px");
                 Number("TrailMilliseconds", "Presentation.TrailDuration", 100, 5000, 100, 2000, "ms");
             });
         }
@@ -155,7 +155,7 @@ internal sealed class PresentationGlobalSettingsPanel : StackPanel
             Choice(prefix + ".Shape", "Presentation.Global.ClickShape", Enum.GetValues<PresentationClickShape>()
                 .Select(value => (L.Get("Presentation.Shape." + value), (object)value)));
             Number(prefix + ".RadiusPixels", "Presentation.Global.ClickRadius", 2, 128, 2, 80, "px");
-            Number(prefix + ".StrokeWidthPixels", "Presentation.Global.ClickWidth", .5, 32, .5, 12, "px", .5);
+            Number(prefix + ".StrokeWidthPixels", "Inspector.StrokeWidth", .5, 32, .5, 12, "px", .5);
             Number(prefix + ".DurationMilliseconds", "Presentation.RippleDuration", 100, 2000, 100, 1000, "ms");
         });
     }

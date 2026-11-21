@@ -45,8 +45,14 @@ internal sealed partial class TextRenderer : IDisposable
         finally { canvas.RestoreToCount(saved); }
     }
 
-    private Layout GetLayout(string text, ElementStyle style, double width) =>
-        GetLayout(new(text, style.FontFamily, Math.Clamp(style.FontSize, 1, ElementStyle.MaximumFontSize), Math.Max(0, width), style.TextAlignment, style.Variant));
+    private Layout GetLayout(string text, ElementStyle style, double width) => GetLayout(text, style, width, style.FontSize);
+
+    private Layout GetLayout(string text, ElementStyle style, double width, double fontSize)
+    {
+        double size = Math.Clamp(fontSize, 1, ElementStyle.MaximumFontSize);
+        double outlineWidth = style.Variant == ElementAppearance.TextOutline ? style.TextOutlineWidthAt(size) : 0;
+        return GetLayout(new(text, style.FontFamily, size, Math.Max(0, width), style.TextAlignment, style.Variant, OutlineWidth: outlineWidth));
+    }
 
     private Layout GetLayout(LayoutKey key)
     {
@@ -63,7 +69,7 @@ internal sealed partial class TextRenderer : IDisposable
         }
         var inkBounds = SKRect.Empty;
         var runs = new List<TextRun>(); var editing = new List<TextEditingLine>();
-        var insets = Insets.For(key.Variant, key.Size);
+        var insets = Insets.For(key.Variant, key.Size, key.OutlineWidth);
         double contentWidth = insets.InnerWidth(key.Width);
         float y = (float)insets.Top, maxWidth = 0; int glyphCount = 0, missing = 0, offset = 0;
         try
@@ -278,7 +284,7 @@ internal sealed partial class TextRenderer : IDisposable
         _layouts.Clear(); _fonts.Clear();
     }
     private readonly record struct FontKey(string Family, double Size);
-    private readonly record struct LayoutKey(string Text, string Family, double Size, double Width, TextAlignment Alignment, string? Variant = ElementAppearance.Default, bool MeasureInk = false);
+    private readonly record struct LayoutKey(string Text, string Family, double Size, double Width, TextAlignment Alignment, string? Variant = ElementAppearance.Default, bool MeasureInk = false, double OutlineWidth = 0);
     private sealed record TextRun(SKTextBlob Blob, float X, float Y);
     private sealed record ShapedLine(byte Level, List<ShapedRun> Runs, float Width);
     private sealed record ShapedRun(FontEntry Font, SKShaper.Result? Shape, float X, bool Rtl, List<TextVisualSpan> Spans);

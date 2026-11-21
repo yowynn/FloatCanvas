@@ -146,7 +146,11 @@ internal sealed partial class ToolOptionsPanel : UserControl
         background.ValueChanged += value => Change(p => p.Style.SecondaryColor = value);
         foreground.EyedropperRequested += () => EyedropperRequested?.Invoke(foreground);
         background.EyedropperRequested += () => EyedropperRequested?.Invoke(background);
-        Number(parameterGrid, "StrokeWidth", L.Get("Inspector.StrokeWidth"), (p, v) => p.Style.StrokeWidth = v);
+        Number(parameterGrid, "StrokeWidth", L.Get("Inspector.StrokeWidth"), (p, v) =>
+        {
+            if (p.Tool == EditorTool.Text) p.Style.TextOutlineWidth = v;
+            else p.Style.StrokeWidth = v;
+        });
         Picker(parameterGrid, "HighlighterTip", L.Get("Color.Style"),
             [(L.Get("Highlighter.TipRound"), HighlighterTip.Round), (L.Get("Highlighter.TipFlat"), HighlighterTip.Flat)],
             (p, v) => p.Style.HighlighterTip = (HighlighterTip)v);
@@ -198,7 +202,8 @@ internal sealed partial class ToolOptionsPanel : UserControl
         Picker(parameterGrid, "CaptureSource", L.Get("Snapshot.Source"),
             Enum.GetValues<CaptureSource>().Select(value => (L.Get("Snapshot.Source." + value), (object)value)).ToArray(),
             (p, value) => p.CaptureSource = (CaptureSource)value);
-        Number(parameterGrid, "CaptureBorderWidth", L.Get("Snapshot.BorderWidth"), (p, value) => p.CaptureBorderWidth = value);
+        Number(parameterGrid, "CaptureBorderWidth", L.Get("Inspector.StrokeWidth"), (p, value) => p.CaptureBorderWidth = value);
+        captions["CaptureBorderWidth"].ToolTip = L.Get("Snapshot.BorderWidthHint");
         var size = PropertyPanelLayout.Row(new PropertyLabel(L.Get("Property.Size")), PropertyPanelLayout.Pair(rows["DefaultWidth"], rows["DefaultHeight"], aspect));
         rows.Add("Size", size); parameterGrid.Children.Add(size);
         var aspectRow = PropertyPanelLayout.BooleanRow(L.Get("Inspector.KeepAspect"), aspectSwitch);
@@ -327,9 +332,10 @@ internal sealed partial class ToolOptionsPanel : UserControl
             Show("Colors", paint);
             foreground.Visibility = paint ? Visibility.Visible : Visibility.Collapsed;
             background.Visibility = secondary ? Visibility.Visible : Visibility.Collapsed;
-            GroupStyleStrokeRows(shape);
+            GroupStyleStrokeRows(shape || tool == EditorTool.Text);
             foreground.SetPaletteContext(ToolPresetLibrary.Family(tool)); background.SetPaletteContext(ToolPresetLibrary.Family(tool));
-            Show("StrokeWidth", shape ? shapeStroke : stroke); Show("Opacity", false);
+            Show("StrokeWidth", shape ? shapeStroke : stroke || tool == EditorTool.Text && p.Style.Variant == ElementAppearance.TextOutline);
+            Show("Opacity", false);
             Show("HighlighterTip", tool == EditorTool.Highlighter);
             Show("HighlighterInkContrast", tool == EditorTool.Highlighter);
             Show("HighlighterAngleRegion", tool == EditorTool.Highlighter);
@@ -381,7 +387,13 @@ internal sealed partial class ToolOptionsPanel : UserControl
             if (IsApplicable("Background"))
                 SetColorLabel("Background", background, AppearanceRegistry.ColorLabel(p.AppearanceKind!.Value, p.Style, true));
             SetPicker("CaptureShape", p.CaptureShape); SetPicker("CaptureSource", p.CaptureSource); SetNumber("CaptureBorderWidth", p.CaptureBorderWidth);
-            SetNumber("StrokeWidth", tool == EditorTool.Highlighter ? Math.Max(16, p.Style.StrokeWidth) : p.Style.StrokeWidth); SetNumber("Opacity", p.Style.Opacity * 100); SetNumber("FontSize", p.Style.FontSize);
+            SetNumber("StrokeWidth", tool switch
+            {
+                EditorTool.Text => p.Style.TextOutlineWidthAt(p.Style.FontSize),
+                EditorTool.Highlighter => Math.Max(16, p.Style.StrokeWidth),
+                _ => p.Style.StrokeWidth
+            });
+            SetNumber("Opacity", p.Style.Opacity * 100); SetNumber("FontSize", p.Style.FontSize);
             SetNumber("EffectStrength", p.EffectStrength); SetNumber("CornerRadius", p.CornerRadius ?? 0); SetNumber("ArrowHeadSize", p.Style.ArrowHeadSize);
             SetNumber("DefaultWidth", p.DefaultWidth); SetNumber("DefaultHeight", p.DefaultHeight);
             if (tool == EditorTool.Symbol) SetNumber("SymbolSize", p.SymbolSize);
@@ -508,7 +520,7 @@ internal sealed partial class ToolOptionsPanel : UserControl
     }
     private void AddRow(Panel body, string key, string label, FrameworkElement control, Button? trailingAction = null)
     {
-        string shortKey = key switch { "NumberStart" => "Property.NumberStart", "NumberStep" => "Property.NumberStep", "NextNumber" => "Property.NextNumber", "CaptureBorderWidth" => "Property.BorderWidth", _ => "" };
+        string shortKey = key switch { "NumberStart" => "Property.NumberStart", "NumberStep" => "Property.NumberStep", "NextNumber" => "Property.NextNumber", _ => "" };
         var caption = new PropertyLabel(shortKey.Length == 0 ? label : L.Get(shortKey)) { ToolTip = label };
         captions.Add(key, caption);
         if (control is NumericValueField anchored)
@@ -600,6 +612,8 @@ internal sealed partial class ToolOptionsPanel : UserControl
                 }
                 set(p, value);
             }, field.IsInteracting, field.IsInteracting ? followNumberStart : null);
+            if (key == "FontSize" && controller.Tool == EditorTool.Text && controller.Style.TextOutlineWidth is null)
+                SetNumber("StrokeWidth", controller.Style.TextOutlineWidthAt(controller.Style.FontSize));
         };
         field.InvalidInput += () => { if (!refreshing) Error(L.Get("ToolOptions.InvalidNumber")); };
     }

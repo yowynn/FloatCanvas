@@ -35,13 +35,14 @@ internal sealed class CanvasPinSelector : StackPanel
         Orientation = Orientation.Horizontal;
         var grid = new Grid { Width = 3 * PropertyPanelLayout.ControlHeight, Height = 3 * PropertyPanelLayout.ControlHeight };
         var pointStyle = (Style)XamlReader.Parse("""
-            <Style xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" TargetType="ToggleButton">
+            <Style xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                   xmlns:ui="clr-namespace:FloatCanvas.App;assembly=FloatCanvas" TargetType="ToggleButton">
               <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
               <Setter Property="Template"><Setter.Value>
                 <ControlTemplate TargetType="ToggleButton">
-                  <Border x:Name="Chrome" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Background="Transparent" BorderBrush="Transparent" BorderThickness="1" CornerRadius="4">
+                  <ui:RoundedSurfaceBorder x:Name="Chrome" Background="Transparent" BorderBrush="Transparent" BorderThickness="1" CornerRadius="4">
                     <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                  </Border>
+                  </ui:RoundedSurfaceBorder>
                   <ControlTemplate.Triggers>
                     <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasHover}"/></Trigger>
                     <Trigger Property="IsChecked" Value="True"><Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasHover}"/></Trigger>

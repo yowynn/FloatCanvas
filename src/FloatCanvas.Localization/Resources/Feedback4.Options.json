@@ -11,7 +11,7 @@
   "ToolDescription.Select": {"zh":"选择并调整画布中的元素。","en":"Select and transform canvas elements."},
   "ToolDescription.Freehand": {"zh":"自由绘制连续笔迹；按住 Shift 拉直当前段，松开继续曲线。","en":"Draw freehand; hold Shift for a straight segment, then release to resume the curve."},
   "ToolDescription.Highlighter": {"zh":"用半透明笔迹突出内容；按住 Shift 拉直当前段，松开继续曲线。","en":"Highlight with translucent strokes; hold Shift for a straight segment, then release to resume the curve."},
-  "ToolDescription.Line": {"zh":"拖动确定两端，按住 Shift 约束方向。拖动弧线的菱形手柄可调整弯曲，按住 Shift 锁定中轴。","en":"Drag to place the endpoints. Hold Shift to constrain their direction. Drag the diamond to bend an arc, or hold Shift to keep it on the perpendicular bisector."},
+  "ToolDescription.Line": {"zh":"拖动确定两端，按住 Shift 约束方向。弧线跟随拖动轨迹，松手后可拖菱形手柄微调，按住 Shift 锁定中轴。","en":"Drag to place the endpoints. Hold Shift to constrain their direction. Arcs follow your drag. After release, drag the diamond to adjust the arc, or hold Shift to keep it on the perpendicular bisector."},
   "ToolDescription.Rectangle": {"zh":"绘制矩形，或单击插入默认尺寸。","en":"Draw a rectangle, or click to insert its default size."},
   "ToolDescription.Ellipse": {"zh":"绘制圆或椭圆，或单击插入默认尺寸。","en":"Draw a circle or ellipse, or click to insert its default size."},
   "ToolDescription.Symbol": {"zh":"大小按图案长边计算。单击插入，拖动保持原比例，按住 Shift 自由拉伸。","en":"Size sets the shape’s long edge. Click to insert, drag to scale, or hold Shift to stretch."},

@@ -9,7 +9,6 @@
   "Property.NumberStart": { "zh": "起始序号", "en": "Start number" },
   "Property.NumberStep": { "zh": "递增步长", "en": "Increment" },
   "Property.NextNumber": { "zh": "下一序号", "en": "Next number" },
-  "Property.BorderWidth": { "zh": "边框宽度", "en": "Border width" },
   "Property.Background": { "zh": "背景", "en": "Background" },
   "Property.Language": { "zh": "语言", "en": "Language" },
   "Property.Size": { "zh": "大小", "en": "Size" },

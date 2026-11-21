@@ -62,7 +62,7 @@ internal sealed class GridCountPicker : Button
         grid.MouseLeave += (_, _) => HighlightSelection();
         var hint = new TextBlock { Text = L.Get("Canvas.PickGridCountsHint"), Margin = new(0, 8, 0, 0), FontSize = 12, TextWrapping = TextWrapping.Wrap, MaxWidth = Side * 22 };
         hint.SetResourceReference(TextBlock.ForegroundProperty, "CanvasMuted"); panel.Children.Add(hint);
-        var frame = new Border { Child = panel, Padding = new(12), BorderThickness = new(1), CornerRadius = new(6) };
+        var frame = new RoundedSurfaceBorder { Child = panel, Padding = new(12), BorderThickness = new(1), CornerRadius = new(6) };
         frame.SetResourceReference(Border.BackgroundProperty, "CanvasSurface"); frame.SetResourceReference(Border.BorderBrushProperty, "CanvasBorder");
         popup = new(new Popup { PlacementTarget = this, Placement = PlacementMode.Custom, StaysOpen = false,
             AllowsTransparency = true, PopupAnimation = PopupAnimation.None, Child = frame,

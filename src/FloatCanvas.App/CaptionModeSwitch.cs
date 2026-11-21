@@ -12,7 +12,7 @@ namespace FloatCanvas.App;
 /// <summary>A controlled mode switch: clicks request a change; only the owner supplies state.</summary>
 internal class CaptionModeSwitch : Button
 {
-    private readonly Border thumb = new() { Width = 26, Height = 22, CornerRadius = new(5), BorderThickness = new(1), IsHitTestVisible = false };
+    private readonly RoundedSurfaceBorder thumb = new() { Width = 26, Height = 22, CornerRadius = new(5), BorderThickness = new(1), IsHitTestVisible = false };
     private readonly TranslateTransform offset = new();
     private bool initialized;
     private readonly Func<bool, string, FrameworkElement> icon;

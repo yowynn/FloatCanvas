@@ -101,6 +101,7 @@ internal static class CustomSymbolTests
             {
                 var frame=new DispatcherFrame();var timer=new DispatcherTimer{Interval=TimeSpan.FromMilliseconds(15)};
                 var limit=System.Diagnostics.Stopwatch.StartNew();bool answered=false, managed=false;
+                bool ownerBlockedDuringModal = false, ownerReadyAtDestroy = false;
                 Exception? failure=null;
                 timer.Tick+=(_,_)=>{
                     var preview=Application.Current.Windows.OfType<SymbolTraceWindow>().FirstOrDefault(w=>w.Owner==window && w.IsVisible);
@@ -110,8 +111,23 @@ internal static class CustomSymbolTests
                         try
                         {
                             if (limit.Elapsed.TotalSeconds>8) throw new TimeoutException("Symbol preview did not reach its requested state");
-                            if (beforeClose is not null && !beforeClose(preview)) return;
+                            if (beforeClose is not null)
+                            {
+                                timer.Stop();
+                                try { if (!beforeClose(preview)) return; }
+                                finally { timer.Start(); }
+                            }
                             answered=true;
+                            if (managed)
+                            {
+                                var ownerHandle = new WindowInteropHelper(window).Handle;
+                                ownerBlockedDuringModal = !IsWindowEnabled(ownerHandle);
+                                ((HwndSource)PresentationSource.FromVisual(preview)!).AddHook((nint hwnd, int msg, nint wp, nint lp, ref bool handled) =>
+                                {
+                                    if (msg == 0x0002) ownerReadyAtDestroy = IsWindowEnabled(ownerHandle);
+                                    return 0;
+                                });
+                            }
                             if (action=="confirm" && !Field<Button>(preview,"accept").IsEnabled) throw new InvalidOperationException("Confirm disabled");
                             if(action=="escape")
                                 preview.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice,PresentationSource.FromVisual(preview)!,Environment.TickCount,Key.Escape)
@@ -131,6 +147,8 @@ internal static class CustomSymbolTests
                 };
                 timer.Start();extract.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Dispatcher.PushFrame(frame);timer.Stop();
                 if(failure is not null)throw new InvalidOperationException("Symbol preview "+action+" (overlay="+managed+")",failure);
+                if (overlay) check("the owner stays modal during input and can take focus before the child HWND is destroyed on "+action,
+                    ownerBlockedDuringModal && ownerReadyAtDestroy);
                 check($"symbol preview {action} completes on {(overlay ? "the editing overlay" : "WPF ShowDialog")}",
                     answered && managed==overlay && !ComponentDispatcher.IsThreadModal && !Field<bool>(panel,"extractingSymbol") &&
                     extract.IsEnabled && IsWindowEnabled(new WindowInteropHelper(window).Handle));
@@ -149,7 +167,27 @@ internal static class CustomSymbolTests
                 editing.SetValue(host,true);
                 try
                 {
-                    Extract("confirm",true);
+                    Extract("confirm",true,preview =>
+                    {
+                        var child = new Window { Owner = preview, Width = 150, Height = 80, ShowInTaskbar = false };
+                        bool veto = true, blockedAfterVeto = false, restoredOneLevel = false;
+                        child.Closing += (_, e) => e.Cancel = veto;
+                        child.Loaded += (_, _) => child.Dispatcher.BeginInvoke(() =>
+                        {
+                            var parent = new WindowInteropHelper(preview).Handle;
+                            var rootOwner = new WindowInteropHelper(window).Handle;
+                            SessionWindowCoordinator.SetModalResult(child, true);
+                            blockedAfterVeto = child.IsVisible && !IsWindowEnabled(parent) && !IsWindowEnabled(rootOwner) &&
+                                SessionWindowCoordinator.HasModalChild(preview) && SessionWindowCoordinator.HasModalChild(window);
+                            veto = false;
+                            child.Closed += (_, _) => restoredOneLevel = IsWindowEnabled(parent) && !IsWindowEnabled(rootOwner);
+                            SessionWindowCoordinator.Close(child);
+                        });
+                        bool? result = SessionWindowCoordinator.ShowModal(child);
+                        check("a vetoed close keeps the nested modal intact and does not return an earlier confirm result", blockedAfterVeto && result is null);
+                        check("dismissing a nested child enables only its immediate modal level", restoredOneLevel && !IsWindowEnabled(new WindowInteropHelper(window).Handle));
+                        return true;
+                    });
                     var accepted=editor.CustomSymbol;
                     check("overlay confirmation publishes the extracted shape",accepted?.Fingerprint==shape.Fingerprint);
                     src.SetSelection([dot.Id]);panel.RefreshDocumentState();

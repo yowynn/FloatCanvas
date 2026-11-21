@@ -30,13 +30,16 @@ internal static class StyleVariantStorageTests
                 new() { Kind = ElementKind.Line, Points = [new(20, 90), new(100, 90)],
                     Style = new() { LineArcBulge = -.3, EndArrowHead = ArrowHeadStyle.Open, StrokePattern = StrokePattern.DashDot } },
                 new() { Kind = ElementKind.Line, Points = [new(20, 90), new(100, 90)],
-                    Style = new() { LineArcBulge = -.75, LineArcOffset = .25 } }
+                    Style = new() { LineArcBulge = -.75, LineArcOffset = .25 } },
+                new() { Kind = ElementKind.Text, Text = "字", Width = 75, Height = 48,
+                    Style = new() { Variant = ElementAppearance.TextOutline, TextOutlineWidth = 2.75 } }
             ]
         };
         string expected = JsonSerializer.Serialize(document); string path = Path.Combine(root, "variants.floatcanvas");
         await store.SaveAsync(path, document, assets);
         var loaded = await store.LoadAsync(path);
         check(JsonSerializer.Serialize(loaded.Document) == expected, "project roundtrip retains all stable style IDs, inactive colors and historical compatibility flags");
+        check(loaded.Document.Elements[^1].Style.TextOutlineWidth == 2.75, "a fractional text outline width survives project storage");
         check(loaded.Document.Elements[6].Style.LineArcBulge == -.3 && loaded.Document.Elements[6].Points.Count == 2,
             "project roundtrip retains the signed bend and both editable endpoints");
         check(ElementGeometry.LineArcHandle(loaded.Document.Elements[6]) == new PointD(60, 66) &&

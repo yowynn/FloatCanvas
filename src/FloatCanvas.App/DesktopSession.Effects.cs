@@ -153,6 +153,7 @@ internal sealed partial class DesktopSession
         _eyedropperWindows = visibleWindows.Where(window => window.IsVisible && !ReferenceEquals(window, _toolbar)).ToArray();
         _eyedropperOwner = System.Windows.Window.GetWindow(field);
         _windowCoordinator?.HideTemporarily(_eyedropperWindows);
+        _host.TryFocusEditingCanvas();
         _host.SetPointerCursor(cursorHandle);
         var cursor = System.Windows.Forms.Cursor.Position;
         _eyedropperPoint = new(cursor.X,cursor.Y);
@@ -190,7 +191,7 @@ internal sealed partial class DesktopSession
             if (pointer.Button == OverlayMouseButton.Left)
                 _ = RunCommand(() => SampleDesktopColorAsync(field, pointer.Position));
             else if (pointer.Button == OverlayMouseButton.Right)
-            { _eyedropperTimer?.Stop(); _eyedropperPicked = true; UpdateStatus(L.Get("Color.SampleCancelled")); }
+                CancelEyedropper(waitForPointerUp: true);
         }
         else if (pointer.Kind is OverlayPointerKind.Up or OverlayPointerKind.Cancel && _eyedropperPicked) EndEyedropper();
         RequestRender();
@@ -202,6 +203,16 @@ internal sealed partial class DesktopSession
         if (_eyedropper is null || _documentBusy) return;
         _eyedropperPreview = DesktopPixelSampler.Sample(_eyedropperPoint);
         RequestRender();
+    }
+
+    private bool CancelEyedropper(bool waitForPointerUp = false)
+    {
+        if (_eyedropper is null) return false;
+        _eyedropperTimer?.Stop();
+        UpdateStatus(L.Get("Color.SampleCancelled"));
+        if (waitForPointerUp || _host.CaptureHandle != 0) _eyedropperPicked = true;
+        else EndEyedropper();
+        return true;
     }
 
     private void EndEyedropper(bool restore = true)

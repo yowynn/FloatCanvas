@@ -180,7 +180,7 @@ internal static class SegmentedChoicePreviews
         var box = new Grid { Width = 18, Height = 18 };
         if (variant == ElementAppearance.TextLabel)
         {
-            var tag = new Border { CornerRadius = new(2), BorderThickness = new(1), Margin = new(0, 2, 0, 2) };
+            var tag = new RoundedSurfaceBorder { CornerRadius = new(2), BorderThickness = new(1), Margin = new(0, 2, 0, 2) };
             tag.SetResourceReference(Border.BackgroundProperty, "CanvasHover");
             tag.SetResourceReference(Border.BorderBrushProperty, "CanvasText");
             box.Children.Add(tag);

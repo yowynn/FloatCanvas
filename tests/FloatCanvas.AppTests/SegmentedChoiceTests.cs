@@ -30,6 +30,7 @@ internal static class SegmentedChoiceTests
                 L.Initialize(locale); AppTheme.Apply(theme);
                 string prefix = locale + " " + theme;
                 Behavior(check, prefix);
+                SharedLabelWidth(check, prefix);
                 foreach (double width in new[] { 464d, 252 }) Layout(check, prefix, output, width);
             }
         }
@@ -84,6 +85,40 @@ internal static class SegmentedChoiceTests
         }
     }
 
+    private static void SharedLabelWidth(Action<string, bool> check, string name)
+    {
+        var choice = new SegmentedChoice();
+        foreach (var pattern in Enum.GetValues<StrokePattern>())
+            SegmentedChoicePreviews.Add(choice, L.Get("Inspector.Pattern" + pattern), pattern);
+        var label = new PropertyLabel("X");
+        var peer = new PropertyLabel("Y");
+        var row = PropertyPanelLayout.Row(label, choice);
+        var body = new StackPanel();
+        PropertyPanelLayout.Scope(body);
+        body.Children.Add(row);
+        body.Children.Add(PropertyPanelLayout.Row(peer, new TextBox()));
+
+        double width = Math.Ceiling(choice.PreferredWidth) + 40;
+        void LayoutAt(double w)
+        {
+            body.Measure(new(w, double.PositiveInfinity)); body.Arrange(new(0, 0, w, body.DesiredSize.Height)); body.UpdateLayout();
+        }
+        bool Inline() => Grid.GetRow(choice) == 0 && choice.Items.All(item => ((StackPanel)item.Content).Orientation == Orientation.Horizontal);
+        LayoutAt(width);
+        check(name + " short labels leave the line patterns inline", Inline());
+        peer.Text = "A longer property name"; LayoutAt(width);
+        check(name + " widening a shared label stacks the options at the same panel width", Grid.GetRow(choice) == 1);
+        peer.Text = "Y"; LayoutAt(width);
+        check(name + " shortening a neighboring label brings the options back inline", Inline());
+        label.Text = "A longer property name"; LayoutAt(width);
+        check(name + " the row's own full caption fits above the options", Grid.GetRow(choice) == 1 && label.OverflowWidth < 1);
+        label.Text = "X"; LayoutAt(width - 65);
+        check(name + " a narrow row keeps every option caption visible", Grid.GetRow(choice) == 1 &&
+            choice.Items.All(item => ((TextBlock)((StackPanel)item.Content).Children[1]).Visibility == Visibility.Visible));
+        LayoutAt(width);
+        check(name + " widening the row restores the one-line layout", Inline());
+    }
+
     private static void Layout(Action<string, bool> check, string name, string output, double width)
     {
         var choices = new List<(string Label, SegmentedChoice Choice)>
@@ -97,7 +132,7 @@ internal static class SegmentedChoiceTests
         SegmentedChoicePreviews.UpdateColorStyle(choices[1].Choice, EditorTool.Ellipse);
         var numberStyles = new SegmentedChoice(); SegmentedChoicePreviews.AddVariants(numberStyles, ElementKind.Number);
         choices.Add((L.Get("Tool.Number"), numberStyles));
-        Add("Inspector.StrokePattern", Enum.GetValues<StrokePattern>().Select(value => (L.Get(value == StrokePattern.DashDot ? "Inspector.PatternDashDot" : "Canvas." + value), (object)value)));
+        Add("Inspector.StrokePattern", Enum.GetValues<StrokePattern>().Select(value => (L.Get("Inspector.Pattern" + value), (object)value)));
         Add("Inspector.EndArrow", Enum.GetValues<ArrowHeadStyle>().Select(value => (L.Get(value switch { ArrowHeadStyle.FilledTriangle => "Inspector.ArrowFilledTriangle", ArrowHeadStyle.Open => "Inspector.ArrowOpen", ArrowHeadStyle.Diamond => "Inspector.ArrowDiamond", _ => "Inspector.ArrowNone" }), (object)value)));
         Add("Snapshot.Shape", Enum.GetValues<CaptureShape>().Select(value => (L.Get("Snapshot.Shape." + value), (object)value)));
         Add("Snapshot.Source", Enum.GetValues<CaptureSource>().Select(value => (L.Get("Snapshot.Source." + value), (object)value)));

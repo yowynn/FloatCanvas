@@ -18,6 +18,8 @@ internal static class CreationSelectionTests
         RegionToolSelectedEndpoints(check);
         foreach (var tool in DragTools) DraggedObject(tool, check);
         EditableArc(check);
+        TracedArc(check);
+        NearlyStraightArcHandle(check);
         RectangleCornerRadius(check);
         ClosedStroke(check);
         PointerCancellation(check);
@@ -78,6 +80,122 @@ internal static class CreationSelectionTests
         Gesture(controller, new(450, 480), new(530, 560), OverlayModifiers.Shift);
         check("Shift constrains distant arc handle movement to the bisector without a distance cap",
             controller.SelectionScreenArcHandle == new PointD(150, 560));
+    }
+
+    private static void TracedArc(Action<string, bool> check)
+    {
+        var start = new PointD(550, 400);
+        foreach (var (name, end, radius, count) in new (string, PointD, PointD, int)[]
+        {
+            ("upper semicircle", new(320, 0), new(0, -160), 120),
+            ("lower shallow bow", new(320, 0), new(0, 22), 32),
+            ("shallow off-center bow", new(400, 0), new(85, 18), 120),
+            ("shallow but distinct return past the endpoint", new(400, 0), new(120, 4), 120),
+            ("right overhang", new(320, 0), new(250, 105), 90),
+            ("left-leaning rotated chord", new(180, 240), new(-160, -30), 67)
+        })
+        {
+            var session = new EditorSession();
+            var editor = new EditorController(session) { Tool = EditorTool.Line };
+            editor.Style.LineArcBulge = ElementGeometry.DefaultLineArcBulge;
+            PointD Trace(double t) => end * ((1 - Math.Cos(t)) / 2) + radius * Math.Sin(t);
+            Send(editor, OverlayPointerKind.Down, start);
+            for (int i = 1; i < count; i++)
+                Send(editor, OverlayPointerKind.Move, start + Trace(Math.PI * Math.Pow((double)i / count, 1.6)));
+            Send(editor, OverlayPointerKind.Move, start + end);
+            var line = session.Document.Elements.Single();
+            var live = ElementGeometry.LineShaftPoints(line).ToArray();
+            double maxError = Enumerable.Range(0, 101).Max(i =>
+            {
+                var target = Trace(Math.PI * i / 100);
+                return Enumerable.Range(1, live.Length - 1).Min(j => ElementGeometry.DistanceToSegment(target, live[j - 1], live[j]));
+            });
+            check(name + " follows the mouse before release, including unevenly spaced samples", maxError < 1);
+            Send(editor, OverlayPointerKind.Up, start + end);
+            check(name + " commits the live ellipse with two endpoints and an editable handle",
+                live.SequenceEqual(ElementGeometry.LineShaftPoints(line)) && line.Points.SequenceEqual(new PointD[] { default, end }) &&
+                editor.SelectionScreenArcHandle.HasValue && session.UndoCount == 1);
+            check(name + " leaves the tool preset intact and undoes as one line",
+                editor.Style.LineArcBulge == ElementGeometry.DefaultLineArcBulge && editor.Style.LineArcOffset == 0 &&
+                session.Undo() && session.Document.Elements.Count == 0 && session.Redo() &&
+                live.SequenceEqual(ElementGeometry.LineShaftPoints(session.Document.Elements.Single())));
+        }
+
+        var controller = new EditorController(new()) { Tool = EditorTool.Line };
+        controller.Style.LineArcBulge = ElementGeometry.DefaultLineArcBulge;
+        Send(controller, OverlayPointerKind.Down, start);
+        Send(controller, OverlayPointerKind.Move, start + new PointD(50, -50));
+        Send(controller, OverlayPointerKind.Move, start + new PointD(140, -65));
+        var endPoint = new PointD(221, 37);
+        Send(controller, OverlayPointerKind.Move, start + endPoint);
+        var arc = controller.Session.Document.Elements.Single();
+        var free = (arc.Style.LineArcOffset, arc.Style.LineArcBulge);
+        controller.ModifiersChanged(OverlayModifiers.Shift, pointerLeftDown: true);
+        check("Shift snaps the chord direction and retains the traced bend",
+            Math.Abs(arc.Points[^1].Y) < 1e-9 && (arc.Style.LineArcOffset, arc.Style.LineArcBulge) == free && free.LineArcBulge < 0);
+        controller.ModifiersChanged(OverlayModifiers.None, pointerLeftDown: true);
+        check("releasing Shift restores the free endpoint and fitted handle",
+            arc.Points[^1] == endPoint && (arc.Style.LineArcOffset, arc.Style.LineArcBulge) == free);
+        controller.Cancel();
+        check("cancelling a traced arc discards the draft", controller.Session.Document.Elements.Count == 0);
+        Send(controller, OverlayPointerKind.Down, start);
+        Send(controller, OverlayPointerKind.Move, start + new PointD(70, 0));
+        Send(controller, OverlayPointerKind.Up, start + new PointD(200, 0));
+        check("a collinear trace creates a flat, editable arc with no previous bend",
+            controller.Session.Document.Elements.Single().Style.LineArcBulge == 0 && controller.SelectionScreenArcHandle == start + new PointD(100, 0));
+
+        controller = new(new()) { Tool = EditorTool.Line };
+        Send(controller, OverlayPointerKind.Down, start);
+        Send(controller, OverlayPointerKind.Move, start + new PointD(80, -90));
+        Send(controller, OverlayPointerKind.Up, start + endPoint);
+        var straight = controller.Session.Document.Elements.Single();
+        check("straight mode keeps only the two endpoints even on a curved drag",
+            straight.Style.LineArcBulge is null && ElementGeometry.LineShaftPoints(straight).SequenceEqual(new PointD[] { default, endPoint }));
+    }
+
+    private static void NearlyStraightArcHandle(Action<string, bool> check)
+    {
+        var start = new PointD(500, 300);
+        foreach (var (width, at, wobble, degrees) in new[]
+        {
+            (400d, 50d, 2d, 0d), (400d, 350d, -2d, 180d), (64d, 12d, 1.5, 37d),
+        })
+        {
+            var editor = new EditorController(new()) { Tool = EditorTool.Line };
+            editor.Style.LineArcBulge = ElementGeometry.DefaultLineArcBulge;
+            var rotate = Affine2D.Rotation(degrees);
+            var end = rotate.TransformPoint(new(width, 0));
+            Send(editor, OverlayPointerKind.Down, start);
+            Send(editor, OverlayPointerKind.Move, start + rotate.TransformPoint(new(at, wobble)));
+            Send(editor, OverlayPointerKind.Move, start + end);
+            var draft = editor.Session.Document.Elements.Single();
+            var midpoint = start + end * .5;
+            var live = start + ElementGeometry.LineArcHandle(draft)!.Value;
+            var centered = rotate.Inverse().TransformPoint(live - midpoint);
+            check("a slight off-center wobble keeps the live handle over the midpoint and preserves the small bend",
+                Math.Abs(centered.X) < .01 && centered.Y * wobble > 0 && Math.Abs(centered.Y) < 3);
+            Send(editor, OverlayPointerKind.Up, start + end);
+            check("the committed nearly straight handle stays at its preview position",
+                editor.SelectionScreenArcHandle is { } handle && handle.DistanceTo(live) < .01);
+            var newHandle = start + rotate.TransformPoint(new(width * .8, 4));
+            Gesture(editor, live, newHandle);
+            check("the user can still place a shallow arc's handle off center by hand",
+                editor.SelectionScreenArcHandle is { } edited && edited.DistanceTo(newHandle) < .01);
+        }
+
+        var document = new SceneDocument { Viewport = new(0, 0, 1200, 600) };
+        var projection = document.Canvas.Projection;
+        projection.Enabled = true;
+        projection.Matrix = Projective2D.FromAffine(Affine2D.Scale(1, .05));
+        projection.PlaneBounds = new(0, 0, 1200, 12000);
+        projection.Quad = EditorController.Corners(document.Viewport).ToList();
+        var projected = new EditorController(new(document)) { Tool = EditorTool.Line };
+        projected.Style.LineArcBulge = ElementGeometry.DefaultLineArcBulge;
+        Send(projected, OverlayPointerKind.Down, start);
+        Send(projected, OverlayPointerKind.Move, start + new PointD(50, 2));
+        Send(projected, OverlayPointerKind.Up, start + new PointD(400, 0));
+        check("two screen pixels of hand movement still center the handle on a foreshortened canvas",
+            projected.SelectionScreenArcHandle is { } pivot && Math.Abs(pivot.X - start.X - 200) < .01 && Math.Abs(pivot.Y - start.Y) < 3);
     }
 
     private static void RectangleCornerRadius(Action<string, bool> check)
@@ -324,10 +442,12 @@ internal static class CreationSelectionTests
         }
         string beforeMove = JsonSerializer.Serialize(session.Document); int history = session.UndoCount;
         var center = session.SelectionBounds()!.Value.Center;
-        Gesture(controller, center, center + new PointD(25, 15));
+        var delta = new PointD(25, 15);
+        var expectedOrigin = element.Transform.TransformPoint(default) + delta;
+        Gesture(controller, center, center + delta);
         element = session.Document.Elements.Single();
         check(tool + " selected-frame drag moves the new object without creating another", session.Document.Elements.Count == 1 && controller.Tool == tool && session.Selection.SetEquals([id]) &&
-            element.Transform.OffsetX == 65 && element.Transform.OffsetY == 75 && session.UndoCount == history + 1);
+            element.Transform.TransformPoint(default).DistanceTo(expectedOrigin) < 1e-8 && session.UndoCount == history + 1);
         check(tool + " movement is one exact undo and redo operation", session.Undo() && JsonSerializer.Serialize(session.Document) == beforeMove && session.Redo());
 
         history = session.UndoCount; string beforeResize = JsonSerializer.Serialize(session.Document); var bounds = session.SelectionBounds()!.Value;

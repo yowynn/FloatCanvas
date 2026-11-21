@@ -68,9 +68,7 @@ internal sealed class ColorField : UserControl
         swatch.SizeChanged += (_, _) =>
         {
             if (button.Template?.FindName("Chrome", button) is not Border chrome) return;
-            var inset = swatch.TranslatePoint(new Point(), button);
-            swatch.Clip = new RectangleGeometry(new Rect(0, 0, swatch.ActualWidth, swatch.ActualHeight),
-                Math.Max(0, chrome.CornerRadius.TopLeft - inset.X), Math.Max(0, chrome.CornerRadius.TopLeft - inset.Y));
+            ColorPickerPanel.ClipSwatch(swatch, chrome);
         };
         button.Padding = new(0); button.BorderThickness = new(1); button.SetResourceReference(BorderBrushProperty, "CanvasBorder");
         button.MinWidth = 66; button.HorizontalContentAlignment = HorizontalAlignment.Stretch; button.VerticalContentAlignment = VerticalAlignment.Stretch;
@@ -129,7 +127,7 @@ internal sealed class ColorField : UserControl
         popupDisplay.OnOpened((_, _) =>
         {
             pickerSessionOpen = true; draftCommitted = false; pickerSessionChanged = false;
-            picker.Value = Value; picker.RefreshCollections();
+            picker.BeginSession(Value); picker.RefreshCollections();
             popupSession = SessionWindowCoordinator.Find(Window.GetWindow(this));
             popupSession?.RegisterPopup(popupDisplay.Key, ClosePicker);
         });

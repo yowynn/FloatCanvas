@@ -59,7 +59,7 @@ internal sealed class ToolbarUpperRow : Grid
         var text = new TextBlock { Text = FloatCanvas.Localization.AppText.Get("Toolbar.NewCanvasConfirm"), FontSize = 12,
             FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
         text.SetResourceReference(TextBlock.ForegroundProperty, "CanvasText");
-        confirmation = new Border { Child = text, Height = ExtensionHeight, VerticalAlignment = VerticalAlignment.Top, CornerRadius = new(4), BorderThickness = new(1), Padding = new(8, 0, 8, 0),
+        confirmation = new RoundedSurfaceBorder { Child = text, Height = ExtensionHeight, VerticalAlignment = VerticalAlignment.Top, CornerRadius = new(4), BorderThickness = new(1), Padding = new(8, 0, 8, 0),
             IsHitTestVisible = true, ToolTip = text.Text, Visibility = Visibility.Collapsed };
         confirmation.SetResourceReference(Border.BackgroundProperty, "CanvasSurface");
         confirmation.SetResourceReference(Border.BorderBrushProperty, "CanvasAccent");

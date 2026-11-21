@@ -29,6 +29,14 @@ internal sealed class SessionWindowCoordinator : IDisposable
     private readonly List<Window> modalWindows = [];
     private int nativeModalDepth;
     internal static bool HasModalInput => current is { disposed: false } value && (value.nativeModalDepth > 0 || value.modalWindows.Count > 0);
+    internal static bool HasModalChild(Window owner)
+    {
+        if (Find(owner) is not { } coordinator) return false;
+        foreach (var dialog in coordinator.modalWindows)
+            for (var parent = dialog.Owner; parent is not null; parent = parent.Owner)
+                if (ReferenceEquals(parent, owner)) return true;
+        return false;
+    }
     internal event Action? ModalEntering;
     internal bool OwnsKeyboardSource(DependencyObject? source) => source is not null &&
         EditorShortcutPolicy.Ancestors(source).Any(value => value is Window window && ReferenceEquals(Find(window), this));
@@ -206,6 +214,7 @@ internal sealed class SessionWindowCoordinator : IDisposable
         {
             modal.Result = result;
             Close(window);
+            if (!modal.Closed) modal.Result = null;
         }
         else window.DialogResult = result;
     }
@@ -216,8 +225,44 @@ internal sealed class SessionWindowCoordinator : IDisposable
     {
         var modal = new OverlayModal();
         var disabled = new List<HwndSource>();
+        var owner = window.Owner;
+        long version = host.EditingSessionVersion;
+        CancelEventArgs? closeRequest = null;
+        bool returningFocus = false;
+        HwndSource? dialogSource = null;
         window.Resources[ModalResourceKey] = modal;
         void Closed(object? sender, EventArgs args) { modal.Closed = true; modal.Frame.Continue = false; }
+        void Closing(object? sender, CancelEventArgs args)
+        {
+            closeRequest = args;
+            returningFocus = !IsDirectTransfer && OwnsEditingInput() && ContainsForeground(window);
+        }
+        void RestoreOwners()
+        {
+            // Nested dialogs restore only the windows they disabled themselves.
+            foreach (var source in disabled)
+                if (!source.IsDisposed && IsWindow(source.Handle) && source.RootVisual is not UIElement { IsEnabled: false })
+                    EnableWindow(source.Handle, true);
+            disabled.Clear();
+        }
+        nint BeforeHide(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
+        {
+            // WM_WINDOWPOSCHANGING with SWP_HIDEWINDOW follows cancellable Closing and
+            // precedes hiding the focused HWND. Waiting for Closed leaves no enabled owner.
+            if (message == 0x0046 && lParam != 0 && closeRequest is { Cancel: false } &&
+                (Marshal.PtrToStructure<WindowPosition>(lParam).Flags & 0x0080) != 0)
+            {
+                closeRequest = null;
+                RestoreOwners();
+                if (returningFocus && host.EditingSessionVersion == version) ReturnToOwner(owner);
+            }
+            return 0;
+        }
+        void AttachCloseHook(object? sender, EventArgs args)
+        {
+            dialogSource = HwndSource.FromHwnd(new WindowInteropHelper(window).Handle);
+            dialogSource?.AddHook(BeforeHide);
+        }
         void Loaded(object sender, RoutedEventArgs args)
         {
             if (!modal.Closed && host.HasEditingInput) host.TryFocusEditingWindow(new WindowInteropHelper(window).Handle);
@@ -232,7 +277,9 @@ internal sealed class SessionWindowCoordinator : IDisposable
             if (args.OriginalSource is Button { IsCancel: true }) SetModalResult(window, false);
         }
         var click = new RoutedEventHandler(ButtonClick);
-        window.Closed += Closed; window.Loaded += Loaded; window.KeyDown += KeyDown;
+        window.Closing += Closing; window.Closed += Closed; window.Loaded += Loaded; window.KeyDown += KeyDown;
+        window.SourceInitialized += AttachCloseHook;
+        if (new WindowInteropHelper(window).Handle != 0) AttachCloseHook(null, EventArgs.Empty);
         window.AddHandler(ButtonBase.ClickEvent, click, true);
         ComponentDispatcher.PushModal();
         try
@@ -250,10 +297,12 @@ internal sealed class SessionWindowCoordinator : IDisposable
         }
         finally
         {
-            window.Closed -= Closed; window.Loaded -= Loaded; window.KeyDown -= KeyDown;
+            window.Closing -= Closing; window.Closed -= Closed; window.Loaded -= Loaded; window.KeyDown -= KeyDown;
+            window.SourceInitialized -= AttachCloseHook;
+            if (dialogSource is { IsDisposed: false }) dialogSource.RemoveHook(BeforeHide);
             window.RemoveHandler(ButtonBase.ClickEvent, click);
             window.Resources.Remove(ModalResourceKey);
-            foreach (var source in disabled) if (!source.IsDisposed && IsWindow(source.Handle)) EnableWindow(source.Handle, true);
+            RestoreOwners();
             ComponentDispatcher.PopModal();
         }
     }
@@ -434,9 +483,11 @@ internal sealed class SessionWindowCoordinator : IDisposable
 
     private void ReturnBeforeDismiss(Window source)
     {
+        // An enhanced modal hands off after Closing is accepted, with its owners enabled.
+        if (source.Resources[ModalResourceKey] is OverlayModal) return;
         if (disposed || !host.IsEditing || IsDirectTransfer || !OwnsEditingInput() || !ContainsForeground(source)) return;
-        // A visible modal owner remains disabled until ShowDialog has unwound. Its finally
-        // block will repeat this handoff after WPF reenables it, without focusing the canvas.
+        // WPF ShowDialog may still own a disabled parent. Its finally repeats this
+        // handoff once WPF has finished reenabling the owner.
         ReturnToOwner(source.Owner);
     }
 
@@ -563,6 +614,12 @@ internal sealed class SessionWindowCoordinator : IDisposable
     }
 
     [StructLayout(LayoutKind.Sequential)] private readonly record struct PixelPoint(int X, int Y);
+    [StructLayout(LayoutKind.Sequential)] private struct WindowPosition
+    {
+        public nint Window, InsertAfter;
+        public int X, Y, Width, Height;
+        public uint Flags;
+    }
     [DllImport("user32.dll")] private static extern nint WindowFromPhysicalPoint(PixelPoint point);
     [DllImport("user32.dll")] private static extern nint GetAncestor(nint handle, uint flags);
     [DllImport("user32.dll")] private static extern nint GetForegroundWindow();

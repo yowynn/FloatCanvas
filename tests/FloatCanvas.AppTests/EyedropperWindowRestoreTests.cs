@@ -27,6 +27,7 @@ internal static class EyedropperWindowRestoreTests
         try
         {
             foreach (bool cancel in new[] { false, true }) Completion(app, cancel, check);
+            EscapeReturnsToPicker(app, check);
             RepeatedBegin(app, check);
             OtherColorWindow(app, check);
             NoInventedPicker(app, check);
@@ -59,6 +60,23 @@ internal static class EyedropperWindowRestoreTests
             fixture.Target.IsPickerOpen && color.IsVisible && ReferenceEquals(Window.GetWindow(fixture.Target.PickerRoot), color));
         Pump();
         check(label + " restored color window survives queued focus and input checks", fixture.Target.IsPickerOpen && color.IsVisible && fixture.Panel.IsVisible);
+        fixture.AssertNoInput(check);
+    }
+
+    private static void EscapeReturnsToPicker(Application app, Action<string, bool> check)
+    {
+        using var fixture = new Fixture(app);
+        var color = fixture.OpenTarget();
+        var picker = Field<ColorPickerPanel>(fixture.Target, "picker");
+        uint opening = fixture.Target.Value;
+        Field<TextBox>(picker, "hex").Text = "#80446688";
+        fixture.BeginFromPicker(); Pump();
+        fixture.Invoke("OnCommandInput", new OverlayKeyEvent(0x1B, OverlayModifiers.None, false)); Pump();
+        check("Escape cancels the eyedropper and restores the same picker with its pending color",
+            fixture.Host.IsEditing && fixture.Panel.IsVisible && fixture.Layers.IsVisible && color.IsVisible && fixture.Target.IsPickerOpen &&
+            ReferenceEquals(color, Window.GetWindow(picker)) && fixture.Target.Value == 0x80446688);
+        Field<Button>(picker, "restoreOpeningColor").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        check("returning from the eyedropper retains the opening color snapshot", fixture.Target.Value == opening);
         fixture.AssertNoInput(check);
     }
 
@@ -142,6 +160,12 @@ internal static class EyedropperWindowRestoreTests
             Panel.Pin.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Offscreen(Panel); typeof(DesktopSession).GetField("_canvasToolOptions", Private)!.SetValue(Session, Panel.Options);
             Target = Field<ColorField>(Panel, "background");
+            Panel.BackgroundChanged += value =>
+            {
+                var settings = editor.Session.Document.Canvas;
+                settings.BackgroundColor = value;
+                Panel.Refresh(settings);
+            };
             Target.EyedropperRequested += () => Invoke("BeginEyedropper", Target);
             Layers = new LayersWindow(() => editor.Session, () => true) { Owner = Toolbar };
             Offscreen(Layers); typeof(DesktopSession).GetField("_layers", Private)!.SetValue(Session, Layers);

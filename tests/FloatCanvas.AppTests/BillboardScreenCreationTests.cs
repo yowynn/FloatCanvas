@@ -38,6 +38,19 @@ internal static class BillboardScreenCreationTests
         Send(editor, OverlayPointerKind.Up, 200, 150);
         check("unsafe latest ground cancels instead of committing older valid sample", session.Document.Elements.Count == 0 && session.UndoCount == 0 && !session.IsTransactionActive);
 
+        session = Session(); editor = new(session) { Tool = EditorTool.Line, BillboardMode = true };
+        editor.Style.LineArcBulge = ElementGeometry.DefaultLineArcBulge;
+        Send(editor, OverlayPointerKind.Down, 120, 480);
+        for (int i = 1; i < 60; i++)
+        {
+            double t = Math.PI * i / 60;
+            Send(editor, OverlayPointerKind.Move, 280 - 160 * Math.Cos(t), 480 - 90 * Math.Sin(t));
+        }
+        Send(editor, OverlayPointerKind.Up, 440, 480);
+        item = session.Document.Elements.Single();
+        check("a screen-first arc fits the screen trace and keeps the projected handle after placement",
+            item.IsBillboard && item.Points.Count == 2 && editor.SelectionScreenArcHandle is { } apex && apex.DistanceTo(new(280, 390)) < 1);
+
         session = Session(); editor = new(session) { Tool = EditorTool.Freehand, BillboardMode = true };
         Send(editor, OverlayPointerKind.Down, 100, 100); Send(editor, OverlayPointerKind.Move, 130, 250);
         Send(editor, OverlayPointerKind.Move, 160, 120); Send(editor, OverlayPointerKind.Up, 180, 400);

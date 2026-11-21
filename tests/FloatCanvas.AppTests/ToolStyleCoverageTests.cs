@@ -32,6 +32,9 @@ internal static class ToolStyleCoverageTests
             };
             string[] styleFields = ["HighlighterTip", "LinePathMode", "LinkColors", "StyleVariant", "PresentationSettings"];
             var visible = styleFields.Where(key => rows[key].Visibility == Visibility.Visible).ToArray();
+            if (family == EditorTool.CaptureRegion)
+                check("capture and drawing use the same line width caption",
+                    ((TextBlock)((Grid)rows["CaptureBorderWidth"]).Children[0]).Text == L.Get("Inspector.StrokeWidth"));
             check(family + " exposes the intended primary style control", controller.Tool == family &&
                 (expected is null ? visible.Length == 0 : visible.SequenceEqual([expected])));
             if (expected is not null && family != EditorTool.Presentation)
@@ -46,6 +49,13 @@ internal static class ToolStyleCoverageTests
         check("text style controls offer three named choices and one color", selector.Items.Select(item => item.Tag).SequenceEqual(variants) &&
             rows["Foreground"].Visibility == Visibility.Visible && rows["Background"].Visibility == Visibility.Collapsed);
         selector.SelectedValue = ElementAppearance.TextOutline; panel.PrepareForShow();
+        var numbers = Field<Dictionary<string, NumericValueField>>(panel, "numericFields");
+        check("outlined text exposes line width beside its colors", rows["StrokeWidth"].Visibility == Visibility.Visible &&
+            rows["StrokeWidth"].Parent == rows["Background"].Parent && rows["StrokePattern"].Visibility == Visibility.Collapsed &&
+            numbers["StrokeWidth"].Value == controller.Style.TextOutlineWidthAt(controller.Style.FontSize));
+        numbers["StrokeWidth"].Input.Text = "6";
+        check("a text tool preset restores its authored line width",
+            controller.Style.TextOutlineWidth == 6 && library.Apply(library.Save("Text with a wide outline", controller.Parameters).Id).Style.TextOutlineWidth == 6);
         var edge = Field<ColorField>(panel, "background"); var ink = Field<ColorField>(panel, "foreground");
         check("only outlined text exposes stroke and glyph color fields", rows["Background"].Visibility == Visibility.Visible &&
             ((TextBlock)((Grid)rows["Background"]).Children[0]).Text == L.Get("Color.Outline") && edge.Role == ColorRole.Background);
@@ -60,6 +70,8 @@ internal static class ToolStyleCoverageTests
         panel.PrepareForShow(); selector.SelectedValue = ElementAppearance.TextOutline; panel.PrepareForShow();
         check("transparent black remains a deliberate choice after a dormant style is saved and reopened", controller.Style.SecondaryColor == 0);
         selector.SelectedValue = ElementAppearance.TextLabel;
+        panel.PrepareForShow();
+        check("the label style hides the glyph line width", rows["StrokeWidth"].Visibility == Visibility.Collapsed);
         controller.Style.PrimaryColor = BuiltInColors.Blue;
         var preset = library.Save("My text label", controller.Parameters);
         var restored = new ToolPresetLibrary(Path.Combine(ApplicationPaths.ProfileDirectory, "style-audit-presets.json")).Apply(preset.Id);
@@ -93,6 +105,36 @@ internal static class ToolStyleCoverageTests
         check("one undo restores the two original text appearances", session.Undo() &&
             session.Document.Elements.Where(e => e.Kind == ElementKind.Text).Select(e => e.Style.Variant)
                 .SequenceEqual([ElementAppearance.TextLabel, ElementAppearance.Default]));
+
+        var rect = new CanvasElement { Kind = ElementKind.Rectangle, Width = 120, Height = 64 };
+        var outlined = new CanvasElement { Kind = ElementKind.Text, Text = "字", Style = new() { Variant = ElementAppearance.TextOutline } };
+        TextFrameLayout.Reflow(outlined, true, renderer);
+        session.Add(rect); session.Add(outlined); session.SetSelection([rect.Id, outlined.Id]); inspector.PrepareForShow();
+        check("outlined text and rectangle selections share one line width field",
+            fields["StrokeWidth"].Visibility == Visibility.Visible &&
+            ((TextBlock)((Grid)fields["StrokeWidth"]).Children[0]).Text == L.Get("Inspector.StrokeWidth"));
+        var widthField = Field<Dictionary<string, NumericValueField>>(inspector, "numericFields")["StrokeWidth"];
+        widthField.Input.Text = "7"; inspector.CompletePendingEdit();
+        outlined = session.Document.Elements.Single(e => e.Id == outlined.Id);
+        rect = session.Document.Elements.Single(e => e.Id == rect.Id);
+        check("mixed width edits reflow the text live and change the rectangle stroke",
+            outlined.Style.TextOutlineWidth == 7 && rect.Style.StrokeWidth == 7 &&
+            outlined.Height == renderer.MeasureText(outlined.Text, outlined.Style, outlined.Width).Height);
+        check("mixed width edits undo together while preserving the font-relative default",
+            session.Undo() && session.Document.Elements.Single(e => e.Id == outlined.Id).Style.TextOutlineWidth is null &&
+            session.Document.Elements.Single(e => e.Id == rect.Id).Style.StrokeWidth == 4);
+        inspector.PrepareForShow();
+        object? Scrub(string method, params object[] args) =>
+            typeof(InspectorWindow).GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(inspector, args);
+        check("the shared line width drag starts on a mixed selection", (bool)Scrub("BeginScrub", "StrokeWidth")!);
+        Scrub("UpdateScrub", "StrokeWidth", 20d);
+        var preview = session.Document.Elements.Single(e => e.Id == outlined.Id);
+        check("the line width drag reflows the selected text before release",
+            preview.Style.TextOutlineWidth == Math.Round(preview.Style.FontSize * .055 + 2, 3) &&
+            preview.Height == renderer.MeasureText(preview.Text, preview.Style, preview.Width).Height);
+        Scrub("FinishScrub", false);
+        check("cancelling the width drag restores both layers", session.Document.Elements.Single(e => e.Id == outlined.Id).Style.TextOutlineWidth is null &&
+            session.Document.Elements.Single(e => e.Id == rect.Id).Style.StrokeWidth == 4);
     }
 
     private static T Field<T>(object owner, string name) =>

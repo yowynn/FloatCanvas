@@ -94,7 +94,7 @@ internal sealed class CanvasRectificationPreviewWindow : Window
         {
             var frame = new DockPanel { Margin = new(4) };
             var title = PropertyPanelLayout.SectionTitle(L.Get(key)); title.Margin = new(0, 0, 0, 6); DockPanel.SetDock(title, Dock.Top); frame.Children.Add(title);
-            var border = new Border { Child = image, BorderThickness = new(1), CornerRadius = new(6), Padding = new(4) };
+            var border = new RoundedSurfaceBorder { Child = image, BorderThickness = new(1), CornerRadius = new(6), Padding = new(4) };
             border.SetResourceReference(Border.BackgroundProperty, "CanvasInput"); border.SetResourceReference(Border.BorderBrushProperty, "CanvasBorder");
             frame.Children.Add(border); return frame;
         }

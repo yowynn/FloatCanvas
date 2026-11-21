@@ -59,7 +59,7 @@ internal sealed class KeyboardLayoutEditorWindow : Window
         DockPanel.SetDock(actions, Dock.Right); footer.Children.Add(actions); DockPanel.SetDock(footer, Dock.Bottom); body.Children.Add(footer);
         var columns = new Grid(); columns.ColumnDefinitions.Add(new()); columns.ColumnDefinitions.Add(new() { Width = new(PropertyPanelLayout.ContentWidth) });
         var viewport = new ScrollViewer { Content = preview, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
-        var frame = new Border { Child = viewport, BorderThickness = new(1), CornerRadius = new(6), Padding = new(4), Margin = new(0, 0, 16, 0) };
+        var frame = new RoundedSurfaceBorder { Child = viewport, BorderThickness = new(1), CornerRadius = new(6), Padding = new(4), Margin = new(0, 0, 16, 0) };
         frame.SetResourceReference(Border.BackgroundProperty, "CanvasInput"); frame.SetResourceReference(Border.BorderBrushProperty, "CanvasBorder"); columns.Children.Add(frame);
         var properties = new StackPanel(); PropertyPanelLayout.Scope(properties);
         var title = PropertyPanelLayout.SectionTitle(L.Get("Presentation.Layout.Selected")); title.Margin = new(0, 0, 0, 8); properties.Children.Add(title);
@@ -176,7 +176,14 @@ internal sealed class KeyboardLayoutEditorWindow : Window
     private void BuildPreview()
     {
         preview.Children.Clear(); keyViews.Clear();
-        keyTemplate ??= (ControlTemplate)XamlReader.Parse("<ControlTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' TargetType='Thumb'><Border Background='{TemplateBinding Background}' BorderBrush='{TemplateBinding BorderBrush}' BorderThickness='1' CornerRadius='4' Padding='2'><Viewbox Stretch='Uniform' StretchDirection='DownOnly'><TextBlock Name='KeyCaption' Text='{TemplateBinding Tag}' Foreground='{TemplateBinding Foreground}' TextAlignment='Center' TextWrapping='NoWrap' FontSize='10' VerticalAlignment='Center'/></Viewbox></Border></ControlTemplate>");
+        keyTemplate ??= (ControlTemplate)XamlReader.Parse("""
+            <ControlTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                             xmlns:ui="clr-namespace:FloatCanvas.App;assembly=FloatCanvas" TargetType="Thumb">
+              <ui:RoundedSurfaceBorder Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="4" Padding="2">
+                <Viewbox Stretch="Uniform" StretchDirection="DownOnly"><TextBlock Name="KeyCaption" Text="{TemplateBinding Tag}" Foreground="{TemplateBinding Foreground}" TextAlignment="Center" TextWrapping="NoWrap" FontSize="10" VerticalAlignment="Center"/></Viewbox>
+              </ui:RoundedSurfaceBorder>
+            </ControlTemplate>
+            """);
         foreach (var key in draft.Keys)
         {
             string id = key.Id; var view = new Thumb { Template = keyTemplate, Cursor = Cursors.SizeAll, Focusable = true };

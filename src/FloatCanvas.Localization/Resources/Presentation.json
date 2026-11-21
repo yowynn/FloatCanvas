@@ -131,10 +131,6 @@
     "zh": "轨迹时长",
     "en": "Trail duration"
   },
-  "Presentation.TrailWidth": {
-    "zh": "轨迹宽度",
-    "en": "Trail width"
-  },
   "Presentation.RegionHint": {
     "zh": "图层存在且可见时自动记录，默认包含浮绘内部操作。空闲时透明，编辑时显示边界；隐藏或删除图层即可停止显示。",
     "en": "Visible key layers record automatically, including FloatCanvas by default. Empty regions are transparent with editing guides. Hide or delete the layer to stop its display."
@@ -278,10 +274,6 @@
   "Presentation.Global.ClickRadius": {
     "zh": "点击半径",
     "en": "Click radius"
-  },
-  "Presentation.Global.ClickWidth": {
-    "zh": "圆环宽度",
-    "en": "Ring width"
   },
   "Presentation.Shape.Ring": {
     "zh": "圆环",

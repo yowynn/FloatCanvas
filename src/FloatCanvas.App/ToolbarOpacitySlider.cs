@@ -172,6 +172,7 @@ internal sealed class ToolbarOpacitySlider : Slider
 
     private const string TemplateMarkup = """
         <ControlTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                         xmlns:ui="clr-namespace:FloatCanvas.App;assembly=FloatCanvas"
                          xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" TargetType="Slider">
           <Grid Background="Transparent">
             <Track x:Name="PART_Track" Width="49.9167" Height="26" Orientation="Horizontal"
@@ -189,7 +190,7 @@ internal sealed class ToolbarOpacitySlider : Slider
                     <ControlTemplate TargetType="Thumb">
                       <Grid>
                         <Border x:Name="Cutout" Margin="-.5" Background="{DynamicResource CanvasSurface}" CornerRadius="2.875"/>
-                        <Border x:Name="Handle" Background="{DynamicResource CanvasSurface}" BorderBrush="{DynamicResource CanvasText}"
+                        <ui:RoundedSurfaceBorder x:Name="Handle" Background="{DynamicResource CanvasSurface}" BorderBrush="{DynamicResource CanvasText}"
                                 BorderThickness="1.4" CornerRadius="2.375"/>
                       </Grid>
                       <ControlTemplate.Triggers>

@@ -285,6 +285,8 @@ internal static class ToolParameterIcon
         // All line samples use the same width mapping, including patterned lines.
         double maxStroke = line ? 4 : style.StrokePattern == StrokePattern.Solid ? 6 : 3;
         if (style.StrokeWidth != 0) style.StrokeWidth = Math.Clamp(style.StrokeWidth, 2, maxStroke);
+        if (parameters.Tool == EditorTool.Text && style.TextOutlineWidth is { } outlineWidth)
+            style.TextOutlineWidth = outlineWidth * 32 / Math.Clamp(style.FontSize, 1, ElementStyle.MaximumFontSize);
         style.FontSize=32;
         using var renderer=new SceneRenderer();
         var element=new CanvasElement {Style=style,Width=32,Height=28,Transform=Affine2D.Translation(8,10)};

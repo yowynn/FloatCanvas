@@ -198,6 +198,7 @@ public static class SceneValidation
         Require(PresentationLimits.IsValidElement(element), L.Get("Scene.InvalidElementStyle"));
         Require(WindowSourceLimits.IsValidElement(element), "Invalid live window source.");
         Require(Nonnegative(s.StrokeWidth) && Unit(s.Opacity) && Positive(s.FontSize) && s.FontFamily is not null && s.FontFamily.Length <= 1024 && Enum.IsDefined(s.TextAlignment), L.Get("Scene.InvalidElementStyle"));
+        Require(s.TextOutlineWidth is null or (>= 0 and <= 1024), L.Get("Scene.InvalidElementStyle"));
         Require(Enum.IsDefined(s.ArrowHeadStyle) && Nonnegative(s.ArrowHeadSize) && s.ArrowHeadSize <= 512 &&
             (s.StartArrowHead is null || Enum.IsDefined(s.StartArrowHead.Value)) &&
             (s.EndArrowHead is null || Enum.IsDefined(s.EndArrowHead.Value)), L.Get("Scene.InvalidArrowHead"));

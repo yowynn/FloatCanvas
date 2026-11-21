@@ -78,7 +78,7 @@ internal sealed class AppSettingsWindow : Window
     {
         var group = new StackPanel();
         var heading = PropertyPanelLayout.SectionTitle(title); heading.TextWrapping = TextWrapping.Wrap; heading.Margin = new(0, 0, 0, 10); group.Children.Add(heading);
-        var card = new Border { Child = group, CornerRadius = new CornerRadius(8), Padding = new Thickness(16),
+        var card = new RoundedSurfaceBorder { Child = group, CornerRadius = new CornerRadius(8), Padding = new Thickness(16),
             BorderThickness = new Thickness(1), Margin = new Thickness(0, 0, 0, 12) };
         card.SetResourceReference(Border.BackgroundProperty, "CanvasInput");
         card.SetResourceReference(Border.BorderBrushProperty, "CanvasBorder");
