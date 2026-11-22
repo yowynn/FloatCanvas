@@ -9,8 +9,8 @@ The Windows distribution includes the components below. Full original license te
 | SkiaSharp | 4.157.0 | MIT, `licenses/SkiaSharp-4.157.0/LICENSE.txt` |
 | SkiaSharp.HarfBuzz | 4.157.0 | MIT, `licenses/SkiaSharp.HarfBuzz-4.157.0/LICENSE.txt` |
 | SkiaSharp.NativeAssets.Win32 / native Skia and bundled libraries | 4.157.0 | MIT wrapper plus full upstream `THIRD-PARTY-NOTICES.txt` in `licenses/SkiaSharp.NativeAssets.Win32-4.157.0/` |
-| HarfBuzzSharp | 14.2.1.301 | MIT, `licenses/HarfBuzzSharp-14.2.1.301/LICENSE.txt` |
-| HarfBuzzSharp.NativeAssets.Win32 / native HarfBuzz and bundled libraries | 14.2.1.301 | MIT wrapper plus full upstream `THIRD-PARTY-NOTICES.txt` in `licenses/HarfBuzzSharp.NativeAssets.Win32-14.2.1.301/` |
+| HarfBuzzSharp | 14.4.0.200 | MIT, `licenses/HarfBuzzSharp-14.4.0.200/LICENSE.txt` |
+| HarfBuzzSharp.NativeAssets.Win32 / native HarfBuzz and bundled libraries | 14.4.0.200 | MIT wrapper plus full upstream `THIRD-PARTY-NOTICES.txt` in `licenses/HarfBuzzSharp.NativeAssets.Win32-14.4.0.200/` |
 | Vortice.DXGI, Vortice.Direct3D11, Vortice.DirectX | 3.8.3 | MIT; license obtained from the exact repository commit identified in each package's `.nuspec` |
 | Vortice.Mathematics | 2.1.0 | MIT; license obtained from the exact repository commit identified in the package's `.nuspec` |
 | SharpGen.Runtime, SharpGen.Runtime.COM | 2.4.2-beta | MIT; license obtained from the exact repository commit identified in each package's `.nuspec` |

@@ -69,9 +69,9 @@
     },
     {
       "Package": "HarfBuzzSharp",
-      "Version": "14.2.1.301",
+      "Version": "14.4.0.200",
       "Source": "Installed NuGet package",
-      "Directory": "HarfBuzzSharp-14.2.1.301",
+      "Directory": "HarfBuzzSharp-14.4.0.200",
       "Files": [
         "harfbuzzsharp.nuspec",
         "LICENSE.txt"
@@ -79,9 +79,9 @@
     },
     {
       "Package": "HarfBuzzSharp.NativeAssets.Win32",
-      "Version": "14.2.1.301",
+      "Version": "14.4.0.200",
       "Source": "Installed NuGet package",
-      "Directory": "HarfBuzzSharp.NativeAssets.Win32-14.2.1.301",
+      "Directory": "HarfBuzzSharp.NativeAssets.Win32-14.4.0.200",
       "Files": [
         "harfbuzzsharp.nativeassets.win32.nuspec",
         "LICENSE.txt",

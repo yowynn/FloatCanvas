@@ -2,7 +2,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2012/06/nuspec.xsd">
   <metadata>
     <id>HarfBuzzSharp.NativeAssets.Win32</id>
-    <version>14.2.1.301</version>
+    <version>14.4.0.200</version>
     <title>HarfBuzzSharp - Native Assets for Win32</title>
     <authors>Microsoft</authors>
     <requireLicenseAcceptance>true</requireLicenseAcceptance>
@@ -15,7 +15,7 @@
     <releaseNotes>Please visit https://go.microsoft.com/fwlink/?linkid=868517 to view the release notes.</releaseNotes>
     <copyright>© Microsoft Corporation. All rights reserved.</copyright>
     <tags>graphics text cross-platform harfbuzzsharp harfbuzz ios android linux windows tvos macos tizen</tags>
-    <repository type="git" url="https://go.microsoft.com/fwlink/?linkid=868515" branch="release/4.153.1" commit="4783f51448f9b070dda4f87b83e941c9599e466e" />
+    <repository type="git" url="https://go.microsoft.com/fwlink/?linkid=868515" branch="release/4.157.0" commit="2a53a3c8641073bc914c63ee158bbf62b8a0bb92" />
     <dependencies>
       <group targetFramework="net10.0" />
       <group targetFramework="net10.0-windows10.0.19041" />
