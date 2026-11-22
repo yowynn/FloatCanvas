@@ -34,7 +34,7 @@ internal static class HiddenToolPropertiesTests
             var foreground = Field<ColorField>(panel, "foreground");
             var background = Field<ColorField>(panel, "background");
             var symbols = Field<Panel>(panel, "symbolGallery");
-            var emoji = Field<Panel>(panel, "emojiGallery");
+            var emoji = Field<EmojiField>(panel, "emojiField");
 
             Observe("text entry synchronizes its visible font family and size", ToolOptionPreviews.SelectedFontName(font) == "Arial" && numbers["FontSize"].Value == 42);
             Apply(EditorTool.Number, p => { p.NumberStart = 5; p.NumberStep = 2; });
@@ -42,7 +42,7 @@ internal static class HiddenToolPropertiesTests
             Observe("number entry synchronizes its visible counter values", numbers["NumberStart"].Value == 5 && numbers["NumberStep"].Value == 2 && numbers["NextNumber"].Value == 17);
             Apply(EditorTool.Symbol, p => { p.Symbol = SymbolKind.Heart; p.DefaultWidth = 120; p.DefaultHeight = 80; p.Style.LinkColors = false; });
             Refresh();
-            Apply(EditorTool.Emoji, p => p.Emoji = EmojiArtwork.BuiltIn.First());
+            Apply(EditorTool.Emoji, p => p.Emoji = "😀");
             Refresh();
             Apply(EditorTool.Text, p => { p.Style.FontFamily = "Arial"; p.Style.FontSize = 42; p.Style.TextAlignment = FloatCanvas.Core.TextAlignment.Left; });
             Refresh();
@@ -54,7 +54,7 @@ internal static class HiddenToolPropertiesTests
                 string? oldFont = ToolOptionPreviews.SelectedFontName(font);
                 uint oldBackground = background.Value;
                 var oldSymbols = symbols.Children.OfType<Button>().Select(button => button.BorderBrush).ToArray();
-                var oldEmoji = emoji.Children.OfType<Button>().Select(button => button.BorderBrush).ToArray();
+                var oldEmoji = emoji.Value;
                 Apply(tool, p =>
                 {
                     p.Style.FontFamily = "Consolas"; p.Style.FontSize = 77 + index;
@@ -62,7 +62,7 @@ internal static class HiddenToolPropertiesTests
                     p.NumberStart = 23 + index; p.NumberStep = 9 + index;
                     p.DefaultWidth = 333 + index; p.DefaultHeight = 222 + index;
                     p.Symbol = Enum.GetValues<SymbolKind>().First(value => value != SymbolKind.Heart);
-                    p.Emoji = EmojiArtwork.BuiltIn.First(value => value != EmojiArtwork.BuiltIn.First());
+                    p.Emoji = "🐼";
                     p.CaptureShape = CaptureShape.Ellipse; p.CaptureSource = CaptureSource.CanvasOnly;
                     p.CaptureBorderWidth = 13 + index;
                     p.EffectStrength = 50 + index; p.CornerRadius = 11 + index;
@@ -81,15 +81,15 @@ internal static class HiddenToolPropertiesTests
                     .All(pair => ReferenceEquals(pair.Value.SelectedItem, oldPickers[pair.Key])));
                 Observe(label + " does not synchronize the hidden font picker", rows["FontFamily"].Visibility == Visibility.Collapsed && ToolOptionPreviews.SelectedFontName(font) == oldFont);
                 Observe(label + " leaves the hidden background color unchanged", rows["Background"].Visibility == Visibility.Collapsed && background.Value == oldBackground);
-                Observe(label + " leaves hidden symbol and emoji galleries unchanged", oldSymbols.SequenceEqual(symbols.Children.OfType<Button>().Select(button => button.BorderBrush)) && oldEmoji.SequenceEqual(emoji.Children.OfType<Button>().Select(button => button.BorderBrush)));
+                Observe(label + " leaves hidden symbol and emoji choices unchanged", oldSymbols.SequenceEqual(symbols.Children.OfType<Button>().Select(button => button.BorderBrush)) && oldEmoji==emoji.Value);
                 Observe(label + " synchronizes its visible stroke width, pattern and foreground", numbers["StrokeWidth"].Value == editor.Style.StrokeWidth &&
                     pickers["StrokePattern"].SelectedItem is RadioButton { Tag: StrokePattern.Dashed } && foreground.Value == editor.Style.Stroke);
 
                 var beforeSymbols = symbols.Children.OfType<Button>().Select(button => button.BorderBrush).ToArray();
-                var beforeEmoji = emoji.Children.OfType<Button>().Select(button => button.BorderBrush).ToArray();
+                var beforeEmoji = emoji.Value;
                 numbers["StrokeWidth"].Input.Text = (31 + index).ToString();
                 Observe(label + " visible property edits preserve hidden gallery state", editor.Style.StrokeWidth == 31 + index &&
-                    beforeSymbols.SequenceEqual(symbols.Children.OfType<Button>().Select(button => button.BorderBrush)) && beforeEmoji.SequenceEqual(emoji.Children.OfType<Button>().Select(button => button.BorderBrush)));
+                    beforeSymbols.SequenceEqual(symbols.Children.OfType<Button>().Select(button => button.BorderBrush)) && beforeEmoji==emoji.Value);
             }
 
             Apply(EditorTool.Text, _ => { }); Refresh();
@@ -98,7 +98,8 @@ internal static class HiddenToolPropertiesTests
             Apply(EditorTool.Number, _ => { }); Refresh();
             Observe("returning to number synchronizes the latest counter state", numbers["NumberStart"].Value == 24 && numbers["NumberStep"].Value == 10 && numbers["NextNumber"].Value == 58);
             Apply(EditorTool.Symbol, _ => { }); Refresh();
-            Observe("returning to shape synchronizes the latest dimensions", numbers["DefaultWidth"].Value == 334 && numbers["DefaultHeight"].Value == 223);
+            Observe("returning to the symbol tool synchronizes its visible long-edge size", numbers["SymbolSize"].Value == 334 &&
+                rows["SymbolSize"].Visibility == Visibility.Visible);
             Apply(EditorTool.CaptureRegion, _ => { }); Refresh();
             Observe("entering capture synchronizes its previously hidden shape source and border", pickers["CaptureShape"].SelectedItem is RadioButton { Tag: CaptureShape.Ellipse } &&
                 pickers["CaptureSource"].SelectedItem is RadioButton { Tag: CaptureSource.CanvasOnly } && numbers["CaptureBorderWidth"].Value == 14 && foreground.Value == editor.Style.PrimaryColor && foreground.Value == 0xFF123456);

@@ -70,8 +70,7 @@ internal sealed class ToolParameters
         copy.PointerPresentation = PointerPresentation?.Clone(); return copy;
     }
 
-    internal ElementKind? AppearanceKind => Tool == EditorTool.Emoji ? null :
-        Enum.TryParse<ElementKind>(Tool.ToString(), out var kind) ? kind : null;
+    internal ElementKind? AppearanceKind => Enum.TryParse<ElementKind>(Tool.ToString(), out var kind) ? kind : null;
 
     // Creation-only policy: layer opacity and color alpha have different ownership.
     internal void NormalizeForCreation()
@@ -105,14 +104,14 @@ internal sealed class ToolParameters
         AppearanceRegistry.IsValidColorRoles(s.AdditionalColors) &&
         Enum.IsDefined(CaptureShape) && Enum.IsDefined(CaptureSource) && NumericParameterDomain.ForTool(nameof(CaptureBorderWidth)).Contains(CaptureBorderWidth) &&
         NumericParameterDomain.ForTool(nameof(DefaultWidth)).Contains(DefaultWidth) && NumericParameterDomain.ForTool(nameof(DefaultHeight)).Contains(DefaultHeight) &&
-        !string.IsNullOrWhiteSpace(Emoji) && System.Globalization.StringInfo.GetNextTextElement(Emoji).Length == Emoji.Length &&
+        EmojiCatalog.TryFind(Emoji, out _) &&
         (CornerRadius is null || NumericParameterDomain.ForTool(nameof(CornerRadius)).Contains(CornerRadius.Value)) &&
         NumericParameterDomain.ForTool(nameof(EffectStrength)).Contains(EffectStrength) &&
         NumericParameterDomain.ForStyle(nameof(s.StrokeWidth)).Contains(s.StrokeWidth) &&
         (s.TextOutlineWidth is not { } outlineWidth || NumericParameterDomain.ForStyle(nameof(s.StrokeWidth)).Contains(outlineWidth)) &&
         NumericParameterDomain.ForStyle(nameof(s.Opacity)).Contains(s.Opacity) &&
         NumericParameterDomain.ForStyle(nameof(s.FontSize)).Contains(s.FontSize) &&
-        s.FontFamily is { Length: > 0 and <= 1024 } && Enum.IsDefined(s.TextAlignment) &&
+        s.FontFamily is { Length: > 0 and <= 1024 } && EmojiFontIds.IsKnown(s.EmojiFontId) && Enum.IsDefined(s.TextAlignment) &&
         Enum.IsDefined(s.ArrowHeadStyle) && NumericParameterDomain.ForStyle(nameof(s.ArrowHeadSize)).Contains(s.ArrowHeadSize) &&
         (s.LineArcBulge is null or >= -ElementGeometry.MaximumLineArcBulge and <= ElementGeometry.MaximumLineArcBulge) &&
         (s.StartArrowHead is null || Enum.IsDefined(s.StartArrowHead.Value)) &&

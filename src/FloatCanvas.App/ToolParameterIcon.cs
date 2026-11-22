@@ -20,7 +20,7 @@ internal static class ToolParameterIcon
     {
         ArgumentNullException.ThrowIfNull(parameters);
         if(!double.IsFinite(size)||size<=0)throw new ArgumentOutOfRangeException(nameof(size));
-        if(parameters.Tool==EditorTool.Emoji)return new Image {Source=EmojiArtwork.Image(parameters.Emoji),Width=size,Height=size,Stretch=Stretch.Uniform,Opacity=parameters.Style.Opacity};
+        if(parameters.Tool==EditorTool.Emoji)return new Image {Source=EmojiArtwork.Image(parameters.Emoji,parameters.Style.EmojiFontId),Width=size,Height=size,Stretch=Stretch.Uniform,Opacity=parameters.Style.Opacity};
         if(parameters.Tool==EditorTool.CaptureRegion)return CaptureIcon(parameters,size);
         if(parameters.Tool is EditorTool.Blur or EditorTool.Pixelate)return EffectIcon(parameters,size);
         if(parameters.Tool==EditorTool.Presentation)return KeyboardIcon(parameters,size);

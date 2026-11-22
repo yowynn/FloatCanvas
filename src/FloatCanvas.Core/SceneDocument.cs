@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace FloatCanvas.Core;
 
-public enum ElementKind { Freehand, Highlighter, Line, Arrow, DoubleArrow, Rectangle, RoundedRectangle, Ellipse, Triangle, Text, Number, Image, Symbol, LivePixelate, LiveBlur, Presentation }
+public enum ElementKind { Freehand, Highlighter, Line, Arrow, DoubleArrow, Rectangle, RoundedRectangle, Ellipse, Triangle, Text, Number, Image, Symbol, LivePixelate, LiveBlur, Presentation, Emoji }
 public enum DocumentKind { LiveOverlay, FrozenCapture }
 public enum TextAlignment { Left, Center, Right }
 public enum ImageEffectKind { Blur = 0, Pixelate = 1 }
@@ -65,6 +65,12 @@ public sealed class ElementStyle
     public double Opacity { get; set; } = 1;
     public string FontFamily { get; set; } = "Microsoft YaHei UI";
     public double FontSize { get; set; } = 24;
+    private string emojiFontId = EmojiFontIds.Default;
+    public string EmojiFontId
+    {
+        get => emojiFontId;
+        set => emojiFontId = EmojiFontIds.Normalize(value);
+    }
     public TextAlignment TextAlignment { get; set; }
     public ElementStyle Clone()
     {

@@ -356,6 +356,7 @@ internal sealed partial class LayersWindow : Wpf.Window
         Add("Layers.MoveTo", Folder, "", ShowMoveDialog);
         var enter = Add("Layers.EnterGroup", Folder, "Enter", () => EnterGroup(id));
         var rename = AddCommand("Layers.Rename", "M2,11 V14 H5 L13,6 L10,3 Z", "Selection.Rename", () => BeginRename(id));
+        var convertEmoji = Add("Emoji.ConvertText", LayerTypeIcon.Geometry(ElementKind.Text), "", () => ConvertEmojiToText(id));
         var collect = Add("Layers.CollectGroup", "M2,3 H14 M4,7 H12 M6,11 H10", "", () => RunLayerCommand(s => s.CollectLegacyGroup(id)));
         var editPrefab = Add("Prefab.EditDefinition", Instance, "Enter", () => EnterGroup(id));
         var detachPrefab = Add("Prefab.Detach", Folder, "", () => DetachPrefabRequested?.Invoke(id));
@@ -383,6 +384,9 @@ internal sealed partial class LayersWindow : Wpf.Window
             var row = FindNode(id); bool allowed = canMutate() && !session.IsTransactionActive && row is not null;
             foreach (var item in menu.Items.OfType<Controls.MenuItem>().Where(item => item.Tag is string)) item.IsEnabled = allowed && CanRunSelectionCommand(item.Tag as string);
             rename.IsEnabled = allowed && CanWrite && !row!.AncestorLocked;
+            bool singleEmoji = row?.Kind == ElementKind.Emoji && session.Selection.SetEquals([id]);
+            convertEmoji.Visibility = singleEmoji ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
+            convertEmoji.IsEnabled = singleEmoji && allowed && CanWrite && !row!.EffectiveLocked;
             enter.Visibility = row?.IsGroup == true ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed; enter.IsEnabled = allowed && session.CanBrowseNode(id);
             collect.Visibility = row?.IsLegacy == true ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed; collect.ToolTip = L.Get("Layers.CollectHint"); collect.IsEnabled = allowed && CanWrite && !row!.EffectiveLocked;
             editPrefab.Visibility = detachPrefab.Visibility = exportPrefab.Visibility = row?.IsInstance == true ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
@@ -391,6 +395,27 @@ internal sealed partial class LayersWindow : Wpf.Window
             menu.Items.OfType<Controls.MenuItem>().Single(i => Equals(i.Tag, "Layers.MoveOut")).IsEnabled = allowed && CanWrite && session.EditScopeId is not null && session.Selection.Any(node => !session.IsNodeLocked(node));
         };
         return menu;
+    }
+    private void ConvertEmojiToText(Guid id)
+    {
+        var session = getSession();
+        if (!ReferenceEquals(session,displayedSession) || !CanWrite || session.IsTransactionActive || !session.Selection.SetEquals([id])) return;
+        ConvertEmojiToText(session,id);
+    }
+    internal static bool ConvertEmojiToText(EditorSession session,Guid id)
+    {
+        var graph=SceneGraph.Read(session.Document);
+        if(graph.IsLocked(id) || graph.FindElement(id) is not { Kind:ElementKind.Emoji } element) return false;
+        using var renderer=new FloatCanvas.Rendering.SceneRenderer();
+        session.Execute(L.Get("Emoji.ConvertText"),_=>
+        {
+            element.Kind=ElementKind.Text;
+            element.Style.FontFamily=FloatCanvas.Rendering.EmojiFontSources.SystemFamilyName;
+            element.Style.PrimaryColor|=0xff000000;
+            element.TextAutoWidth=false;element.TextFrameFixed=true;
+            TextFrameLayout.Fit(element,element.Height,renderer);
+        });
+        return true;
     }
     private void MoveOut(Guid id)
     {

@@ -55,7 +55,18 @@ internal static class SceneFormatMigration
             }
             style["PrimaryColor"] = migrated.PrimaryColor; style["SecondaryColor"] = migrated.SecondaryColor;
             style["Variant"] = migrated.Variant;
-            return element.Deserialize<CanvasElement>(currentOptions) ?? throw new JsonException("Empty migrated element.");
+            var result = element.Deserialize<CanvasElement>(currentOptions) ?? throw new JsonException("Empty migrated element.");
+            // Published files saved emoji as plain text with this font and a single glyph.
+            if (result.Kind == ElementKind.Text && result.Style.Variant == ElementAppearance.Default &&
+                string.Equals(result.Style.FontFamily, "Segoe UI Emoji", StringComparison.OrdinalIgnoreCase) &&
+                EmojiCatalog.TryFind(result.Text, out var emoji))
+            {
+                result.Kind = ElementKind.Emoji; result.Text = emoji.Glyph;
+                result.Style.Opacity *= (result.Style.PrimaryColor >> 24) / 255d;
+                result.ConstrainAspect ??= false; // Historical Text default.
+                result.TextAutoWidth = result.TextFrameFixed = false;
+            }
+            return result;
         }
         public override void Write(Utf8JsonWriter writer, CanvasElement value, JsonSerializerOptions options) =>
             throw new NotSupportedException();
@@ -64,7 +75,8 @@ internal static class SceneFormatMigration
     internal static void Upgrade(SceneDocument document)
     {
         if (!Supports(document.Version)) throw new InvalidDataException(L.Format("Scene.UnsupportedVersion", document.Version));
-        if (document.Version == SceneDocument.CurrentVersion) return;
+        if (document.Version == SceneDocument.CurrentVersion)
+            return;
         // The public releases through v8 used a count-based plane and interleaved
         // draw order. Adopt the saved geometry and group order without recalibrating.
         if (document.Version <= 6) CanvasCalibration.AdoptReference(document.Canvas.Projection);

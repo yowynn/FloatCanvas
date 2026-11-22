@@ -1,5 +1,6 @@
 using L = FloatCanvas.Localization.AppText;
 using System.IO;
+using FloatCanvas.Rendering;
 using FloatCanvas.Windows;
 
 namespace FloatCanvas.App;
@@ -29,6 +30,7 @@ internal static class ApplicationPaths
         }
         else if (args.Contains("--smoke"))
             ProfileDirectory = Path.Combine(Path.GetTempPath(), "FloatCanvas-Smoke", Guid.NewGuid().ToString("N"));
+        EmojiFontSources.Configure(ProfileDirectory);
     }
 
     // Preserve drive/UNC roots while giving relative, case and separator aliases one identity.

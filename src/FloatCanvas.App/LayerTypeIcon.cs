@@ -26,6 +26,7 @@ internal static class LayerTypeIcon
             ElementKind.Ellipse => "M14,8 A6,5 0 1 1 2,8 A6,5 0 1 1 14,8 Z",
             ElementKind.Triangle => "M8,2 L14,14 H2 Z",
             ElementKind.Text => "M2,3 H14 M8,3 V14 M5,14 H11",
+            ElementKind.Emoji => "M14.5,8 A6.5,6.5 0 1 1 1.5,8 A6.5,6.5 0 1 1 14.5,8 Z M5.4,6 H5.8 M10.2,6 H10.6 M4.7,9 Q8,14 11.3,9",
             ElementKind.Number => "M14.5,8 A6.5,6.5 0 1 1 1.5,8 A6.5,6.5 0 1 1 14.5,8 Z M6,4 L5,12 M10,4 L9,12 M4,6.5 H12 M3.5,9.5 H11.5",
             ElementKind.Image => "M1.5,2.5 H14.5 V13.5 H1.5 Z M3,11 L6.5,7.5 L9,10 L11,8 L13,10 M10,5 A1,1 0 1 1 12,5 A1,1 0 1 1 10,5",
             ElementKind.Symbol => "M8,1.7 L9.8,5.8 L14.3,6.4 L11,9.6 L11.8,14.1 L8,12 L4.2,14.1 L5,9.6 L1.7,6.4 L6.2,5.8 Z",

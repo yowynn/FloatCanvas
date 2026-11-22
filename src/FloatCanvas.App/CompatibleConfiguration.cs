@@ -290,7 +290,7 @@ internal sealed class CompatibleConfiguration(string path)
         if (owner == typeof(ToolParameters)) return name switch
         {
             "DefaultWidth" or "DefaultHeight" or "NumberStart" or "NumberStep" or "EffectStrength" or "CaptureBorderWidth" or "CornerRadius" => NumericParameterDomain.ForTool(name).Contains(value.Deserialize<double>()),
-            "Emoji" => Text(value, 32) && System.Globalization.StringInfo.GetNextTextElement(value.GetValue<string>()).Length == value.GetValue<string>().Length, _ => true
+            "Emoji" => Text(value, 32) && EmojiCatalog.TryFind(value.GetValue<string>(), out _), _ => true
         };
         if (owner == typeof(CanvasPresetParameters)) return name switch
         { "Columns" or "Rows" => Range(value,1,CanvasCalibration.MaximumGridCount), "GridWidth" => Range(value,double.Epsilon,64), "FlatCellSize" => Range(value,CanvasGridGeometry.MinimumCellSize,CanvasGridGeometry.MaximumCellSize), _ => true };

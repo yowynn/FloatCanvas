@@ -5,7 +5,7 @@
   <ItemGroup>
     <ProjectReference Include="../FloatCanvas.Localization/FloatCanvas.Localization.csproj" />
     <ProjectReference Include="../FloatCanvas.Core/FloatCanvas.Core.csproj" />
-    <PackageReference Include="SkiaSharp" Version="4.153.1" />
-    <PackageReference Include="SkiaSharp.HarfBuzz" Version="4.153.1" />
+    <PackageReference Include="SkiaSharp" Version="4.157.0" />
+    <PackageReference Include="SkiaSharp.HarfBuzz" Version="4.157.0" />
   </ItemGroup>
 </Project>

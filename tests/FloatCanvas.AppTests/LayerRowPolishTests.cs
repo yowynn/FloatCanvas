@@ -43,6 +43,7 @@ internal static class LayerRowPolishTests
         var elements = Enum.GetValues<ElementKind>().Select(kind => new CanvasElement
         {
             Kind = kind, Name = kind.ToString(), Width = 50, Height = 30,
+            Text = kind == ElementKind.Emoji ? "🔥" : "",
             AssetId = kind == ElementKind.Image ? asset : null,
             Presentation = kind == ElementKind.Presentation ? new() : null,
             Points = kind is ElementKind.Freehand or ElementKind.Highlighter ? [new(0, 0), new(50, 30)] : []
@@ -61,16 +62,21 @@ internal static class LayerRowPolishTests
         var window = new LayersWindow(() => session) { Height = 1000 };
         using var host = new NativeHost(window, 300, 1000);
         window.PrepareForShow(); host.Layout();
-        check(prefix + " root path is named Main canvas", Crumbs(window).First().Content?.ToString() == L.Get("Layers.RootScope") &&
-            L.Get("Layers.RootScope") == (locale == "zh-CN" ? "主画布" : "Main canvas"));
+        check(prefix + " root breadcrumb has the current localized canvas name",
+            System.Windows.Automation.AutomationProperties.GetName(Crumbs(window).First()) == L.Get("RootCanvas.Main"));
         check(prefix + " all element kinds have distinct static type artwork", Enum.GetValues<ElementKind>().Select(kind => LayerTypeIcon.Geometry(kind)).Distinct().Count() == Enum.GetValues<ElementKind>().Length);
         foreach (var element in elements)
         {
             var row = window.FindNode(element.Id)!;
             var presenter = Show(window, host, element.Id);
             var icon = (ContentControl)typeof(LayerTreeRowPresenter).GetField("kind", Hidden)!.GetValue(presenter)!;
-            check(prefix + " " + element.Kind + (element.WindowSource is null ? "" : " window") + " row carries and paints its static type icon", row.Kind == element.Kind && icon.Content is ShapePath path &&
-                path.Data.ToString() == System.Windows.Media.Geometry.Parse(LayerTypeIcon.Geometry(element.Kind, windowSource: element.WindowSource is not null)).ToString() && InkCount((FrameworkElement)icon.Content) > 5);
+            bool artwork = row.Symbol is not null
+                ? icon.Content is FrameworkElement symbolArt && InkCount(symbolArt) > 5
+                : icon.Content is ShapePath path &&
+                    path.Data.ToString() == System.Windows.Media.Geometry.Parse(LayerTypeIcon.Geometry(element.Kind, windowSource: element.WindowSource is not null)).ToString() &&
+                    InkCount(path) > 5;
+            check(prefix + " " + element.Kind + (element.WindowSource is null ? "" : " window") + " row carries and paints its type artwork",
+                row.Kind == element.Kind && artwork);
             var dots = Descendants<System.Windows.Shapes.Ellipse>(presenter.Handle).ToArray();
             var bounds = Rect.Empty; foreach (var dot in dots) bounds.Union(dot.TransformToAncestor(presenter).TransformBounds(new Rect(dot.RenderSize)));
             var labelBounds = presenter.Label.TransformToAncestor(presenter).TransformBounds(new Rect(presenter.Label.RenderSize));
@@ -160,7 +166,7 @@ internal static class LayerRowPolishTests
     private static int InkCount(FrameworkElement element) { element.Measure(new Size(16, 16)); element.Arrange(new Rect(0, 0, 16, 16)); element.UpdateLayout(); var image = Render(element); var bytes = new byte[image.PixelWidth * image.PixelHeight * 4]; image.CopyPixels(bytes, image.PixelWidth * 4, 0); return Enumerable.Range(0, image.PixelWidth * image.PixelHeight).Count(i => bytes[i * 4 + 3] > 80); }
     private static void Save(FrameworkElement root, string path) { var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(Render(root))); using var stream = File.Create(path); encoder.Save(stream); }
     private static CanvasElement Box() => new() { Kind = ElementKind.Rectangle, Width = 20, Height = 20 };
-    private static IEnumerable<Button> Crumbs(LayersWindow window) => ((StackPanel)typeof(LayersWindow).GetField("breadcrumbs", Hidden)!.GetValue(window)!).Children.OfType<Button>();
+    private static IEnumerable<Button> Crumbs(LayersWindow window) => ((StackPanel)typeof(LayersWindow).GetField("breadcrumbs", Hidden)!.GetValue(window)!).Children.OfType<Button>().Where(b=>!Equals(b.Tag,"overflow"));
     private static void ReturnRoot(LayersWindow window) { Crumbs(window).First().RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); window.PrepareForShow(); }
     private static LayerTreeRowPresenter Show(LayersWindow window, NativeHost host, Guid id) { var list = (ListBox)typeof(LayersWindow).GetField("layers", Hidden)!.GetValue(window)!; list.ScrollIntoView(window.FindNode(id)); host.Layout(); return LayerTreeRowPresenter.Find(window.Container(id)) ?? throw new InvalidOperationException("Expected real current row."); }
     private static IEnumerable<T> Descendants<T>(DependencyObject root) where T : DependencyObject { for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++) { var child = VisualTreeHelper.GetChild(root, i); if (child is T value) yield return value; foreach (var item in Descendants<T>(child)) yield return item; } }

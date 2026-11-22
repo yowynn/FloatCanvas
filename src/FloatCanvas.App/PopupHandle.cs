@@ -14,13 +14,13 @@ internal sealed class PopupHandle
     private readonly OverlayPopup? overlay;
     private readonly WindowPopup? panel;
     private IDisposable? hintLease;
-    internal PopupHandle(Popup desktop, string? windowTitle = null)
+    internal PopupHandle(Popup desktop, string? windowTitle = null, bool compact = false)
     {
         this.desktop=desktop;
         if (windowTitle is not null)
         {
             var content = desktop.Child!; desktop.Child = null;
-            panel = new WindowPopup(content, desktop.PlacementTarget, windowTitle, desktop.VerticalOffset) { StaysOpen = desktop.StaysOpen };
+            panel = new WindowPopup(content, desktop.PlacementTarget, windowTitle, desktop.VerticalOffset, compact) { StaysOpen = desktop.StaysOpen };
         }
         else if(OverlayWindowScope.Current is not null)
         {

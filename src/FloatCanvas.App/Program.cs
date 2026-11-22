@@ -57,6 +57,13 @@ internal static class Program
             return;
         }
         var diagnostics = new ApplicationDiagnostics(ApplicationPaths.ProfileDirectory);
+        void LogEmojiBoundsProfile()
+        {
+            var mismatches = FloatCanvas.Rendering.EmojiBoundsProfile.FingerprintMismatches();
+            if (mismatches.Count > 0) diagnostics.Write("Emoji.BoundsProfileMismatch", mismatches);
+        }
+        LogEmojiBoundsProfile();
+        FloatCanvas.Rendering.EmojiFontSources.Changed += LogEmojiBoundsProfile;
         diagnostics.Write("App.Startup", new { Executable = Environment.ProcessPath,
             WindowsStartup = args.Contains("--startup"), SystemUptimeMilliseconds = Environment.TickCount64,
             AssemblyId = typeof(Program).Assembly.ManifestModule.ModuleVersionId,
@@ -66,7 +73,12 @@ internal static class Program
             OperatingSystem = System.Runtime.InteropServices.RuntimeInformation.OSDescription });
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
         { if (e.ExceptionObject is Exception exception) diagnostics.WriteUnhandled(exception); };
-        AppDomain.CurrentDomain.ProcessExit += (_, _) => diagnostics.Write("App.ProcessExit", new { Environment.ExitCode });
+        AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+        {
+            try { EmojiHistoryStore.Shared.Flush(); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException) { }
+            diagnostics.Write("App.ProcessExit", new { Environment.ExitCode });
+        };
         var app = new System.Windows.Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         app.Dispatcher.ShutdownStarted += (_, _) => diagnostics.Write("App.Dispatcher.ShutdownStarted");
         app.Dispatcher.ShutdownFinished += (_, _) => diagnostics.Write("App.Dispatcher.ShutdownFinished");

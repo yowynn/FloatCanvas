@@ -230,7 +230,7 @@ internal sealed partial class EditorController
                 element.Kind == ElementKind.Symbol && SymbolGeometry.Shape(element.Symbol, element.CustomSymbol).Contours.Length > 1 ||
                 ElementGeometry.HasFlatHighlighterTip(element) ||
                 ProjectedContourIntersectsRectangle(local, transform, rectangle, closed);
-            bool hasStroke = element.Kind is not (ElementKind.Image or ElementKind.Text or ElementKind.Number) && !ElementGeometry.IsLiveEffect(element.Kind);
+            bool hasStroke = element.Kind is not (ElementKind.Image or ElementKind.Text or ElementKind.Number or ElementKind.Emoji) && !ElementGeometry.IsLiveEffect(element.Kind);
             if (!intersects && hasStroke)
                 intersects = ProjectedStrokeIntersectsRectangle(local, transform, rectangle, closed, element.Style.StrokeWidth);
             if (!intersects && ElementGeometry.IsLine(element.Kind))

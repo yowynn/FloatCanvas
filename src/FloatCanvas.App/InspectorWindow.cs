@@ -51,6 +51,8 @@ internal sealed partial class InspectorWindow : Wpf.Window
     private Controls.ComboBoxItem? customSymbolItem;
     private SymbolShape? customSymbolPreview;
     private readonly Controls.ComboBox fontPicker = ToolOptionPreviews.FontPicker();
+    private readonly EmojiField emojiField = new();
+    private readonly EmojiFontPicker emojiFontPicker = new();
     private readonly SegmentedChoice alignment = new(), arrowStyle = new(), startArrow = new(), endArrow = new(), strokePattern = new(), placement = new();
     private readonly Controls.CheckBox preservePlacementAppearance = new();
     private readonly Controls.ComboBox effectChoice = new OverlayComboBox { DisplayMemberPath = nameof(EffectOption.Label), SelectedValuePath = nameof(EffectOption.Index) },
@@ -198,6 +200,25 @@ internal sealed partial class InspectorWindow : Wpf.Window
         propertyPanel.Children.Add(FieldPair("EffectStrength", L.Get("ToolOptions.EffectStrength"), null, null));
         textSection = SectionHeading("Inspector.TextSection",first:true);
         propertyPanel.Children.Add(textSection);
+        var emojiFontRow = PropertyPanelLayout.Row(new PropertyLabel(L.Get("Emoji.Style")),emojiFontPicker);
+        fieldContainers.Add("EmojiFont",emojiFontRow);propertyPanel.Children.Add(emojiFontRow);
+        Automation.AutomationProperties.SetName(emojiFontPicker,L.Get("Emoji.Style"));
+        emojiFontPicker.SelectionChanged += (_,_) =>
+        {
+            if(refreshing)return;
+            emojiField.SetFontId(emojiFontPicker.Value);
+            ChangeField("EmojiFont");
+        };
+        var emojiRow = PropertyPanelLayout.Row(new PropertyLabel(L.Get("Tool.Emoji")),emojiField);
+        fieldContainers.Add("Emoji",emojiRow);propertyPanel.Children.Add(emojiRow);
+        emojiField.Closed += QueueFocusCheck;
+        emojiField.Committed += _ =>
+        {
+            var session=getSession();
+            if(refreshing || !ReferenceEquals(formSession,session) || !session.Selection.SetEquals(formSelection)) return;
+            ChangeField("Emoji");
+            CompleteEdit();
+        };
         propertyPanel.Children.Add(FieldPair("FontSize", L.Get("Inspector.FontSize"), null, null));
         propertyPanel.Children.Add(FieldPair("Number", L.Get("Editor.ElementKind.Number"), null, null));
         var formatRow = PropertyPanelLayout.Row(new PropertyLabel(L.Get("Numbering.Format")), numberFormatPicker);
@@ -320,7 +341,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
     private void QueueFocusCheck()=>Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input,()=>
     {
         if(SessionWindowCoordinator.Find(this)?.IsInputMethodSwitchPending==true || SessionWindowCoordinator.HasModalChild(this))return;
-        if(!IsVisible||IsPinned||IsActive||IsKeyboardFocusWithin||contextMenus.Any(menu=>menu.IsOpen)||colorFields.Values.Any(color=>color.IsPickerOpen)||
+        if(!IsVisible||IsPinned||IsActive||IsKeyboardFocusWithin||contextMenus.Any(menu=>menu.IsOpen)||emojiField.IsOpen||emojiFontPicker.IsDropDownOpen||colorFields.Values.Any(color=>color.IsPickerOpen)||
             fontPicker.IsDropDownOpen || numberFormatPicker.IsDropDownOpen)return;
         if(Wpf.Application.Current.Windows.Cast<Wpf.Window>().Any(window=>window.IsActive&&IsChildWindow(window)))return;
         Dismiss(WindowDismissReason.ExternalFocus);
@@ -424,7 +445,10 @@ internal sealed partial class InspectorWindow : Wpf.Window
         try
         {
             if (!ReferenceEquals(formSession, session) || !session.Selection.SetEquals(formSelection))
+            {
                 ((FontPickerControl)fontPicker).ResetModelContext();
+                emojiField.ResetContext();
+            }
             bool cueChanges = IsVisible && preparingForShow == 0 && ReferenceEquals(formSession, session) && formSelection.Length > 0;
             formSession = session; formSelection = session.Selection.ToArray();
             pendingSelectionReload = false;
@@ -485,6 +509,12 @@ internal sealed partial class InspectorWindow : Wpf.Window
             if (IsFieldVisible("EffectStrength")) SetField("EffectStrength", SelectedEffect(element)!.Amount);
             SetField("Opacity", element.Style.Opacity * 100); SetField("FontSize", element.Style.FontSize);
             if (IsFieldVisible("Text")) { fields["Text"].Text = element.Text; fields["Text"].IsEnabled = true; }
+            if (IsFieldVisible("EmojiFont"))
+            {
+                emojiFontPicker.SetValue(element.Style.EmojiFontId);
+                emojiField.SetFontId(element.Style.EmojiFontId);
+            }
+            if (IsFieldVisible("Emoji")) emojiField.SetModel(selected.All(e=>e.Text==element.Text)?element.Text:null);
             if (IsFieldVisible("Number")) { SetField("Number", element.Number); fields["Number"].IsEnabled = true; }
             if (IsFieldVisible("NumberFormat"))
                 numberFormatPicker.SelectedValue = selected.All(e => e.NumberFormat == element.NumberFormat) ? element.NumberFormat : null;
@@ -503,6 +533,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
                 foreach (var key in fields.Keys)
                     if (IsFieldVisible(key) && selected.Skip(1).Any(other => !Equals(PropertyValue(element, key), PropertyValue(other, key)))) SetMixedField(key, PropertyValue(element, key));
                 if (IsFieldVisible("FontFamily") && selected.Skip(1).Any(other => other.Style.FontFamily != element.Style.FontFamily)) ToolOptionPreviews.ClearFontSelection(fontPicker);
+                if (IsFieldVisible("EmojiFont") && selected.Skip(1).Any(other => other.Style.EmojiFontId != element.Style.EmojiFontId)) emojiFontPicker.ClearValue();
                 foreach (var (key, picker) in new[] { ("ArrowHeadStyle", arrowStyle), ("StartArrowHead", startArrow), ("EndArrowHead", endArrow), ("StrokePattern", strokePattern), ("LinePathMode", linePathMode), ("HighlighterTip", highlighterTip), ("TextAlignment", alignment), ("WindowSourceFit", windowSourceFit) })
                     if (IsFieldVisible(key) && selected.Skip(1).Any(other => !Equals(PropertyValue(element, key), PropertyValue(other, key)))) picker.SelectedIndex = -1;
                 if (IsFieldVisible("Symbol") && selected.Skip(1).Any(other => !Equals(PropertyValue(element, "Symbol"), PropertyValue(other, "Symbol")))) symbolChoice.SelectedIndex = -1;
@@ -634,6 +665,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
             {keepAspect.IsThreeState=false;keepAspect.IsChecked=selected.All(ElementGeometry.PreservesAspect);}
             if(changedKey=="Placement")SetPropertyVisibility(selected);
             if(changedKey is "LinkColors" or "StyleVariant" or "HighlighterTip")SetPropertyVisibility(selected);
+            if(changedKey=="EmojiFont")emojiField.SetFontId(emojiFontPicker.Value);
             if (changedKey == "NumberFormat") SetPropertyVisibility(selected);
             if (changedKey.StartsWith("Presentation.", StringComparison.Ordinal)) RefreshPresentationSettings(selected);
             if(changedKey=="Symbol")
@@ -764,6 +796,8 @@ internal sealed partial class InspectorWindow : Wpf.Window
         if (dirtyFields.Contains("TextAlignment") && source.Kind == ElementKind.Text && alignment.SelectedIndex is >= 0 and <= 2)
             edited.Style.TextAlignment = (FloatCanvas.Core.TextAlignment)alignment.SelectedIndex;
         if (dirtyFields.Contains("Text") && source.Kind == ElementKind.Text) edited.Text = fields["Text"].Text;
+        if (dirtyFields.Contains("EmojiFont") && source.Kind == ElementKind.Emoji) edited.Style.EmojiFontId = emojiFontPicker.Value;
+        if (dirtyFields.Contains("Emoji") && source.Kind == ElementKind.Emoji && EmojiCatalog.TryFind(emojiField.Value,out var emoji)) edited.Text=emoji.Glyph;
         if (source.Kind == ElementKind.Text && dirtyFields.Overlaps(["Text", "FontFamily", "FontSize", "StyleVariant", "StrokeWidth"]))
             ReflowText(source, edited);
         if (source.Kind == ElementKind.Number && dirtyFields.Contains("FontSize"))
@@ -1023,6 +1057,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
 
     private void CloseColorPickers()
     {
+        emojiField.Close();
         foreach (var field in colorFields.Values) field.ClosePicker();
     }
 
@@ -1177,8 +1212,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
         var effect = selected.Length == 0 ? null : SelectedEffect(selected[0]);
         numericFields["EffectStrength"].SetSliderRange(effect?.Kind == ImageEffectKind.Pixelate ? 1 : .1, 64);
         numericFields["EffectStrength"].KeyboardStep = effect?.Kind == ImageEffectKind.Pixelate ? 1 : .1;
-        bool largeGlyph = selected.Length > 0 && selected.All(element => element.Kind == ElementKind.Number ||
-            element.Kind == ElementKind.Text && EmojiGlyphs.IsEmoji(element.Text, element.Style));
+        bool largeGlyph = selected.Length > 0 && selected.All(element => element.Kind == ElementKind.Number);
         numericFields["FontSize"].SetSliderRange(largeGlyph ? 16 : 8, largeGlyph ? 256 : 144);
     }
 
@@ -1202,23 +1236,25 @@ internal sealed partial class InspectorWindow : Wpf.Window
         bool image = element.Kind == ElementKind.Image || ElementGeometry.IsLiveEffect(element.Kind), text = element.Kind == ElementKind.Text, number = element.Kind == ElementKind.Number;
         return key switch
         {
-            "Stroke" => AppearanceRegistry.Resolve(element).ForegroundActive && (!text || !EmojiGlyphs.IsEmoji(element.Text, element.Style)),
+            "Stroke" => AppearanceRegistry.Resolve(element).ForegroundActive,
             "Fill" => AppearanceRegistry.Resolve(element).BackgroundActive,
             "LinkColors" => ElementGeometry.IsBoxShape(element.Kind) || number,
-            "StyleVariant" => number || text && !EmojiGlyphs.IsEmoji(element.Text, element.Style),
+            "StyleVariant" => number || text,
             "StrokeWidth" when text => element.Style.Variant == ElementAppearance.TextOutline,
-            "StrokeWidth" => !ElementGeometry.IsLiveEffect(element.Kind) && !number && element.Kind != ElementKind.Presentation &&
+            "StrokeWidth" => !ElementGeometry.IsLiveEffect(element.Kind) && !number && element.Kind is not (ElementKind.Presentation or ElementKind.Emoji) &&
                 (!ElementGeometry.IsBoxShape(element.Kind) || ElementAppearance.HasShapeStroke(element.Style)),
-            "StrokePattern" => !image && !text && !number && element.Kind != ElementKind.Presentation &&
+            "StrokePattern" => !image && !text && !number && element.Kind is not (ElementKind.Presentation or ElementKind.Emoji) &&
                 (!ElementGeometry.IsBoxShape(element.Kind) || ElementAppearance.HasShapeStroke(element.Style)),
             "HighlighterTip" or "HighlighterInkContrast" => element.Kind == ElementKind.Highlighter,
             "HighlighterTipAngle" => ElementGeometry.HasFlatHighlighterTip(element),
             "CornerRadius" => element.Kind is ElementKind.Rectangle or ElementKind.RoundedRectangle,
             "FontFamily" => text || number || element.Kind == ElementKind.Presentation,
             "FontSize" => text || number || element.Kind == ElementKind.Presentation,
+            "ConstrainAspect" => true,
             "PresentationSettings" => element.Kind == ElementKind.Presentation,
             "WindowSourceFit" => element.WindowSource is not null,
             "Text" or "TextAlignment" => text,
+            "Emoji" or "EmojiFont" => element.Kind==ElementKind.Emoji,
             "Number" or "NumberFormat" => number,
             "NumberLabel" => number && element.NumberFormat == NumberFormat.Custom,
             "Symbol" => element.Kind is ElementKind.Symbol or ElementKind.Triangle,
@@ -1250,6 +1286,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
         "ArrowHeadStyle" => e.Style.ArrowHeadStyle, "ArrowHeadSize" => e.Style.ArrowHeadSize,
         "StartArrowHead" => ElementGeometry.ArrowStyle(e, reverse: true), "EndArrowHead" => ElementGeometry.ArrowStyle(e),
         "StrokePattern" => e.Style.StrokePattern, "FontFamily" => e.Style.FontFamily,
+        "EmojiFont" => e.Style.EmojiFontId,
         "LinePathMode" => e.Style.LineArcBulge.HasValue ? LinePathMode.Arc : LinePathMode.Straight,
         "HighlighterTip" => e.Style.HighlighterTip, "HighlighterTipAngle" => e.Style.HighlighterTipAngle,
         "HighlighterInkContrast" => e.Style.HighlighterInkContrast,
@@ -1275,7 +1312,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
         foreach (var key in new[] { "W", "H" }) fieldContainers[key].ToolTip = selected.Any(e => e.ProjectivePlacement is not null)
             ? L.Get("Perspective.InspectorPlaneBounds") : null;
         propertyPanel.Visibility = editable ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
-        textSection.Visibility = editable && selected.All(e => Supports(e, "FontSize")) ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
+        textSection.Visibility = editable && (selected.All(e => Supports(e, "FontSize")) || selected.All(e => e.Kind==ElementKind.Emoji)) ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
         foreach (var (key, container) in fieldContainers)
             container.Visibility = editable && selected.All(e => Supports(e, key)) ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
         numberSequenceRegion.Visibility = fieldContainers["NumberFormat"].Visibility;
@@ -1288,7 +1325,12 @@ internal sealed partial class InspectorWindow : Wpf.Window
         object paletteContext = selected.Length > 0 && selected.All(e => e.Kind == selected[0].Kind) ? selected[0].Kind : "mixed";
         colorFields["Stroke"].SetPaletteContext(paletteContext); colorFields["Fill"].SetPaletteContext(paletteContext);
         bool presentation = selected.Length > 0 && selected.All(e => e.Kind == ElementKind.Presentation);
-        ((Controls.TextBlock)textSection.Child).Text = L.Get(presentation ? "Presentation.Text" : "Inspector.TextSection");
+        string sectionKey = presentation ? "Presentation.Text" : selected.All(e=>e.Kind==element?.Kind) ? element?.Kind switch
+        {
+            ElementKind.Text => "Editor.ElementKind.Text", ElementKind.Number => "Editor.ElementKind.Number",
+            ElementKind.Emoji => "Tool.Emoji", _ => "Inspector.TextSection"
+        } : "Inspector.TextSection";
+        ((Controls.TextBlock)textSection.Child).Text = L.Get(sectionKey);
         SetColorLabel("Stroke", SelectionColorLabel(selected, secondary: false));
         SetColorLabel("Fill", SelectionColorLabel(selected, secondary: true));
         var placementGraph = SceneGraph.Read(getSession().Document);
@@ -1459,7 +1501,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
         else if (!element.IsBillboard&&element.ProjectivePlacement is not null)
             element.Transform = Affine2D.Around(ElementGeometry.Bounds(element, includeStroke: false).Center,
                 Affine2D.Scale(x, y)).Compose(element.Transform);
-        else if (ElementGeometry.IsBoxShape(element.Kind)) ElementGeometry.ResizeShapeGeometry(element, x, y);
+        else if (ElementGeometry.IsBoxShape(element.Kind) || element.Kind==ElementKind.Emoji) ElementGeometry.ResizeShapeGeometry(element, x, y);
         else element.Transform = element.Transform.Compose(Affine2D.Around(ElementGeometry.LocalBounds(element).Center, Affine2D.Scale(x, y)));
     }
 
@@ -1488,6 +1530,8 @@ internal sealed partial class InspectorWindow : Wpf.Window
     internal static string ElementName(CanvasElement element)
     {
         if (!string.IsNullOrWhiteSpace(element.Name)) return element.Name;
+        if (element.Kind == ElementKind.Emoji) return string.IsNullOrEmpty(element.Text) ? L.Get("Tool.Emoji") :
+            L.Format("Inspector.TextName", L.Get("Tool.Emoji"), element.Text);
         if (element.WindowSource is not null) return L.Get("WindowSource.DefaultName");
         if (element.Kind == ElementKind.Presentation)
             return L.Get(element.Presentation?.DisplayStyle switch

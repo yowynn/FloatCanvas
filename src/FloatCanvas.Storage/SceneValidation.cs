@@ -191,13 +191,15 @@ public static class SceneValidation
         Require(Finite(t.M11, t.M12, t.M21, t.M22, t.OffsetX, t.OffsetY) && t.TryInverse(out _), L.Get("Scene.InvalidElementTransform"));
         Require(element.Points is not null && element.Points.Count <= SceneLimits.MaximumPathPoints && element.Points.All(Point), L.Get("Scene.InvalidElementPath"));
         Require(element.Style is not null && element.Text is not null && element.Text.Length <= 2_000_000, L.Get("Scene.InvalidElementContent"));
+        if (element.Kind == ElementKind.Emoji) Require(EmojiCatalog.TryFind(element.Text, out _), L.Get("Emoji.Invalid"));
         var s = element.Style!;
         Require(ElementAppearance.IsValidVariant(element.Kind, s.Variant), L.Get("Scene.InvalidElementStyle"));
         Require(AppearanceRegistry.IsValidColorRoles(s.AdditionalColors) && Enum.IsDefined(element.NumberTextSizeMode) &&
             NumberSequence.IsValidMarker(element), L.Get("Scene.InvalidElementStyle"));
         Require(PresentationLimits.IsValidElement(element), L.Get("Scene.InvalidElementStyle"));
         Require(WindowSourceLimits.IsValidElement(element), "Invalid live window source.");
-        Require(Nonnegative(s.StrokeWidth) && Unit(s.Opacity) && Positive(s.FontSize) && s.FontFamily is not null && s.FontFamily.Length <= 1024 && Enum.IsDefined(s.TextAlignment), L.Get("Scene.InvalidElementStyle"));
+        Require(Nonnegative(s.StrokeWidth) && Unit(s.Opacity) && Positive(s.FontSize) && s.FontFamily is not null && s.FontFamily.Length <= 1024 &&
+            EmojiFontIds.IsKnown(s.EmojiFontId) && Enum.IsDefined(s.TextAlignment), L.Get("Scene.InvalidElementStyle"));
         Require(s.TextOutlineWidth is null or (>= 0 and <= 1024), L.Get("Scene.InvalidElementStyle"));
         Require(Enum.IsDefined(s.ArrowHeadStyle) && Nonnegative(s.ArrowHeadSize) && s.ArrowHeadSize <= 512 &&
             (s.StartArrowHead is null || Enum.IsDefined(s.StartArrowHead.Value)) &&

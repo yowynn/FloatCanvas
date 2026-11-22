@@ -55,7 +55,7 @@ internal sealed partial class DesktopSession
         };
         ToolOptionsKeyboardRoute.Attach(_toolOptionsWindow, () =>
         {
-            if (_toolOptionsPanel.CloseColorPicker()) return true;
+            if (_toolOptionsPanel.TryClosePicker()) return true;
             if (!_toolOptionsPinned) { CloseToolOptions(); return true; }
             return false;
         }, OnKey);
@@ -80,7 +80,7 @@ internal sealed partial class DesktopSession
             if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick)
             {
                 using var intent = _windowCoordinator?.DirectTransfer(WindowDismissReason.CanvasPress);
-                _toolOptionsPanel.CloseColorPicker();
+                _toolOptionsPanel.TryClosePicker();
                 if (!_toolOptionsPinned) DismissToolOptions(WindowDismissReason.CanvasPress);
             }
         };
@@ -173,7 +173,7 @@ internal sealed partial class DesktopSession
         if (!IsToolOptionsOpen) return;
         SetToolOptionsPinned(false);
         using var intent = reason == WindowDismissReason.Close ? null : _windowCoordinator?.DirectTransfer(reason);
-        _toolOptionsPanel.CloseColorPicker();
+        _toolOptionsPanel.TryClosePicker();
         SessionWindowCoordinator.Hide(_toolOptionsWindow, reason);
     }
 
@@ -280,7 +280,7 @@ internal sealed partial class DesktopSession
         if (_eyedropper is not null) return;
         if (_host.IsInputMethodSwitchPending || SessionWindowCoordinator.HasModalChild(_toolOptionsWindow)) return;
         if (IsToolOptionsOpen && !_toolOptionsPinned && !_toolOptionsWindow.IsActive && !HasActiveOptionsDialog() &&
-            !_toolOptionsPanel.IsColorPickerOpen && !IsOptionsInput(Keyboard.FocusedElement as DependencyObject) &&
+            !_toolOptionsPanel.IsPickerOpen && !IsOptionsInput(Keyboard.FocusedElement as DependencyObject) &&
             !IsOptionsInput(Mouse.DirectlyOver as DependencyObject) && !_toolbar.IsActive) CloseToolOptions();
     }
     private void QueueToolOptionsFocusCheck()

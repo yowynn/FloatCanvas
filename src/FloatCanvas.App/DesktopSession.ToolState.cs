@@ -26,7 +26,7 @@ internal sealed partial class DesktopSession
     {
         _toolStateSaveTimer?.Stop();
         if (_toolStateStore is null) return;
-        if (commitDraft) _toolOptionsPanel?.CloseColorPicker();
+        if (commitDraft) _toolOptionsPanel?.TryClosePicker();
         if (_editor.Tool != EditorTool.Canvas) _toolbarToolMemory[ToolFamily(_editor.Tool)] = _editor.Parameters;
         _toolStateStore.Save();
         _toolStateSaveTimer?.Stop();

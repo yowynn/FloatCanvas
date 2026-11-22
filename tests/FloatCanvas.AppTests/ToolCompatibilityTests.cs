@@ -109,8 +109,8 @@ internal static class ToolCompatibilityTests
         session.SetSelection([]);
         int before = session.UndoCount; Gesture(controller, new(-250, 160), new(-250, 160));
         var element = session.Document.Elements.Last();
-        check("emoji insertion uses the displayed preset size for font and object bounds", element.Kind == ElementKind.Text && element.Text == "👩‍🎨" &&
-            element.Style.FontFamily == "Segoe UI Emoji" && element.Style.FontSize == 18 && element.Width == 18 && element.Height == 18 &&
+        check("emoji insertion uses the displayed preset size for object bounds", element.Kind == ElementKind.Emoji && element.Text == "👩‍🎨" &&
+            element.Style.FontSize == 18 && element.Width == 18 && element.Height == 18 &&
             element.Transform == Affine2D.Translation(41, 51) && element.Style.Opacity == 1 && session.UndoCount == before + 1);
         numbers["FontSize"].Text = "12";
         session.SetSelection([]); // This check starts a new insertion; selected-object blank clicks now deselect first.
@@ -120,11 +120,11 @@ internal static class ToolCompatibilityTests
         session.SetSelection([element.Id]);
         var inspector = new InspectorWindow(() => session, colorLibrary: new ColorLibrary(Path.Combine(root, "emoji-inspector-colors.json"))); inspector.PrepareForShow();
         var fields = Field<Dictionary<string, Controls.TextBox>>(inspector, "fields");
-        check("inserted emoji retains its exact frame size for later property editing", fields["W"].Text == "18" && fields["FontFamily"].Text == "Segoe UI Emoji");
+        check("inserted emoji retains its exact frame size and replacement field", fields["W"].Text == "18" && Field<EmojiField>(inspector,"emojiField").Value=="👩‍🎨");
         fields["W"].Text = "36"; before = session.UndoCount; Invoke(inspector, "Apply");
         element = session.Document.Elements.Single(item => item.Id == element.Id);
         check("emoji geometry can be re-edited with one undo step", element.Width == 36 && element.Height == 36 && element.Text == "👩‍🎨" &&
-            element.Style.FontFamily == "Segoe UI Emoji" && session.UndoCount == before + 1);
+            element.Kind == ElementKind.Emoji && session.UndoCount == before + 1);
         check("emoji property undo and redo retain the exact explicit frame sizes", session.Undo() && session.Document.Elements.Single(item => item.Id == element.Id).Width == 18 &&
             session.Redo() && session.Document.Elements.Single(item => item.Id == element.Id).Width == 36);
         check("emoji insertion and later editing do not affect unselected objects or saved tool parameters", JsonSerializer.Serialize(session.Document.Elements[0]) == original &&

@@ -39,7 +39,9 @@ internal sealed partial class ToolOptionsPanel : UserControl
     private readonly TextBlock heading = new() { FontSize = 12, TextWrapping = TextWrapping.Wrap, Margin = new(0, 0, 0, 10) };
     private readonly TextBlock noParameters = new() { Text = L.Get("ToolOptions.NoParameters"), TextWrapping = TextWrapping.Wrap, FontSize = 12 };
     private readonly UniformGrid symbolGallery = new() { Columns = 6 };
-    private readonly UniformGrid emojiGallery = new() { Columns = 6 };
+    private readonly EmojiField emojiField = new(showButton:false);
+    private readonly EmojiPickerPanel emojiLibrary = new(inline:true);
+    private readonly EmojiFontPicker emojiFont = new();
     private bool refreshing, refreshPending = true;
     private EditorTool? fontContextTool;
     private EditorSession? fontContextSession;
@@ -219,12 +221,18 @@ internal sealed partial class ToolOptionsPanel : UserControl
             Change(p => p.Style.Variant = variant); Refresh();
         };
         InitializeSymbolChoices();
-        foreach (var emoji in EmojiArtwork.BuiltIn)
+        AddRow(parameterGrid, "EmojiFont", L.Get("Emoji.Style"), emojiFont);
+        emojiFont.SelectionChanged += (_,_) =>
         {
-            var button = ActionButton(emoji, () => Change(p => p.Emoji = emoji));
-            button.Tag = emoji; button.Content = new Image { Source = EmojiArtwork.Image(emoji), Width = 24, Height = 24, Stretch = Stretch.Uniform }; emojiGallery.Children.Add(button);
-        }
-        AddRow(parameterGrid, "Emoji", L.Get("ToolOptions.Emoji"), emojiGallery);
+            if (refreshing || controller.Tool!=EditorTool.Emoji) return;
+            string id=emojiFont.Value;
+            Change(p => p.Style.EmojiFontId=id);
+            emojiField.SetFontId(id);emojiLibrary.SetFont(id);
+        };
+        emojiField.Committed += glyph => { if (controller.Tool==EditorTool.Emoji) Change(p => p.Emoji=glyph); };
+        AddRow(parameterGrid, "Emoji", L.Get("Tool.Emoji"), emojiField);
+        rows.Add("EmojiLibrary",emojiLibrary);parameterGrid.Children.Add(emojiLibrary);
+        emojiLibrary.Picked += entry => { if (controller.Tool==EditorTool.Emoji) Change(p => p.Emoji=entry.Glyph); };
         status.SetResourceReference(TextBlock.ForegroundProperty, "CanvasMuted");
         InitializePresentationParameters();
         // All tool pages share these two viewports and the fixed status row.
@@ -310,6 +318,8 @@ internal sealed partial class ToolOptionsPanel : UserControl
             }
             if (fontContextTool != tool || !ReferenceEquals(fontContextSession, controller.Session))
             {
+                emojiField.ResetContext();
+                emojiLibrary.Begin(controller.Tool==EditorTool.Emoji?controller.Emoji:null);
                 linkedColorsRegion.Reset();
                 highlighterAngleRegion.Reset();
                 ((FontPickerControl)fontFamily).ResetModelContext();
@@ -352,7 +362,8 @@ internal sealed partial class ToolOptionsPanel : UserControl
             Show("Size", pairedSize); Show("Aspect", !shape && boxRegion && !presentation);
             Show("EffectStrength", tool is EditorTool.Blur or EditorTool.Pixelate);
             Show("TextAlignment", tool == EditorTool.Text);
-            Show("Symbols", tool == EditorTool.Symbol); Show("Emoji", tool == EditorTool.Emoji);
+            Show("Symbols", tool == EditorTool.Symbol); Show("Emoji", tool == EditorTool.Emoji); Show("EmojiLibrary", tool == EditorTool.Emoji);
+            Show("EmojiFont", tool == EditorTool.Emoji);
             Show("CaptureShape", capture); Show("CaptureSource", capture); Show("CaptureBorderWidth", capture);
             noParameters.Visibility = paint || text || boxRegion || tool is EditorTool.PointerPresentation ? Visibility.Collapsed : Visibility.Visible;
             RefreshPresentationParameters(p);
@@ -381,6 +392,12 @@ internal sealed partial class ToolOptionsPanel : UserControl
                 SegmentedChoicePreviews.SetStyleFamily(pickers["StyleVariant"], p.AppearanceKind!.Value);
                 SetPicker("StyleVariant", p.Style.Variant!);
             }
+            if (IsApplicable("EmojiFont"))
+            {
+                emojiFont.SetValue(p.Style.EmojiFontId);
+                emojiField.SetFontId(p.Style.EmojiFontId);
+                emojiLibrary.SetFont(p.Style.EmojiFontId);
+            }
             if (IsApplicable("Foreground"))
                 SetColorLabel("Foreground", foreground, capture ? "Snapshot.BorderColor" :
                     p.AppearanceKind is { } primaryKind ? AppearanceRegistry.ColorLabel(primaryKind, p.Style, false) : "Color.Unified");
@@ -399,6 +416,7 @@ internal sealed partial class ToolOptionsPanel : UserControl
             if (tool == EditorTool.Symbol) SetNumber("SymbolSize", p.SymbolSize);
             SetNumber("NumberStart", p.NumberStart); SetNumber("NumberStep", p.NumberStep); SetNumber("NextNumber", controller.Session.Document.NextNumber);
             if (tool == EditorTool.RoundedRectangle && p.CornerRadius is null) numericFields["CornerRadius"].ShowPlaceholder("—");
+            if (tool==EditorTool.Emoji) emojiLibrary.SetCurrent(p.Emoji);
             SetPicker("StartArrowHead", p.Style.StartArrowHead ?? (tool == EditorTool.DoubleArrow ? p.Style.ArrowHeadStyle : ArrowHeadStyle.None));
             SetPicker("EndArrowHead", p.Style.EndArrowHead ?? (tool is EditorTool.Arrow or EditorTool.DoubleArrow ? p.Style.ArrowHeadStyle : ArrowHeadStyle.None));
             SetPicker("StrokePattern", p.Style.StrokePattern);
@@ -408,7 +426,7 @@ internal sealed partial class ToolOptionsPanel : UserControl
             SetNumber("HighlighterInkContrast", 100 * p.Style.HighlighterInkContrast);
             SetPicker("TextAlignment", p.Style.TextAlignment);
             if (IsApplicable("Symbols")) RefreshSymbolChoices();
-            if (IsApplicable("Emoji")) HighlightGallery(emojiGallery, p.Emoji);
+            if (IsApplicable("Emoji")) emojiField.SetModel(p.Emoji);
             if (IsApplicable("FontSize")) captions["FontSize"].Text = L.Get(tool is EditorTool.Emoji or EditorTool.Number ? "ToolOptions.Size" : "Inspector.FontSize");
             presets.PrepareForShow();
             LayoutParameters();
@@ -435,7 +453,7 @@ internal sealed partial class ToolOptionsPanel : UserControl
         string[][] groups = [ ["PresentationRuntime"], ["Aspect"], ["CaptureShape"], ["CaptureSource"], ["LinkColors"], ["StyleVariant"], ["LinePathMode"],
             ["HighlighterTip"], ["HighlighterAngleRegion"], ["HighlighterInkContrast"], ["Colors"], ["CaptureBorderWidth"], ["StrokeWidth"], ["CornerRadius"], ["Opacity"],
             ["FontFamily"], ["FontSize"], ["NumberFormat"], ["TextAlignment"], ["NumberStart"], ["NumberStep"], ["NextNumber"], ["StartArrowHead"], ["EndArrowHead"],
-            ["StrokePattern"], ["ArrowHeadSize"], ["EffectStrength"], ["SymbolSize"], ["Symbols"], ["Size"], ["Emoji"], ["PresentationSettings"], ["PointerPresentationSettings"] ];
+            ["StrokePattern"], ["ArrowHeadSize"], ["EffectStrength"], ["SymbolSize"], ["Symbols"], ["Size"], ["EmojiFont"], ["Emoji"], ["EmojiLibrary"], ["PresentationSettings"], ["PointerPresentationSettings"] ];
         if (controller.Tool == EditorTool.Presentation)
             groups = [["PresentationSettings"], ["Colors"], ["Opacity"], ["FontFamily"], ["FontSize"], ["Size"]];
         foreach (var group in groups)
@@ -459,6 +477,8 @@ internal sealed partial class ToolOptionsPanel : UserControl
     }
     internal bool IsColorPickerOpen => canvasContent?.IsColorPickerOpen == true || foreground.IsPickerOpen || background.IsPickerOpen || presentationGlobalSettings.IsColorPickerOpen;
     internal bool CloseColorPicker() => canvasContent?.TryCloseColorPicker() == true || foreground.TryClosePicker() || background.TryClosePicker() || presentationGlobalSettings.TryClosePicker();
+    internal bool IsPickerOpen => emojiField.IsOpen || IsColorPickerOpen;
+    internal bool TryClosePicker() => emojiField.TryClose() || CloseColorPicker();
     internal bool OwnsColorPickerInput(DependencyObject? source) => canvasContent?.OwnsColorPickerInput(source) == true || foreground.OwnsPickerInput(source) || background.OwnsPickerInput(source) || presentationGlobalSettings.OwnsColorPickerInput(source);
     internal void RefreshPresets()
     { if (controller.Tool == EditorTool.Canvas) canvasContent?.PrepareForShow(); else if(IsVisible)presets.Refresh();else refreshPending=true; }
@@ -490,7 +510,11 @@ internal sealed partial class ToolOptionsPanel : UserControl
                 if (!numericFields["DefaultHeight"].IsInteracting && !numericFields["DefaultHeight"].Input.IsKeyboardFocusWithin) SetNumber("DefaultHeight", next.DefaultHeight);
             }
             if (IsVisible && IsApplicable("Symbols")) RefreshSymbolChoices();
-            if (IsVisible && IsApplicable("Emoji")) HighlightGallery(emojiGallery, next.Emoji);
+            if (IsVisible && IsApplicable("Emoji"))
+            {
+                emojiField.SetModel(next.Emoji);
+                emojiLibrary.SetCurrent(next.Emoji);
+            }
             var previous = publishingNumericTool;
             if (numericPreview) publishingNumericTool = next.Tool;
             try { ParametersChanged?.Invoke(); }

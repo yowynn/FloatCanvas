@@ -19,6 +19,7 @@ internal static class AspectPolicyRegressionTests
     {
         var outcomes = new List<(string Name, bool Passed)>();
         SizedPlacements(Observe);
+        ExistingLeafPolicy(Observe);
         ProjectedPlacements(Observe);
         DesktopEffects(Observe);
         foreach (var outcome in outcomes) check(outcome.Name, outcome.Passed);
@@ -27,6 +28,30 @@ internal static class AspectPolicyRegressionTests
         {
             outcomes.Add((name, passed));
             Console.WriteLine($"ASPECT_FINDING {passed}: {name}");
+        }
+    }
+
+    private static void ExistingLeafPolicy(Action<string, bool> check)
+    {
+        foreach (bool locked in new[] { true, false })
+        foreach (bool shift in new[] { false, true })
+        {
+            var element = new CanvasElement { Kind = ElementKind.Emoji, Text = "😀", Width = 160, Height = 100,
+                ConstrainAspect = locked, Style = new() { FontSize = 32 } };
+            var session = new EditorSession();
+            session.Document.Elements.Add(element);
+            session.SetSelection([element.Id]);
+            var editor = new EditorController(session) { Tool = EditorTool.Select };
+            string label = (locked ? "locked" : "unlocked") + (shift ? " with Shift" : "");
+            var modifiers = shift ? OverlayModifiers.Shift : OverlayModifiers.None;
+            bool uniform = locked ^ shift;
+            Send(editor, OverlayPointerKind.Down, new(160, 100), modifiers);
+            Send(editor, OverlayPointerKind.Move, new(320, 150), modifiers);
+            Send(editor, OverlayPointerKind.Up, new(320, 150), modifiers);
+            check("existing emoji corner resize follows its "+label+" aspect policy",
+                (uniform ? Math.Abs(element.Width / element.Height - 1.6) < 1e-8 :
+                    Near(element.Width, 320) && Near(element.Height, 150)) &&
+                session.UndoCount == 1 && !session.IsTransactionActive);
         }
     }
 
@@ -54,6 +79,9 @@ internal static class AspectPolicyRegressionTests
             Send(editor, OverlayPointerKind.Up, end, modifiers);
             var bounds = ElementGeometry.Bounds(element, false);
             check(name + " release retains the preview and one undo step", bounds == preview && session.UndoCount == 1 && !session.IsTransactionActive);
+            if (tool == EditorTool.Emoji)
+                check(name + (shift ? " commits the Shift-unlocked non-square emoji preview" : " commits the default square emoji preview"),
+                    shift ? !Near(bounds.Width, bounds.Height) : Near(bounds.Width, bounds.Height));
             check(name + " gesture leaves tool parameters unchanged", JsonSerializer.Serialize(editor.Parameters) == parameters);
             check(name + " keeps its default layer aspect preference", ElementGeometry.PreservesAspect(element));
             check(name + " insertion remains one-step undo/redo", session.Undo() && session.Document.Elements.Count == 0 && session.Redo() && session.Document.Elements.Count == 1);
@@ -87,6 +115,11 @@ internal static class AspectPolicyRegressionTests
                 var committed = ElementGeometry.Bounds(session.Document.Elements.Single(), false);
                 check($"{tool} releaseOnly={releaseOnly} ShiftAtRelease={shiftAtRelease} applies the final modifier state",
                     shiftAtRelease ? Near(committed.Width, 180) && Near(committed.Height, 80) : Near(committed.Width, committed.Height));
+                if (tool == EditorTool.Emoji)
+                    check($"{tool} releaseOnly={releaseOnly} ShiftAtRelease={shiftAtRelease} commits the final Shift lock state",
+                        shiftAtRelease
+                            ? !Near(committed.Width, committed.Height)
+                            : Near(committed.Width, committed.Height));
                 check($"{tool} releaseOnly={releaseOnly} ShiftAtRelease={shiftAtRelease} commits once without changing defaults",
                     session.UndoCount == 1 && !session.IsTransactionActive && JsonSerializer.Serialize(editor.Parameters) == parameters);
             }
@@ -132,6 +165,9 @@ internal static class AspectPolicyRegressionTests
             Send(editor, OverlayPointerKind.Up, end, modifiers);
             check(name + " commits the intended placement and default layer preference once", Expected(Bounds(), shift) &&
                 element.IsBillboard == billboard && element.ConstrainAspect == true && session.UndoCount == 1 && !session.IsTransactionActive);
+            if (tool == EditorTool.Emoji)
+                check(name + " commits the final projected Shift lock state",
+                    shift ? !Near(Bounds().Width, Bounds().Height) : Near(Bounds().Width, Bounds().Height));
             check(name + " projected placement preserves tool defaults", JsonSerializer.Serialize(editor.Parameters) == defaults);
             check(name + " undo and redo retain projected placement metadata", session.Undo() && session.Document.Elements.Count == 0 && session.Redo() &&
                 session.Document.Elements.Single().IsBillboard == billboard && session.Document.Elements.Single().ConstrainAspect == true);

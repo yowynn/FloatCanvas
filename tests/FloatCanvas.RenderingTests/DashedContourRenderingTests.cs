@@ -56,7 +56,23 @@ internal static class DashedContourRenderingTests
         rectangle.Style.Stroke = 0;
         byte[] solidFill = renderer.ExportPng(document, new(), true);
         rectangle.Style.StrokePattern = StrokePattern.Dotted;
-        check("changing stroke pattern does not alter native fill pixels", solidFill.AsSpan().SequenceEqual(renderer.ExportPng(document, new(), true)));
+        byte[] dottedFill = renderer.ExportPng(document, new(), true);
+        using var solidFillBitmap = SKBitmap.Decode(solidFill);
+        using var dottedFillBitmap = SKBitmap.Decode(dottedFill);
+        var solidFillPixels = solidFillBitmap.GetPixelSpan();
+        var dottedFillPixels = dottedFillBitmap.GetPixelSpan();
+        int changedFillBytes = 0, fillDelta = 0;
+        for (int y = 60; y <= 140; y++)
+        for (int x = 70; x <= 270; x++)
+        for (int channel = 0; channel < 4; channel++)
+        {
+            int i = y * solidFillBitmap.RowBytes + x * 4 + channel;
+            int delta = Math.Abs(solidFillPixels[i] - dottedFillPixels[i]);
+            if (delta == 0) continue;
+            changedFillBytes++;
+            fillDelta = Math.Max(fillDelta, delta);
+        }
+        check($"changing stroke pattern does not alter native fill interior ({changedFillBytes} bytes, delta {fillDelta})", changedFillBytes == 0);
 
         rectangle.Style.Stroke = 0xFFDD3366; rectangle.Style.Fill = 0; rectangle.Style.StrokeWidth = 8; rectangle.Style.StrokePattern = StrokePattern.Dashed;
         using var wideBitmap = SKBitmap.Decode(renderer.ExportPng(document, new(), true));
@@ -70,7 +86,19 @@ internal static class DashedContourRenderingTests
         // Keep the collapsed edge inside a real gap on the inward centerline.
         rectangle.Style.StrokeWidth = 16;
         using var capsule = SKBitmap.Decode(renderer.ExportPng(document, new(), true));
-        check("a collapsed straight edge on a capsule does not invent ink in a dash gap", capsule.GetPixel(319, 79).Alpha == 0 &&
-            !ElementGeometry.HitTest(rectangle, new(319.5, 79.5), 0));
+        int capsuleGaps = 0, capsuleInk = 0, capsuleMisses = 0;
+        for (int y = 60; y <= 100; y++)
+        {
+            byte alpha = capsule.GetPixel(319, y).Alpha;
+            var point = new PointD(319.5, y + .5);
+            if (alpha == 0 && !ElementGeometry.HitTest(rectangle, point, 0)) capsuleGaps++;
+            if (alpha > 220)
+            {
+                capsuleInk++;
+                if (!ElementGeometry.HitTest(rectangle, point)) capsuleMisses++;
+            }
+        }
+        check($"a collapsed straight edge on a capsule retains real dash gaps ({capsuleGaps} gaps, {capsuleInk} ink, {capsuleMisses} misses)",
+            capsuleGaps >= 8 && capsuleInk >= 2 && capsuleMisses == 0);
     }
 }

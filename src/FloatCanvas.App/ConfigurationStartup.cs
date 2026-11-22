@@ -10,7 +10,7 @@ internal sealed record ConfigurationFailure(string Path, Exception Error);
 /// <summary>Validate configuration before constructing native session resources; repair only after an explicit choice.</summary>
 internal static class ConfigurationStartup
 {
-    internal static readonly string[] FileNames = ["settings.json","tool-state.json","tool-presets.json","canvas-presets.json","colors.json"];
+    internal static readonly string[] FileNames = ["settings.json","tool-state.json","tool-presets.json","canvas-presets.json","colors.json","emoji-history.json"];
 
     internal static ConfigurationFailure? Validate()
     {
@@ -21,7 +21,8 @@ internal static class ConfigurationStartup
             ("tool-state.json",()=>{_ = new ToolStateStore();}),
             ("tool-presets.json",()=>{_ = new ToolPresetLibrary();}),
             ("canvas-presets.json",()=>{_ = new CanvasPresetLibrary();}),
-            ("colors.json",()=>{_ = new ColorLibrary();})
+            ("colors.json",()=>{_ = new ColorLibrary();}),
+            ("emoji-history.json",()=>{_ = new EmojiHistoryStore();})
         ];
         foreach(var (name,read) in readers)
         {

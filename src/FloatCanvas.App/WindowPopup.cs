@@ -9,7 +9,7 @@ using FloatCanvas.Windows;
 namespace FloatCanvas.App;
 
 /// <summary>A transient owned panel with normal caption, focus and modal ownership.</summary>
-internal sealed class WindowPopup(UIElement child, UIElement target, string title, double offset) : FrameworkElement
+internal sealed class WindowPopup(UIElement child, UIElement target, string title, double offset, bool compact = false) : FrameworkElement
 {
     private Window? window, owner;
     private int suspensionDepth;
@@ -68,6 +68,14 @@ internal sealed class WindowPopup(UIElement child, UIElement target, string titl
         AppTheme.EnsureDialogPalette(shown);
         window = shown;
         AppWindowChrome.Apply(shown);
+        if (compact)
+        {
+            shown.ApplyTemplate();
+            var caption = (Grid)shown.Template.FindName("TitleBar", shown);
+            caption.Visibility = Visibility.Collapsed;
+            ((Grid)caption.Parent).RowDefinitions[0].Height = new GridLength(0);
+            System.Windows.Shell.WindowChrome.GetWindowChrome(shown).CaptionHeight = 0;
+        }
         child.Measure(new Size(SystemParameters.PrimaryScreenWidth, SystemParameters.PrimaryScreenHeight));
         var point = target.PointToScreen(new Point(0, target.RenderSize.Height));
         double scale = VisualTreeHelper.GetDpi(target).DpiScaleY;
@@ -75,7 +83,13 @@ internal sealed class WindowPopup(UIElement child, UIElement target, string titl
         var work = System.Windows.Forms.Screen.FromPoint(new((int)point.X, (int)point.Y)).WorkingArea;
         shown.MaxHeight = System.Math.Max(120, work.Height / scale - 16);
         point.X = System.Math.Clamp(point.X, work.Left, System.Math.Max(work.Left, work.Right - child.DesiredSize.Width * scale - 2));
-        point.Y = System.Math.Clamp(point.Y, work.Top, System.Math.Max(work.Top, work.Bottom - (child.DesiredSize.Height + 34) * scale));
+        double popupHeight = (child.DesiredSize.Height + (compact ? 2 : 34)) * scale;
+        if (compact && point.Y + popupHeight > work.Bottom)
+        {
+            double above = target.PointToScreen(new Point()).Y - VerticalOffset * scale - popupHeight;
+            if (above >= work.Top) point.Y = above;
+        }
+        point.Y = System.Math.Clamp(point.Y, work.Top, System.Math.Max(work.Top, work.Bottom - popupHeight));
         shown.SourceInitialized += (_, _) => OverlayCoordinates.PositionToolWindow(new WindowInteropHelper(shown).Handle, new(point.X, point.Y));
         shown.Closed += OnClosed;
         // Bubble after content cancellation, including when focus is on the caption or window root.

@@ -40,7 +40,7 @@ public static partial class ElementGeometry
             return new(bounds.X - extent.X, bounds.Y - extent.Y, bounds.Width + extent.X * 2, bounds.Height + extent.Y * 2);
         }
         double stroke = !includeStroke ? 0 : element.Kind == ElementKind.Image ? element.ImageBorderWidth :
-            element.Kind is not (ElementKind.Text or ElementKind.Number or ElementKind.Presentation) && !IsLiveEffect(element.Kind) && !IsBoxShape(element.Kind) ? element.Style.StrokeWidth / 2 : 0;
+            element.Kind is not (ElementKind.Text or ElementKind.Number or ElementKind.Emoji or ElementKind.Presentation) && !IsLiveEffect(element.Kind) && !IsBoxShape(element.Kind) ? element.Style.StrokeWidth / 2 : 0;
         if (IsLine(element.Kind))
         {
             foreach (var point in GetArrowHeads(element).SelectMany(head => head))
@@ -58,7 +58,7 @@ public static partial class ElementGeometry
     /// <summary>Resize vector dimensions around their center, retaining circular corners and uniform strokes.</summary>
     public static void ResizeShapeGeometry(CanvasElement element, double scaleX, double scaleY)
     {
-        if (!IsBoxShape(element.Kind) && element.Kind != ElementKind.Presentation) throw new ArgumentException(nameof(element));
+        if (!IsBoxShape(element.Kind) && element.Kind is not (ElementKind.Presentation or ElementKind.Emoji)) throw new ArgumentException(nameof(element));
         if (!double.IsFinite(scaleX) || !double.IsFinite(scaleY) || scaleX <= 0 || scaleY <= 0) throw new ArgumentOutOfRangeException(nameof(scaleX));
         if (element.ProjectivePlacement is not null)
         {
@@ -106,7 +106,7 @@ public static partial class ElementGeometry
             return false;
         }
         var bounds = LocalBounds(element);
-        if (element.Kind is ElementKind.Image or ElementKind.Text or ElementKind.Presentation || IsLiveEffect(element.Kind))
+        if (element.Kind is ElementKind.Image or ElementKind.Text or ElementKind.Emoji or ElementKind.Presentation || IsLiveEffect(element.Kind))
         {
             if (bounds.Contains(local)) return true;
             PointD[] corners = [new(bounds.Left, bounds.Top), new(bounds.Right, bounds.Top), new(bounds.Right, bounds.Bottom), new(bounds.Left, bounds.Bottom)];

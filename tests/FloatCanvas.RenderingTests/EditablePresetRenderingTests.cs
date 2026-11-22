@@ -25,7 +25,15 @@ internal static class EditablePresetRenderingTests
             line.Style.StrokePattern = pattern;
             using var image = SKBitmap.Decode(renderer.ExportPng(document, assets, true));
             check(pattern + " has real stroke ink", image.GetPixel(20, 40).Alpha > 80);
-            check(pattern + " raster gap matches exact hit", (image.GetPixel(pattern == StrokePattern.Dotted ? 25 : 42, 40).Alpha > 80) == (pattern == StrokePattern.Solid));
+            bool ink = false, gap = false;
+            for (int x = 30; x <= 80; x++)
+            {
+                byte alpha = image.GetPixel(x, 40).Alpha;
+                ink |= alpha > 80;
+                gap |= alpha == 0;
+            }
+            check(pattern + " raster gaps and ink match its pattern",
+                pattern == StrokePattern.Solid ? ink && !gap : ink && gap);
             check(pattern + " never leaks a path effect into text/fill rendering", image.GetPixel(25, 80).Alpha == 0);
         }
         var rectangle = new CanvasElement { Kind = ElementKind.Rectangle, Width = 80, Height = 60, Transform = Affine2D.Translation(10, 10),

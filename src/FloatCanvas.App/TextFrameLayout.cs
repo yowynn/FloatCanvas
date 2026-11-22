@@ -21,12 +21,6 @@ internal static class TextFrameLayout
     internal static void Reflow(CanvasElement text, bool autoWidth, SceneRenderer renderer)
     {
         text.TextAutoWidth = autoWidth;
-        if (EmojiGlyphs.IsEmoji(text.Text, text.Style))
-        {
-            var glyph = renderer.MeasureText(text.Text, text.Style);
-            text.Width = glyph.Width; text.Height = glyph.Height;
-            return;
-        }
         if (autoWidth) text.Width = LabelWidth(text, renderer);
         var metrics = renderer.MeasureText(text.Text, text.Style, text.Width);
         if (autoWidth && metrics.Width > text.Width + .001)
@@ -61,7 +55,7 @@ internal static class TextFrameLayout
         target.Transform=Affine2D.Translation(center.X-movedCenter.X,center.Y-movedCenter.Y).Compose(target.Transform);
         // A wider frame can remove wrapped lines, so the old font size is no longer
         // an upper bound. Fit the full frame while keeping glyph axes undistorted.
-        Fit(target,EmojiGlyphs.IsEmoji(source.Text,source.Style)?source.Style.FontSize*y:target.Height,renderer);
+        Fit(target,target.Height,renderer);
     }
     internal static void Fit(CanvasElement target,double requestedSize,SceneRenderer renderer)
         => target.Style.FontSize = renderer.FittedTextSize(target.Text, target.Style, target.Width, target.Height, requestedSize);

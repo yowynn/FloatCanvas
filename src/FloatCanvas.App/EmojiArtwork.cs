@@ -2,42 +2,113 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Windows.Media.Imaging;
-using FloatCanvas.Core;
+using System.Windows.Media;
 using FloatCanvas.Rendering;
+using SkiaSharp;
 
 namespace FloatCanvas.App;
 
-/// <summary>Frozen color previews rendered with exactly the same glyph path as the document.</summary>
+/// <summary>Frozen color thumbnails that crop the font's ink while document rendering keeps the shared frame.</summary>
 internal static class EmojiArtwork
 {
-    internal static IReadOnlyList<string> BuiltIn { get; } = Array.AsReadOnly(new[]
-    {
-        "😀", "😃", "😄", "😁", "😆", "😅", "😂", "😊", "😍", "🥰", "😎", "🤔", "😮", "😢", "😭",
-        "😡", "🥳", "😴", "👍", "👎", "👏", "🙌", "🙏", "💪", "❤️", "💛", "💚", "💙", "⭐", "🔥"
-    });
-    private const int Capacity = 64;
+    private const int Capacity = 192;
     private static readonly object Gate = new();
-    private static readonly Dictionary<string, BitmapSource> Cache = new(StringComparer.Ordinal);
-    private static readonly Queue<string> Order = new();
+    private static readonly Dictionary<string, CacheEntry> Cache = new(StringComparer.Ordinal);
+    private static BitmapSource? placeholder;
+    private static long clock;
+    private static long generation;
+    internal static BitmapSource Placeholder => placeholder ??= CreatePlaceholder();
 
-    internal static BitmapSource Image(string emoji)
+    static EmojiArtwork() => EmojiFontSources.Changed += Clear;
+
+    internal static BitmapSource Image(string emoji, string? emojiFontId = null, bool allowFallback = true)
+    {
+        try { return ImageCore(emoji, emojiFontId, allowFallback); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or
+            ArgumentException or InvalidOperationException or OverflowException) { return Placeholder; }
+    }
+
+    private static BitmapSource ImageCore(string emoji, string? emojiFontId, bool allowFallback)
+    {
+        string fontId = FloatCanvas.Core.EmojiFontIds.Normalize(emojiFontId);
+        string key = fontId + '\u001f' + (allowFallback ? '1' : '0') + '\u001f' + emoji;
+        long startedGeneration;
+        lock (Gate)
+        {
+            if (Cache.TryGetValue(key, out var cached))
+            {
+                cached.Used = ++clock;
+                return cached.Image;
+            }
+            startedGeneration = generation;
+        }
+        if (!allowFallback && !EmojiGlyphs.CanRender(emoji,fontId)) return Placeholder;
+        const int width=96,height=96;
+        using var bitmap = new SKBitmap(width, height, SKColorType.Bgra8888, SKAlphaType.Premul);
+        using var canvas = new SKCanvas(bitmap);
+        canvas.Clear(SKColors.Transparent);
+        using var paint = new SKPaint { Color = SKColors.White, IsAntialias = true };
+        EmojiGlyphs.DrawPreviewFitted(canvas, emoji, width, height, paint, fontId);
+        var frame = BitmapSource.Create(bitmap.Width, bitmap.Height, 96, 96, PixelFormats.Pbgra32, null,
+            bitmap.GetPixels(), bitmap.ByteCount, bitmap.RowBytes);
+        frame.Freeze();
+        bool retry;
+        lock (Gate)
+        {
+            retry = generation != startedGeneration;
+            if (!retry && Cache.TryGetValue(key, out var cached))
+            {
+                cached.Used = ++clock;
+                return cached.Image;
+            }
+            if (!retry)
+            {
+                Cache.Add(key, new(frame, ++clock));
+                while (Cache.Count > Capacity)
+                {
+                    var oldest = Cache.MinBy(pair => pair.Value.Used);
+                    Cache.Remove(oldest.Key);
+                }
+                return frame;
+            }
+        }
+        return Image(emoji, fontId, allowFallback);
+    }
+
+    internal static void Clear()
     {
         lock (Gate)
         {
-            if (Cache.TryGetValue(emoji, out var cached)) return cached;
-            var metrics = EmojiGlyphs.Measure(emoji, 96);
-            var scene = new SceneDocument
-            {
-                Viewport = new(0, 0, Math.Ceiling(metrics.Width), Math.Ceiling(metrics.Height)),
-                Elements = [new() { Kind = ElementKind.Text, Text = emoji, Width = metrics.Width, Height = metrics.Height,
-                    Style = new() { FontFamily = EmojiGlyphs.FontFamily, FontSize = 96, Stroke = 0xFFFFFFFF } }]
-            };
-            using var renderer = new SceneRenderer();
-            using var stream = new MemoryStream(renderer.ExportPng(scene, new(), true));
-            var frame = BitmapFrame.Create(stream, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
-            frame.Freeze(); Cache.Add(emoji, frame); Order.Enqueue(emoji);
-            while (Cache.Count > Capacity) Cache.Remove(Order.Dequeue());
-            return frame;
+            Cache.Clear();
+            generation++;
         }
+    }
+
+    private sealed class CacheEntry(BitmapSource image, long used)
+    {
+        internal BitmapSource Image { get; } = image;
+        internal long Used { get; set; } = used;
+    }
+
+    private static BitmapSource CreatePlaceholder()
+    {
+        using var bitmap=new SKBitmap(32,32,SKColorType.Bgra8888,SKAlphaType.Premul);
+        using var canvas=new SKCanvas(bitmap);
+        canvas.Clear(SKColors.Transparent);
+        using var border=new SKPaint{Color=new SKColor(0xFF8792A6),Style=SKPaintStyle.Stroke,StrokeWidth=1.5f,IsAntialias=true};
+        using var fill=new SKPaint{Color=new SKColor(0x225E6A7D),Style=SKPaintStyle.Fill,IsAntialias=true};
+        canvas.DrawRoundRect(new SKRect(3,3,29,29),7,7,fill);
+        canvas.DrawRoundRect(new SKRect(3,3,29,29),7,7,border);
+        using var typeface=SKTypeface.FromFamilyName("Segoe UI");
+        using var font=new SKFont(typeface,14){Edging=SKFontEdging.Antialias};
+        using var ink=new SKPaint{Color=new SKColor(0xFFD1D6E0),IsAntialias=true};
+        font.MeasureText("?",out var textBounds);
+        float x=(bitmap.Width-textBounds.Width)/2-textBounds.Left;
+        float baseline=(bitmap.Height-textBounds.Height)/2-textBounds.Top;
+        canvas.DrawText("?",x,baseline,SKTextAlign.Left,font,ink);
+        var frame=BitmapSource.Create(bitmap.Width,bitmap.Height,96,96,PixelFormats.Pbgra32,null,
+            bitmap.GetPixels(),bitmap.ByteCount,bitmap.RowBytes);
+        frame.Freeze();
+        return frame;
     }
 }

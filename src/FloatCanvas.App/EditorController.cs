@@ -395,7 +395,8 @@ internal sealed partial class EditorController
             }
             return;
         }
-        if (propertiesDoubleClick && e.Button == OverlayMouseButton.Left && Tool != EditorTool.Text)
+        if (propertiesDoubleClick && e.Button == OverlayMouseButton.Left && (Tool != EditorTool.Text ||
+            (e.Modifiers & OverlayModifiers.Control) == 0 && HitTestScreen(pointerScreen, 4)?.Kind == ElementKind.Emoji))
         {
             if (OpenSelectionTarget(pointerScreen)) return;
         }
@@ -627,8 +628,8 @@ internal sealed partial class EditorController
         }
         else
         {
-            style.FontFamily = EmojiGlyphs.FontFamily;
-            drawing = new() { Kind = ElementKind.Text, Text = Emoji, Width = style.FontSize, Height = style.FontSize, Style = style, ConstrainAspect = true };
+            if (!EmojiCatalog.TryFind(Emoji, out var entry)) return;
+            drawing = new() { Kind = ElementKind.Emoji, Text = entry.Glyph, Width = style.FontSize, Height = style.FontSize, Style = style, ConstrainAspect = true };
         }
         drawing.Transform = Affine2D.Translation(center.X - drawing.Width / 2, center.Y - drawing.Height / 2);
         BeginPointerTransaction(L.Get("History.AddElement"));
@@ -647,7 +648,8 @@ internal sealed partial class EditorController
         var delta = point - start;
         double sx = Math.Max(1 / drawing.Width, Math.Abs(delta.X) / drawing.Width);
         double sy = Math.Max(1 / drawing.Height, Math.Abs(delta.Y) / drawing.Height);
-        if (ElementGeometry.PreservesAspect(drawing) ^ ((modifiers & OverlayModifiers.Shift) != 0)) sx = sy = Math.Max(sx, sy);
+        if (ElementGeometry.PreservesAspect(drawing) ^ ((modifiers & OverlayModifiers.Shift) != 0))
+            sx = sy = Math.Max(sx, sy);
         double x = delta.X < 0 ? start.X - drawing.Width * sx : start.X;
         double y = delta.Y < 0 ? start.Y - drawing.Height * sy : start.Y;
         // Scale the complete instance so the glyph and badge grow together; tool defaults stay unchanged.

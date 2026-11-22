@@ -49,6 +49,7 @@ internal static class AspectInspectorRegressionTests
         }
         Scrubs(check);
         SingleLeafPolicies(check);
+        EmojiLeafPolicy(check);
     }
 
     private static void Scrubs(Action<string, bool> check)
@@ -101,6 +102,53 @@ internal static class AspectInspectorRegressionTests
                 result.ConstrainAspect == constrained && Near(result.Width, dimension == "W" || constrained ? 320 : 160) &&
                 Near(result.Height, dimension == "H" || constrained ? 200 : 100));
         }
+    }
+
+    private static void EmojiLeafPolicy(Action<string, bool> check)
+    {
+        var emoji = new CanvasElement
+        {
+            Kind = ElementKind.Emoji, Text = "😀", Width = 160, Height = 100,
+            ConstrainAspect = true, Style = new() { FontSize = 32 }
+        };
+        var session = new EditorSession();
+        session.Document.Elements.Add(emoji);
+        session.SetSelection([emoji.Id]);
+        var inspector = new InspectorWindow(() => session);
+        using var surface = new InspectorTestSurface(inspector);
+        var rows = Field<Dictionary<string, FrameworkElement>>(inspector, "fieldContainers");
+        var chain = Field<AspectRatioButton>(inspector, "keepAspect");
+        check("emoji inspector exposes the aspect switch and starts locked",
+            rows["ConstrainAspect"].Visibility == Visibility.Visible && chain.IsChecked == true);
+
+        chain.IsChecked = false;
+        chain.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        inspector.CompletePendingEdit();
+        var fields = Field<Dictionary<string, TextBox>>(inspector, "fields");
+        fields["W"].Text = "320";
+        inspector.CompletePendingEdit();
+        var updated = session.Document.Elements.Single();
+        check("unlocked emoji inspector resizing changes only the edited dimension",
+            updated.ConstrainAspect is false && Near(updated.Width, 320) && Near(updated.Height, 100));
+        check("unlocked emoji width scrub starts", (bool)Invoke(inspector, "BeginScrub", "W")!);
+        Invoke(inspector, "UpdateScrub", "W", 40d);
+        updated = session.Document.Elements.Single();
+        check("unlocked emoji width scrub changes only width", Near(updated.Width, 360) && Near(updated.Height, 100));
+        Invoke(inspector, "FinishScrub", false);
+        updated = session.Document.Elements.Single();
+        check("cancelled unlocked emoji scrub restores both dimensions", Near(updated.Width, 320) && Near(updated.Height, 100));
+
+        chain.IsChecked = true;
+        chain.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        inspector.CompletePendingEdit();
+        check("locked emoji height scrub starts", (bool)Invoke(inspector, "BeginScrub", "H")!);
+        Invoke(inspector, "UpdateScrub", "H", 100d);
+        updated = session.Document.Elements.Single();
+        check("locked emoji height scrub preserves aspect", Near(updated.Width, 640) && Near(updated.Height, 200));
+        Invoke(inspector, "FinishScrub", true);
+        updated = session.Document.Elements.Single();
+        check("locked emoji inspector scrub commits the proportional dimensions",
+            updated.ConstrainAspect == true && Near(updated.Width, 640) && Near(updated.Height, 200));
     }
 
     private static (EditorSession Session, CanvasElement Locked, CanvasElement Free) Selection()

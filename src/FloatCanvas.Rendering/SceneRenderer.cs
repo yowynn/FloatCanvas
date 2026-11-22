@@ -149,7 +149,6 @@ public sealed partial class SceneRenderer : IDisposable
     public TextMetrics MeasureText(string text, ElementStyle style, double maxWidth = 0)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (EmojiGlyphs.IsEmoji(text, style)) return EmojiGlyphs.Measure(text, style.FontSize);
         return _text.Measure(text, style, maxWidth);
     }
 
@@ -157,16 +156,12 @@ public sealed partial class SceneRenderer : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         double maximum = Math.Clamp(requestedSize, 1, ElementStyle.MaximumFontSize);
-        if (!EmojiGlyphs.IsEmoji(text, style)) return _text.FitSize(text, style, width, height, maximum);
-        var glyph = EmojiGlyphs.Measure(text, maximum);
-        return Math.Clamp(maximum * Math.Min((width + .001) / glyph.Width, (height + .001) / glyph.Height), 1, maximum);
+        return _text.FitSize(text, style, width, height, maximum);
     }
 
     public TextEditingGeometry TextEditingGeometry(string text,ElementStyle style,double width)
     {
-        if(!EmojiGlyphs.IsEmoji(text,style))return _text.EditingGeometry(text,style,width);
-        var metrics=EmojiGlyphs.Measure(text,style.FontSize);
-        return new([new(0,metrics.Height,[new(0,0),new(text.Length,metrics.Width)])]);
+        return _text.EditingGeometry(text,style,width);
     }
 
     private byte[] Export(SceneDocument document, AssetLibrary assets, SKEncodedImageFormat format, int quality, bool background, SceneRenderSpace space, bool useAuthoredFrame)
@@ -262,13 +257,12 @@ public sealed partial class SceneRenderer : IDisposable
             {
                 if (element.TextFrameFixed) canvas.ClipRect(new(0, 0, (float)element.Width, (float)element.Height));
                 SetPaint(element.Style.Foreground, SKPaintStyle.Fill);
-                if (EmojiGlyphs.IsEmoji(element.Text, element.Style))
-                {
-                    var glyph = EmojiGlyphs.Measure(element.Text, element.Style.FontSize);
-                    canvas.Scale((float)(element.Width / glyph.Width), (float)(element.Height / glyph.Height));
-                    EmojiGlyphs.Draw(canvas, element.Text, element.Style.FontSize, _paint);
-                }
-                else _text.DrawElement(canvas, element, _paint);
+                _text.DrawElement(canvas, element, _paint);
+            }
+            else if (element.Kind == ElementKind.Emoji)
+            {
+                SetPaint(0xffffffff, SKPaintStyle.Fill);
+                EmojiGlyphs.DrawFitted(canvas, element.Text, element.Width, element.Height, _paint, element.Style.EmojiFontId);
             }
             else if (element.Kind == ElementKind.Number) DrawNumber(canvas, element);
             else if (ElementGeometry.HasFlatHighlighterTip(element))

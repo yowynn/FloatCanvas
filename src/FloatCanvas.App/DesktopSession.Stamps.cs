@@ -193,7 +193,7 @@ internal sealed partial class DesktopSession
     private void DismissPanelsForCanvasPress()
     {
         OverlayContextMenu.CloseAll();
-        _toolOptionsPanel?.CloseColorPicker();
+        _toolOptionsPanel?.TryClosePicker();
         _canvasToolOptions?.ClosePickers();
         _windowCoordinator?.DismissTransient(WindowDismissReason.CanvasPress);
         if (_toolbarMenu is not null) _toolbarMenu.IsOpen = false;

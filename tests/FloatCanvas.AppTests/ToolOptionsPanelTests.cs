@@ -211,12 +211,30 @@ internal static class ToolOptionsPanelTests
         int before = changes; Click(symbols.Single(button => Equals(button.Tag, SymbolKind.SpeechBubble)));
         check("symbol gallery choice changes the active symbol once", controller.Symbol == SymbolKind.SpeechBubble && changes == before + 1);
         controller.Tool = EditorTool.Emoji; panel.PrepareForShow();
-        var emoji = Field<System.Windows.Controls.Primitives.UniformGrid>(panel, "emojiGallery").Children.OfType<Controls.Button>().ToArray();
-        check("emoji gallery provides a distinct ready-to-use collection", Shown(rows, "Emoji") && !Shown(rows, "Symbols") &&
-            !Shown(rows, "Foreground") && !Shown(rows, "Background") && emoji.Length is >= 24 and <= 40 &&
-            emoji.All(button => button.Tag is string text && !string.IsNullOrWhiteSpace(text)) && emoji.Select(button => button.Tag).Distinct().Count() == emoji.Length);
-        var choice = emoji.First(button => !Equals(button.Tag, controller.Emoji)); before = changes; Click(choice);
-        check("emoji choice changes the active glyph once", controller.Emoji == (string)choice.Tag && changes == before + 1);
+        var emoji = Field<EmojiField>(panel,"emojiField");
+        var library = Field<EmojiPickerPanel>(panel,"emojiLibrary");
+        var emojiFont = Field<EmojiFontPicker>(panel,"emojiFont");
+        var inlineGrid=Field<Controls.ListBox>(library,"grid");
+        check("emoji tool exposes one compact field and style selector without text font or color controls", Shown(rows,"Emoji","EmojiFont") && !Shown(rows,"Symbols") &&
+            !Shown(rows,"Foreground") && !Shown(rows,"Background") && !Shown(rows,"FontFamily") &&
+            emojiFont.Items.Count==4 && emoji.Value==controller.Emoji);
+        var emojiFontLabels=emojiFont.Items.Cast<Controls.ComboBoxItem>().Select(item=>item.Content.ToString()).ToArray();
+        check("emoji style labels use the same four product names in both languages",
+            emojiFontLabels.SequenceEqual(new[]{"Windows","Google","OpenMoji","Blobmoji"}) ||
+            emojiFontLabels.Zip(new[]{"Windows","Google","OpenMoji","Blobmoji"}).All(pair=>pair.First!.StartsWith(pair.Second,StringComparison.Ordinal)));
+        before=changes;emojiFont.SetValue(EmojiFontIds.BlobmojiColor);
+        check("emoji art style changes the active tool font preference once",controller.Style.EmojiFontId==EmojiFontIds.BlobmojiColor && changes==before+1);
+        check("emoji tool embeds search categories and a full grid beside the current value",Shown(rows,"Emoji","EmojiLibrary") &&
+            Field<Controls.Button>(emoji,"choose").Visibility==Wpf.Visibility.Collapsed);
+        Field<List<Controls.Button>>(library,"categories")[1].RaiseEvent(new Wpf.RoutedEventArgs(Controls.Button.ClickEvent));
+        check("embedded smiley category fills the virtualized grid",inlineGrid.Items.Count>100);
+        var rendered=inlineGrid.ItemsSource;
+        var chosen=(EmojiEntry)inlineGrid.Items.Cast<object>().First(entry=>((EmojiEntry)entry).Glyph!=controller.Emoji);
+        typeof(EmojiPickerPanel).GetMethod("Choose",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(library,[chosen]);
+        check("choosing an inline emoji preserves the rendered list and scroll surface",ReferenceEquals(rendered,inlineGrid.ItemsSource) && controller.Emoji==chosen.Glyph);
+        before=changes;Field<Controls.TextBox>(emoji,"input").Text="👩🏽‍🎨";
+        typeof(EmojiField).GetMethod("CommitInput",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(emoji,null);
+        check("emoji field changes the active glyph once",controller.Emoji=="👩🏽‍🎨" && changes==before+1);
     }
 
     private static void CaptureOptions(string root, Action<string, bool> check)

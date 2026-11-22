@@ -220,6 +220,66 @@ internal static class CanonicalAppearanceStorageTests
         var published = (await projects.LoadAsync(plain)).Document;
         check(published.Version == 20 && published.Elements.All(e => e.Style.Variant == ElementAppearance.Default &&
             e.Style.PrimaryColor == 0x802383E2 && e.Style.FontSize == 32), "published v20 plain text retains its colors and size");
+        var oldEmoji = released.DeepClone().AsObject();
+        var oldElements = oldEmoji["Elements"]!.AsArray();
+        foreach (var item in oldElements) item!["Style"]!["FontFamily"] = "Segoe UI Emoji";
+        oldElements[0]!["Text"] = "👩🏽‍🎨"; oldElements[1]!["Text"] = "A";
+        oldElements[2]!["Text"] = "🔥🔥";
+        var oldEmojiTransform = Affine2D.Translation(240, -35).Compose(Affine2D.Rotation(31)).Compose(Affine2D.Scale(2, 3));
+        oldElements[0]!["Transform"] = JsonSerializer.SerializeToNode(oldEmojiTransform);
+        var oldEmojiCenter = oldEmojiTransform.TransformPoint(new PointD(80, 30));
+        string oldPath = Path.Combine(root, "published-emoji.floatcanvas");
+        await Write(oldPath, "project", "scene.json", oldEmoji, 20);
+        var migrated = (await projects.LoadAsync(oldPath)).Document;
+        check(migrated.Elements[0].Kind == ElementKind.Emoji && migrated.Elements[0].Text == "👩🏽‍🎨" &&
+            Math.Abs(migrated.Elements[0].Style.Opacity - published.Elements[0].Style.Opacity * 128 / 255) < .00001 &&
+            migrated.Elements.Skip(1).All(e => e.Kind==ElementKind.Text), "published single emoji migrate on open; letters and multiple emoji stay text");
+        var migratedEmojiBounds = ElementGeometry.Bounds(migrated.Elements[0], false);
+        check(migrated.Elements[0].Width == 160 && migrated.Elements[0].Height == 60 &&
+            Math.Abs(migratedEmojiBounds.Center.X - oldEmojiCenter.X) < .00001 &&
+            Math.Abs(migratedEmojiBounds.Center.Y - oldEmojiCenter.Y) < .00001,
+            "published non-square emoji retains its frame and transformed center");
+        var prefabEmoji = new CanvasElement
+        {
+            Kind = ElementKind.Text, Text = "😀", Width = 160, Height = 60,
+            Transform = Affine2D.Translation(-80, 45).Compose(Affine2D.Rotation(17)).Compose(Affine2D.Scale(.75, 1.4)),
+            Style = new()
+            {
+                FontFamily = "Segoe UI Emoji", FontSize = 32,
+                PrimaryColor = 0xFF2383E2, SecondaryColor = 0, Variant = ElementAppearance.Default
+            }
+        };
+        var prefabCenter = prefabEmoji.Transform.TransformPoint(new PointD(80, 30));
+        var prefabDefinition = new PrefabDefinition
+        {
+            Graph = new() { Elements = [prefabEmoji], RootOrder = [prefabEmoji.Id] }
+        };
+        var prefabPackage = new PrefabPackage { Definitions = [prefabDefinition], EntryDefinitionId = prefabDefinition.Id };
+        var oldPrefabEmoji = JsonSerializer.SerializeToNode(prefabPackage)!.AsObject();
+        oldPrefabEmoji["Version"] = 20;
+        LegacyFixtureSchema.UseForegroundBackground(oldPrefabEmoji);
+        string oldPrefabEmojiPath = Path.Combine(root, "published-emoji.floatprefab");
+        await Write(oldPrefabEmojiPath, "prefab", "prefab.json", oldPrefabEmoji, 20);
+        var migratedPrefabEmoji = (await new PrefabStore().LoadAsync(oldPrefabEmojiPath)).Package
+            .Definitions.Single().Graph.Elements.Single();
+        var migratedPrefabBounds = ElementGeometry.Bounds(migratedPrefabEmoji, false);
+        check(migratedPrefabEmoji.Kind == ElementKind.Emoji &&
+            migratedPrefabEmoji.Width == 160 && migratedPrefabEmoji.Height == 60 &&
+            Math.Abs(migratedPrefabBounds.Center.X - prefabCenter.X) < .00001 &&
+            Math.Abs(migratedPrefabBounds.Center.Y - prefabCenter.Y) < .00001,
+            "published prefab emoji retains its non-square frame and transformed center");
+        migrated.Elements[1].Text = "🔥";
+        string newPath=Path.Combine(root,"emoji-roundtrip.floatcanvas");
+        await projects.SaveAsync(newPath,migrated,new());
+        var emojiRoundtrip=(await projects.LoadAsync(newPath)).Document;
+        check(emojiRoundtrip.Version==20 && emojiRoundtrip.Elements[0].Kind==ElementKind.Emoji && emojiRoundtrip.Elements[1].Kind==ElementKind.Text &&
+            emojiRoundtrip.Elements[0].Width==160 && emojiRoundtrip.Elements[0].Height==60 &&
+            emojiRoundtrip.Elements[0].Style.Opacity==migrated.Elements[0].Style.Opacity,
+            "current non-square emoji and intentionally authored single-emoji text retain their own kind and frame on reopen");
+        emojiRoundtrip.Elements[0].Text="汉";
+        bool invalidEmoji=false;
+        try { await projects.SaveAsync(newPath,emojiRoundtrip,new()); } catch (InvalidDataException) { invalidEmoji=true; }
+        check(invalidEmoji && (await projects.LoadAsync(newPath)).Document.Elements[0].Text=="👩🏽‍🎨","an invalid emoji cannot replace the saved project");
         foreach (int version in new[] { 4, 5, 7, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 21, 22 })
         {
             released["Version"] = version;

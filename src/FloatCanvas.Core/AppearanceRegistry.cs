@@ -24,7 +24,7 @@ public static class AppearanceRegistry
     private static readonly IReadOnlyList<AppearanceVariant> inactive = Array.AsReadOnly<AppearanceVariant>([new(ElementAppearance.Default, "Style.Default", false, false)]);
     private static readonly IReadOnlyList<AppearanceVariant> presentation = Array.AsReadOnly<AppearanceVariant>([new(ElementAppearance.Default, "Style.Default", true, true)]);
     public static IReadOnlyList<AppearanceVariant> VariantsFor(ElementKind kind) => ElementGeometry.IsBoxShape(kind) ? shapes :
-        kind == ElementKind.Number ? numbers : kind == ElementKind.Text ? text : kind == ElementKind.Presentation ? presentation : ElementGeometry.IsLiveEffect(kind) ? inactive : paint;
+        kind == ElementKind.Number ? numbers : kind == ElementKind.Text ? text : kind == ElementKind.Presentation ? presentation : kind == ElementKind.Emoji || ElementGeometry.IsLiveEffect(kind) ? inactive : paint;
     public static AppearanceVariant? Find(ElementKind kind, string? id)
     {
         var variants = VariantsFor(kind);

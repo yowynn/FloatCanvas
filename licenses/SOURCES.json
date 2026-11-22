@@ -2,10 +2,45 @@
   "CollectedAt": "2026-10-16",
   "Packages": [
     {
+      "Package": "Unicode Emoji and CLDR annotations",
+      "Version": "18.0 / 49",
+      "Source": "https://www.unicode.org/Public/18.0.0/emoji/emoji-test.txt and https://github.com/unicode-org/cldr/tree/release-49/common",
+      "Directory": "Unicode-Emoji-CLDR",
+      "Files": ["LICENSE.txt"]
+    },
+    {
+      "Package": "Noto Color Emoji COLRv1",
+      "Version": "v2026-09-24-unicode18_0",
+      "Source": "https://github.com/googlefonts/noto-emoji/tree/v2026-09-24-unicode18_0/2D/fonts",
+      "Directory": "Noto-Color-Emoji",
+      "Files": ["LICENSE.txt"]
+    },
+    {
+      "Package": "OpenMoji Color COLRv0",
+      "Version": "18.0",
+      "Source": "https://github.com/hfg-gmuend/openmoji",
+      "Directory": "OpenMoji",
+      "Files": ["LICENSE.txt"]
+    },
+    {
+      "Package": "Blobmoji COLRv1 vector build",
+      "Version": "1.001",
+      "Source": "Derived from https://github.com/C1710/blobmoji using COLRv1 conversion and documented normalization",
+      "Directory": "Blobmoji",
+      "Files": [
+        "FONT-METADATA.md",
+        "LICENSE-APACHE-Blobmoji.txt",
+        "LICENSE-OFL-Blobmoji.txt",
+        "LICENSE-OFL-ComicNeue.txt",
+        "LICENSE-region-flags.txt",
+        "NOTICE.md"
+      ]
+    },
+    {
       "Package": "SkiaSharp",
-      "Version": "4.153.1",
+      "Version": "4.157.0",
       "Source": "Installed NuGet package",
-      "Directory": "SkiaSharp-4.153.1",
+      "Directory": "SkiaSharp-4.157.0",
       "Files": [
         "LICENSE.txt",
         "skiasharp.nuspec"
@@ -13,9 +48,9 @@
     },
     {
       "Package": "SkiaSharp.HarfBuzz",
-      "Version": "4.153.1",
+      "Version": "4.157.0",
       "Source": "Installed NuGet package",
-      "Directory": "SkiaSharp.HarfBuzz-4.153.1",
+      "Directory": "SkiaSharp.HarfBuzz-4.157.0",
       "Files": [
         "LICENSE.txt",
         "skiasharp.harfbuzz.nuspec"
@@ -23,9 +58,9 @@
     },
     {
       "Package": "SkiaSharp.NativeAssets.Win32",
-      "Version": "4.153.1",
+      "Version": "4.157.0",
       "Source": "Installed NuGet package",
-      "Directory": "SkiaSharp.NativeAssets.Win32-4.153.1",
+      "Directory": "SkiaSharp.NativeAssets.Win32-4.157.0",
       "Files": [
         "LICENSE.txt",
         "skiasharp.nativeassets.win32.nuspec",

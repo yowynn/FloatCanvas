@@ -13,7 +13,10 @@ internal sealed partial class EditorController
         var node=ResolveHitSelectableNode(hit.Id);
         if(node is {} group && Session.Document.Groups.Any(item=>item.Id==group)) Session.EnterScope(group);
         else if(node is {} instance && Session.Document.Instances.Any(item=>item.Id==instance)) PrefabEditRequested?.Invoke(instance);
-        else { Session.SetSelection([hit.Id]); PropertiesRequested?.Invoke(point); }
+        else
+        {
+            Session.SetSelection([hit.Id]); PropertiesRequested?.Invoke(point);
+        }
         return true;
     }
     internal void SelectContextTarget(PointD screen)
@@ -78,7 +81,7 @@ internal sealed partial class EditorController
         }
         var aboutPivot = Affine2D.Around(drag.Pivot, scale);
         bool text = source.Kind == ElementKind.Text, presentation = source.Kind == ElementKind.Presentation;
-        bool resizeShape = ElementGeometry.IsBoxShape(source.Kind) && source.ProjectivePlacement is null;
+        bool resizeShape = (ElementGeometry.IsBoxShape(source.Kind) || source.Kind==ElementKind.Emoji) && source.ProjectivePlacement is null;
         if (!source.IsBillboard && !text && !presentation && !resizeShape)
         {
             // Keep existing rotation, reflection and any authored shear. For a

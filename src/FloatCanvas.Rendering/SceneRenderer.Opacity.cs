@@ -56,7 +56,7 @@ public sealed partial class SceneRenderer
     private bool TryDrawRasterOpacity(SKCanvas destination, CanvasElement element, AssetLibrary assets, double opacity, bool clipSafe)
     {
         if (destination.Context is not null || !clipSafe ||
-            element.Kind is ElementKind.Image or ElementKind.Text or ElementKind.Number || ElementGeometry.IsLiveEffect(element.Kind)) return false;
+            element.Kind is ElementKind.Image or ElementKind.Text or ElementKind.Number or ElementKind.Emoji || ElementGeometry.IsLiveEffect(element.Kind)) return false;
         var matrix = destination.TotalMatrix;
         var target = destination.Surface;
         if (target is null) return false;
