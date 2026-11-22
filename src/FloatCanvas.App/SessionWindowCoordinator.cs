@@ -109,10 +109,15 @@ internal sealed class SessionWindowCoordinator : IDisposable
         if (window.WindowState == WindowState.Minimized) window.WindowState = WindowState.Normal;
         SessionWindowLayout.PrepareForShow(window);
         // A reused window may have changed while hidden; never expose its retained frame.
-        WindowRevealGate.Show(window, revealed);
-        if (activate && coordinator is not null && coordinator.host.UsesSystemInput && coordinator.host.IsEditing)
-            coordinator.host.TryFocusEditingWindow(new WindowInteropHelper(window).Handle);
-        else if(activate) window.Activate();
+        // Activation must follow the actual reveal. A cloaked HWND cannot become the
+        // editing input destination, and an early focus request is lost on handoff.
+        WindowRevealGate.Show(window, activate ? () =>
+        {
+            if (coordinator is not null && coordinator.host.UsesSystemInput && coordinator.host.IsEditing)
+                coordinator.host.TryFocusEditingWindow(new WindowInteropHelper(window).Handle);
+            else window.Activate();
+            revealed?.Invoke();
+        } : revealed);
     }
 
     internal static nint CurrentForeground => GetForegroundWindow();

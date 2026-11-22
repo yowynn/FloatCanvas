@@ -30,7 +30,7 @@ internal static class Round2StampRuntimeFixture
             return button.ContextMenu;
         }
         var initial=Menu(1);
-        check("toolbar stamp slot exposes exactly rename, overwrite, delete and unpin maintenance actions",initial.IsOpen&&initial.Items.OfType<MenuItem>().Select(item=>item.Tag).SequenceEqual(new[]{"Stamp.Rename","Stamp.Overwrite","Stamp.Delete","Stamp.Unpin"}));
+        check("toolbar stamp slot exposes exactly rename, overwrite, delete and unpin maintenance actions",initial.Items.OfType<MenuItem>().Select(item=>item.Tag).SequenceEqual(new[]{"Stamp.Rename","Stamp.Overwrite","Stamp.Delete","Stamp.Unpin"}));
         check("stamp slot menu has semantic icons without redundant use actions",initial.Items.OfType<MenuItem>().All(item=>item.Icon is FrameworkElement)&&!initial.Items.OfType<MenuItem>().Any(item=>Equals(item.Tag,"Stamp.Use")||Equals(item.Tag,"Stamp.UseSource")));
         string? output=Environment.GetEnvironmentVariable("FLOATCANVAS_ROUND2_PREVIEW_DIR");
         if(output is not null)Render((FrameworkElement)((System.Windows.Interop.HwndSource)PresentationSource.FromVisual(initial)).RootVisual,Path.Combine(output,"stamp-slot-menu.png"));
@@ -55,12 +55,16 @@ internal static class Round2StampRuntimeFixture
         }
         check("slot rename uses an owned modal and persists Unicode name without changing pins",Act("Stamp.Rename","Stamp.Save","重命名 / renamed")&&library.Items.Single().Name=="重命名 / renamed"&&library.Pins[0]==entry.Id&&library.Pins[1]==entry.Id);
         check("slot overwrite can be cancelled without changing the saved stamp",Act("Stamp.Overwrite","Stamp.Cancel")&&library.Items.Single().Name=="重命名 / renamed");
-        check("slot delete cancel preserves the stamp and all bindings",Act("Stamp.Delete","Stamp.Cancel")&&library.Items.Any(e=>e.Id==entry.Id)&&library.Pins[1]==entry.Id);
+        check("slot delete cancel preserves the stamp, bindings and editing session",
+            Act("Stamp.Delete","Stamp.Cancel")&&library.Items.Any(e=>e.Id==entry.Id)&&library.Pins[1]==entry.Id&&
+            Field<OverlayHost>(session,"_host").IsEditing&&toolbar.IsVisible);
         var unpin=Menu(1);unpin.IsOpen=false;unpin.Items.OfType<MenuItem>().Single(item=>Equals(item.Tag,"Stamp.Unpin")).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
         WaitUntil(()=>library.Pins[1] is null);
         check("toolbar unpin removes the clicked slot and preserves another pin to the same stamp",library.Pins[0]==entry.Id&&library.Pins[1] is null&&library.Items.Any(e=>e.Id==entry.Id));
         Await(library.PinAsync(1,entry.Id));Pump();
-        check("confirmed slot delete removes its catalog entry and all pins",Act("Stamp.Delete","Stamp.Confirm")&&!library.Items.Any(e=>e.Id==entry.Id)&&library.Pins.All(id=>id!=entry.Id));
+        check("confirmed slot delete removes its catalog entry and all pins without leaving editing",
+            Act("Stamp.Delete","Stamp.Confirm")&&!library.Items.Any(e=>e.Id==entry.Id)&&library.Pins.All(id=>id!=entry.Id)&&
+            Field<OverlayHost>(session,"_host").IsEditing&&toolbar.IsVisible);
         check("slot actions do not open the library window",!Field<StampLibraryWindow>(session,"_stampWindow").IsVisible);
         BillboardInsertionRoutes(check,session,editor,library);
     }
@@ -75,7 +79,7 @@ internal static class Round2StampRuntimeFixture
         var png=encoded.ToArray();var normalized=new NormalizedImage(png,40,30);
         int originalCount=editor.Session.Document.Elements.Count,originalAssets=editor.Session.Assets.Count;
         bool QueueImage() => (bool)typeof(DesktopSession).GetMethod("InsertImages",BindingFlags.Instance|BindingFlags.NonPublic)!
-            .Invoke(session,[editor.Session,new NormalizedImage[]{normalized},false])!;
+            .Invoke(session,[editor.Session,new NormalizedImage[]{normalized},false,null])!;
         void Pointer(OverlayPointerKind kind,PointD p)
         {
             var physical=p+editor.ScreenOrigin;

@@ -31,7 +31,12 @@ internal sealed class CanvasTextInput : IDisposable
         window=new Window {Title="FloatCanvas text input",Owner=owner,Content=input,Width=400,Height=160,
             WindowStyle=WindowStyle.None,AllowsTransparency=true,Background=Brushes.Transparent,Opacity=0,
             ShowInTaskbar=false,ShowActivated=false,ResizeMode=ResizeMode.NoResize,Topmost=true};
-        window.SourceInitialized+=(_,_)=>((HwndSource)PresentationSource.FromVisual(window)).AddHook(Hook);
+        window.SourceInitialized+=(_,_)=>
+        {
+            // EnsureHandle can initialize the native window before WPF attaches its
+            // PresentationSource to the visual tree. Resolve the hook from the HWND.
+            HwndSource.FromHwnd(new WindowInteropHelper(window).Handle)?.AddHook(Hook);
+        };
         window.Deactivated+=(_,_)=>Deactivated?.Invoke();
         window.PreviewKeyDown+=(_,e)=>
         {

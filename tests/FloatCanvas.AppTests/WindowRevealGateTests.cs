@@ -143,6 +143,30 @@ internal static class WindowRevealGateTests
         }
     }
 
+    /// <summary>Handle-first reveal must not break controls that attach hooks on SourceInitialized.</summary>
+    internal static void RunCanvasTextInput(Action<string, bool> check)
+    {
+        var owner = Fixture(new Border { Background = Brushes.Transparent });
+        owner.Width = 400; owner.Height = 220;
+        CanvasTextInput? input = null;
+        InlineTextEdit? edit = null;
+        try
+        {
+            owner.Show(); Pump(100);
+            using var renderer = new FloatCanvas.Rendering.SceneRenderer();
+            var session = new FloatCanvas.Core.EditorSession();
+            edit = new InlineTextEdit(session, null, default, new() { FontSize = 24 }, renderer);
+            input = new CanvasTextInput(owner, edit, () => default);
+            check("handle-first reveal keeps inline text input initialization and native hooks working", input is not null);
+        }
+        finally
+        {
+            input?.Dispose();
+            edit?.Finish(false);
+            owner.Close();
+        }
+    }
+
     private static Window Fixture(Border border) => new()
     {
         WindowStyle = WindowStyle.None, AllowsTransparency = true, Background = Brushes.Transparent, Topmost = true,

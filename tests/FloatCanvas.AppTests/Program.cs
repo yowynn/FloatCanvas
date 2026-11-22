@@ -383,6 +383,7 @@ internal static class Program
             if (args.Contains("--window-focus-only")) { WindowFocusLifecycleTests.Run(Assert); return 0; }
             if (args.Contains("--font-layout-only")) { FontLayoutRegressionTests.Run(Assert); return 0; }
             if (args.Contains("--popup-scrollbar-only")) { PopupScrollbarRegressionTests.Run(Assert); return 0; }
+            if (args.Contains("--popup-opening-gesture-only")) { PopupOpeningGestureTests.Run(Assert); return 0; }
             if (args.Contains("--menu-escape-only")) { MenuEscapeLifecycleTests.Run(Assert); return 0; }
             if (args.Contains("--hidden-tool-properties-only")) { HiddenToolPropertiesTests.Run(Assert); return 0; }
             if (args.Contains("--tool-panel-hidden-only")) { ToolPanelVisibilityTests.Run(Assert); return 0; }
@@ -445,7 +446,8 @@ internal static class Program
             if (args.Contains("--window-layout-only")) { WindowLayoutFixture.Run(Assert); return 0; }
             if (args.Contains("--icons-only")) { AppIconTests.Run(Assert); return 0; }
             if (args.Contains("--launcher-position-only")) { LauncherPositionTests.Run(Assert); return 0; }
-            if (args.Contains("--window-reveal-only")) { WindowRevealGateTests.RunState(Assert); bool pixels = WindowRevealGateTests.Run(Assert); WindowRevealGateTests.RunSession(Assert); return pixels ? 0 : 3; }
+            if (args.Contains("--window-reveal-only")) { WindowRevealGateTests.RunState(Assert); bool pixels = WindowRevealGateTests.Run(Assert); WindowRevealGateTests.RunCanvasTextInput(Assert); WindowRevealGateTests.RunSession(Assert); return pixels ? 0 : 3; }
+            if (args.Contains("--canvas-text-input-only")) { WindowRevealGateTests.RunCanvasTextInput(Assert); return 0; }
             if (args.Contains("--tray-gestures-only")) { TrayLauncherGestureTests.Run(Assert); return 0; }
             if (args.Contains("--toolbar-only")) { LauncherGestureStateTests.Run(Assert); TrayLauncherGestureTests.Run(Assert); ToolbarInteractionTests.Run(Assert); return 0; }
             if (args.Contains("--window-chrome-only")) { WindowChromeTests.Run(Assert); return 0; }

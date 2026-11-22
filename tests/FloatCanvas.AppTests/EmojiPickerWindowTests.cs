@@ -18,6 +18,7 @@ internal static class EmojiPickerWindowTests
     internal static void Run(Action<string,bool> check)
     {
         if (PresentationDesktopAvailability.IsCurrentInputDesktop()) return;
+        HistoryReordering(check);
         var language=L.Preference;
         try
         {
@@ -184,6 +185,43 @@ internal static class EmojiPickerWindowTests
             }
         }
         finally{L.Initialize(language);}
+    }
+
+    private static void HistoryReordering(Action<string,bool> check)
+    {
+        string originalProfile=ApplicationPaths.ProfileDirectory;
+        string profile=Path.Combine(Path.GetTempPath(),"fc-emoji-history-ui-"+Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(profile);
+        ApplicationPaths.Configure(["--profile",profile]);
+        string path=Path.Combine(profile,"emoji-history.json");
+        var store=new EmojiHistoryStore(path);
+        store.Remember("😀");store.Remember("🚀");store.Remember("🔥");
+        var shared=typeof(EmojiHistoryStore).GetField("shared",BindingFlags.Static|BindingFlags.NonPublic)!;
+        object? previous=shared.GetValue(null);
+        var panel=new EmojiPickerPanel(inline:true);
+        var window=new Window{Content=panel,Width=400,Height=420,Left=40,Top=40,ShowActivated=false,ShowInTaskbar=false};
+        try
+        {
+            shared.SetValue(null,store);
+            window.Show();panel.Begin("😀");panel.UpdateLayout();Pump();
+            var grid=Field<ListBox>(panel,"grid");
+            Until(()=>grid.Items.Count==3&&grid.ItemContainerGenerator.ContainerFromIndex(1) is ListBoxItem);
+            object source=grid.ItemsSource;
+            var second=(EmojiEntry)grid.Items[1];
+            var tile=(ListBoxItem)grid.ItemContainerGenerator.ContainerFromIndex(1)!;
+            tile.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice,Environment.TickCount,MouseButton.Left){RoutedEvent=UIElement.PreviewMouseLeftButtonDownEvent});
+            tile.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice,Environment.TickCount,MouseButton.Left){RoutedEvent=UIElement.PreviewMouseLeftButtonUpEvent});
+            panel.UpdateLayout();Pump();
+            check("choosing a realized recent emoji atomically keeps its virtualized list usable",
+                ReferenceEquals(grid.ItemsSource,source)&&ReferenceEquals(grid.Items[0],second)&&grid.Items.Count==3);
+        }
+        finally
+        {
+            window.Close();Pump();
+            shared.SetValue(null,previous);
+            store.Flush();
+            ApplicationPaths.Configure(["--profile",originalProfile]);
+        }
     }
     private static void KeyPress(UIElement element,Key key,RoutedEvent? route=null) =>
         element.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice,PresentationSource.FromVisual(element),Environment.TickCount,key){RoutedEvent=route??Keyboard.PreviewKeyDownEvent});

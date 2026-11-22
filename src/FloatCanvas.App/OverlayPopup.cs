@@ -172,6 +172,14 @@ internal sealed class OverlayPopupWindow : IDisposable
 {
     [ThreadStatic] private static List<OverlayPopupWindow>? openWindows;
     internal static Size MeasurementLimit => new(SystemParameters.PrimaryScreenWidth*.75,SystemParameters.PrimaryScreenHeight*.75);
+    /// <summary>Physical cursor and held-button state; replaceable for input-free tests.</summary>
+    internal static Func<Point> Cursor { get; set; } = SystemCursor;
+    internal static Func<MouseButton,bool> IsButtonPressed { get; set; } = button=>button switch
+    {
+        MouseButton.Left=>Mouse.LeftButton==MouseButtonState.Pressed,MouseButton.Right=>Mouse.RightButton==MouseButtonState.Pressed,
+        MouseButton.Middle=>Mouse.MiddleButton==MouseButtonState.Pressed,MouseButton.XButton1=>Mouse.XButton1==MouseButtonState.Pressed,
+        _=>Mouse.XButton2==MouseButtonState.Pressed
+    };
     private readonly HwndSource source;
     private readonly UIElement content;
     private readonly Action close;
@@ -182,6 +190,12 @@ internal sealed class OverlayPopupWindow : IDisposable
     internal bool IsInteractive { get; }
     private bool returnFocus=true;
     private bool disposed;
+    // Buttons already held when the popup opened belong to the opening gesture.
+    private readonly List<MouseButton> openingButtons=[];
+    private MouseButton? suppressedRelease;
+    private readonly Point openingPoint;
+    private readonly Rect openingAnchor=Rect.Empty;
+    private readonly Size dragThreshold;
     internal OverlayPopupWindow(UIElement child,UIElement? target,PlacementMode placement,double offsetX,double offsetY,Action close,CustomPopupPlacementCallback? custom=null,Func<bool>? closeOnOutside=null,bool hitTestVisible=true,bool targetPressToggles=false,OverlayWindowScope? ownerScope=null,bool returnFocus=true,Size? measuredSize=null)
     {
         scope=ownerScope??OverlayWindowScope.Current??throw new InvalidOperationException("No active system overlay window owner.");
@@ -196,15 +210,29 @@ internal sealed class OverlayPopupWindow : IDisposable
         // after layout callbacks, then avoid measuring again during creation.
         if(measuredSize is null)child.Measure(MeasurementLimit);
         var size=measuredSize??child.DesiredSize;
-        Point position=target?.PointToScreen(new Point())??CursorPosition();
+        Point origin=target?.PointToScreen(new Point())??CursorPosition();
+        Point position=origin;
         Point monitorAnchor=target is FrameworkElement monitorTarget
             ? monitorTarget.PointToScreen(new(monitorTarget.ActualWidth/2,monitorTarget.ActualHeight/2)) : position;
         var dpi=target is Visual visual?VisualTreeHelper.GetDpi(visual):new DpiScale(1,1);
         double scaleX=dpi.DpiScaleX,scaleY=dpi.DpiScaleY;
+        int width=Math.Max(1,(int)Math.Ceiling(size.Width*scaleX)),height=Math.Max(1,(int)Math.Ceiling(size.Height*scaleY));
+        double physicalOffsetX=offsetX*scaleX,physicalOffsetY=offsetY*scaleY;
         if(placement==PlacementMode.Bottom && target is FrameworkElement element) position.Y+=element.ActualHeight*scaleY;
         if(placement==PlacementMode.Right && target is FrameworkElement right) position.X+=right.ActualWidth*scaleX;
         if(placement==PlacementMode.MousePoint) position=CursorPosition();
+        // Like WPF Popup, flip to the opposite side before clamping onto the anchor.
+        // Mirrored candidates subtract the offset twice; Place adds it once to all.
         Point[] candidates=[position];
+        if(placement==PlacementMode.Bottom && target is FrameworkElement)
+            candidates=[position,new(position.X,origin.Y-height-2*physicalOffsetY)];
+        if(placement==PlacementMode.Right && target is FrameworkElement)
+            candidates=[position,new(origin.X-width-2*physicalOffsetX,position.Y)];
+        if(placement==PlacementMode.MousePoint)
+        {
+            double left=position.X-width-2*physicalOffsetX,top=position.Y-height-2*physicalOffsetY;
+            candidates=[position,new(left,position.Y),new(position.X,top),new(left,top)];
+        }
         if(placement==PlacementMode.Custom && custom is not null && target is FrameworkElement anchor)
         {
             var choices=custom(size,anchor.RenderSize,new Point(offsetX,offsetY));
@@ -212,8 +240,19 @@ internal sealed class OverlayPopupWindow : IDisposable
         }
         if(placement==PlacementMode.MousePoint) monitorAnchor=position;
         var area=System.Windows.Forms.Screen.FromPoint(new System.Drawing.Point((int)monitorAnchor.X,(int)monitorAnchor.Y)).WorkingArea;
-        int width=Math.Max(1,(int)Math.Ceiling(size.Width*scaleX)),height=Math.Max(1,(int)Math.Ceiling(size.Height*scaleY));
-        position=OverlayPopupPlacement.Place(candidates,new Size(width,height),new Rect(area.Left,area.Top,area.Width,area.Height),new Vector(offsetX*scaleX,offsetY*scaleY));
+        if(candidates.Length!=0) position=OverlayPopupPlacement.Place(candidates,new Size(width,height),Area(area),new Vector(physicalOffsetX,physicalOffsetY));
+        if(hitTestVisible)
+        {
+            foreach(var button in new[]{MouseButton.Left,MouseButton.Right,MouseButton.Middle,MouseButton.XButton1,MouseButton.XButton2})
+                if(IsButtonPressed(button)) openingButtons.Add(button);
+            openingPoint=CursorPosition();
+            dragThreshold=new(SystemParameters.MinimumHorizontalDragDistance*scaleX,SystemParameters.MinimumVerticalDragDistance*scaleY);
+            if(target is FrameworkElement pressed)
+            {
+                var bounds=new Rect(origin,new Size(pressed.ActualWidth*scaleX,pressed.ActualHeight*scaleY));
+                if(bounds.Contains(openingPoint)) openingAnchor=bounds;
+            }
+        }
         source=new HwndSource(new HwndSourceParameters("FloatCanvas.Popup")
         {
             ParentWindow=scope.Owner,WindowStyle=unchecked((int)0x80000000),ExtendedWindowStyle=0x08000088|(hitTestVisible?0:0x20),
@@ -223,6 +262,8 @@ internal sealed class OverlayPopupWindow : IDisposable
         source.CompositionTarget.BackgroundColor=Colors.Transparent;
         source.RootVisual=child;
         child.AddHandler(Keyboard.PreviewGotKeyboardFocusEvent,new KeyboardFocusChangedEventHandler(OverlayWindowScope.ConfigureInputMethod),true);
+        // Content is measured before its items have templates, so the measurement may be
+        // smaller than the realized menu; the window must keep growing to fit its content.
         source.SizeToContent=SizeToContent.WidthAndHeight;
         source.AddHook(NoActivate);
         AppInputPolicy.AttachKeyboardSource(source);
@@ -252,6 +293,17 @@ internal sealed class OverlayPopupWindow : IDisposable
     {SetActiveWindow(source.Handle);SetFocus(source.Handle);element.Focus();Keyboard.Focus(element);}
     private void BeforeInput(object sender,PreProcessInputEventArgs args)
     {
+        if((openingButtons.Count!=0 || suppressedRelease is not null) && args.StagingItem.Input is MouseButtonEventArgs {RoutedEvent:var mouseEvent} button)
+        {
+            // A new press starts a gesture that belongs to the popup. Completing the opening
+            // press on the anchor (or without moving) is handled before routing, so neither the
+            // item now placed under it nor its button-specific events complete a choice.
+            if(mouseEvent==Mouse.PreviewMouseDownEvent) { openingButtons.Remove(button.ChangedButton); suppressedRelease=null; }
+            else if(mouseEvent==Mouse.PreviewMouseUpEvent && openingButtons.Remove(button.ChangedButton) && IsOpeningRelease(CursorPosition(),ScreenBounds))
+            { button.Handled=true; suppressedRelease=button.ChangedButton; }
+            else if(mouseEvent==Mouse.MouseUpEvent && suppressedRelease==button.ChangedButton)
+            { button.Handled=true; suppressedRelease=null; }
+        }
         if(!IsInteractive)
         {
             // Hover hints disappear with the gesture but never consume it or
@@ -274,6 +326,15 @@ internal sealed class OverlayPopupWindow : IDisposable
             key.Handled=true;
         }
     }
+    // The press that opened the popup must not complete on whatever item appeared under it
+    // (screen-edge placement can cover the anchor). Completing it over the anchor, or without
+    // moving, ends only the opening gesture; pressing and dragging onto an item still chooses
+    // it in one gesture, as in native Windows menus and combo boxes.
+    internal bool IsOpeningRelease(Point screen,Rect popup)=>popup.Contains(screen) && (openingAnchor.Contains(screen) ||
+        Math.Abs(screen.X-openingPoint.X)<=dragThreshold.Width && Math.Abs(screen.Y-openingPoint.Y)<=dragThreshold.Height);
+    internal bool IsOpeningButton(MouseButton button)=>openingButtons.Contains(button);
+    internal UIElement Child=>content;
+    internal Rect ScreenBounds=>!source.IsDisposed && GetWindowRect(source.Handle,out var rect)?new Rect(rect.Left,rect.Top,rect.Right-rect.Left,rect.Bottom-rect.Top):Rect.Empty;
     internal static bool BelongsTo(DependencyObject source,DependencyObject root)
     {
         for(var current=source;current is not null;current=current switch
@@ -310,8 +371,12 @@ internal sealed class OverlayPopupWindow : IDisposable
     }
     private static nint NoActivate(nint hwnd,int message,nint wparam,nint lparam,ref bool handled)
     {if(message==0x21){handled=true;return 3;}return 0;}
-    private static Point CursorPosition(){GetCursorPos(out var point);return new(point.X,point.Y);}
+    private static Point CursorPosition()=>Cursor();
+    private static Rect Area(System.Drawing.Rectangle area)=>new(area.Left,area.Top,area.Width,area.Height);
+    private static Point SystemCursor(){GetCursorPos(out var point);return new(point.X,point.Y);}
     [StructLayout(LayoutKind.Sequential)] private struct NativePoint{public int X,Y;}
+    [StructLayout(LayoutKind.Sequential)] private struct NativeRect{public int Left,Top,Right,Bottom;}
+    [DllImport("user32.dll")] private static extern bool GetWindowRect(nint hwnd,out NativeRect rect);
     [DllImport("user32.dll")] private static extern bool GetCursorPos(out NativePoint point);
     [DllImport("user32.dll")] private static extern nint SetActiveWindow(nint hwnd);
     [DllImport("user32.dll")] private static extern nint SetFocus(nint hwnd);
@@ -341,7 +406,6 @@ internal sealed class OverlayContextMenu : ContextMenu
     internal bool TargetPressToggles { get; set; }
     private OverlayPopupWindow? window;
     private OverlayWindowScope? ordinaryScope;
-    private bool ignoreOpeningRightRelease;
     private Window? sourceWindow;
     private IDisposable? parentRetention;
     private WinEventProcedure? foregroundProcedure;
@@ -397,18 +461,6 @@ internal sealed class OverlayContextMenu : ContextMenu
             if (retention is not null) Dispatcher.BeginInvoke(DispatcherPriority.Input, retention.Dispose);
         };
     }
-    protected override void OnPreviewMouseRightButtonDown(MouseButtonEventArgs e)
-    {
-        ignoreOpeningRightRelease=false;
-        base.OnPreviewMouseRightButtonDown(e);
-    }
-    protected override void OnPreviewMouseRightButtonUp(MouseButtonEventArgs e)
-    {
-        // Screen-edge placement can put an item under the opening press. Its
-        // release belongs to the launcher, not to that newly displayed item.
-        if(ignoreOpeningRightRelease){ignoreOpeningRightRelease=false;e.Handled=true;return;}
-        base.OnPreviewMouseRightButtonUp(e);
-    }
     private void WatchForeground()
     {
         if(window is not { } opened || foregroundHook!=0)return;
@@ -448,7 +500,6 @@ internal sealed class OverlayContextMenu : ContextMenu
         {
             if(value && window is null)
             {
-                ignoreOpeningRightRelease=Mouse.RightButton==MouseButtonState.Pressed;
                 var scope=OverlayWindowScope.Current;
                 if(scope is null || PlacementTarget is { } target && Window.GetWindow(target) is { } owner && OverlayWindowScope.IsRegularWindow(owner))
                 {

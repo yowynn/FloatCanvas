@@ -213,8 +213,8 @@ internal sealed class EmojiPickerPanel : StackPanel
         if(recentVisible&&grid.ItemsSource is ObservableCollection<EmojiEntry> recent)
         {
             int index=recent.IndexOf(entry);
-            if(index>0)recent.RemoveAt(index);
-            if(index!=0)recent.Insert(0,entry);
+            if(index<0)recent.Insert(0,entry);
+            else if(index>0)recent.Move(index,0);
             while(recent.Count>EmojiHistoryStore.MaximumEntries)recent.RemoveAt(recent.Count-1);
             grid.SelectedItem=entry;
         }

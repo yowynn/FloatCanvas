@@ -115,6 +115,66 @@ internal static class FocusSessionRoutingFixture
             toolbar.Top = (primary.WorkArea.Top + 20) * 96d / primary.DpiY;
             Pump(50); Snapshot("editing-entered");
             check("production focus fixture retains the actual keyboard isolation lease", host.IsEditing && host.IsKeyboardIsolationActive);
+            if (scenario is "toolbar-delete-cancel" or "toolbar-delete-confirm")
+            {
+                var shelf = Field<StampShelfControl>(session, "_stampShelf");
+                var stamp = library.Items.Single();
+                Await(library.PinAsync(0, stamp.Id));
+                Pump(100);
+                Invoke("RaiseVisibleToolWindows");
+                Pump(50);
+                var slot = ((StackPanel)shelf.Content).Children.OfType<Button>().ElementAt(0);
+                var slotCenter = slot.PointToScreen(new Point(slot.ActualWidth / 2, slot.ActualHeight / 2));
+                DriveOwnPointer(new WindowInteropHelper(toolbar).Handle,
+                    new((int)Math.Round(slotCenter.X), (int)Math.Round(slotCenter.Y)),
+                    new((int)Math.Round(slotCenter.X), (int)Math.Round(slotCenter.Y)), right: true);
+                Pump(150);
+                var menu = slot.ContextMenu as OverlayContextMenu ??
+                    throw new InvalidOperationException("Toolbar stamp context menu did not open.");
+                var delete = menu.Items.OfType<MenuItem>().Single(item => Equals(item.Tag, "Stamp.Delete"));
+                var deleteSource = PresentationSource.FromVisual(delete) as HwndSource ??
+                    throw new InvalidOperationException("Toolbar stamp context menu has no native presentation source.");
+                var deleteCenter = delete.PointToScreen(new Point(delete.ActualWidth / 2, delete.ActualHeight / 2));
+                string response = scenario.EndsWith("cancel", StringComparison.Ordinal) ? "Stamp.Cancel" : "Stamp.Confirm";
+                bool clicked = false;
+                var deadline = DateTime.UtcNow.AddSeconds(5);
+                var timer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(40) };
+                timer.Tick += (_, _) =>
+                {
+                    var dialog = app.Windows.Cast<Window>().FirstOrDefault(window =>
+                        !ReferenceEquals(window, toolbar) && window.IsVisible && ReferenceEquals(window.Owner, toolbar));
+                    if (dialog is null)
+                    {
+                        if (DateTime.UtcNow >= deadline) throw new TimeoutException("Toolbar stamp delete confirmation did not open.");
+                        return;
+                    }
+                    if (WindowRevealGate.IsPending(dialog)) return;
+                    var button = Descendants(dialog).OfType<Button>().Single(control => Equals(control.Content, L.Get(response)));
+                    if (button.ActualWidth <= 0 || button.ActualHeight <= 0) return;
+                    timer.Stop();
+                    Snapshot("toolbar-delete-confirmation-opened");
+                    var center = button.PointToScreen(new Point(button.ActualWidth / 2, button.ActualHeight / 2));
+                    DriveOwnPointer(new WindowInteropHelper(dialog).Handle,
+                        new((int)Math.Round(center.X), (int)Math.Round(center.Y)),
+                        new((int)Math.Round(center.X), (int)Math.Round(center.Y)));
+                    clicked = true;
+                };
+                timer.Start();
+                try
+                {
+                    DriveOwnPointer(deleteSource.Handle,
+                        new((int)Math.Round(deleteCenter.X), (int)Math.Round(deleteCenter.Y)),
+                        new((int)Math.Round(deleteCenter.X), (int)Math.Round(deleteCenter.Y)));
+                }
+                finally { timer.Stop(); }
+                Pump(250);
+                Snapshot("toolbar-delete-returned");
+                check("a physical toolbar stamp delete confirmation returns to the editing session",
+                    clicked && host.IsEditing && host.IsKeyboardIsolationActive && toolbar.IsVisible && toolbar.IsEnabled);
+                check("toolbar stamp delete confirmation leaves an own enabled foreground",
+                    IsOwnForeground() && IsWindowEnabled(GetForegroundWindow()));
+                return;
+            }
             if (scenario.StartsWith("session-capture-", StringComparison.Ordinal))
             {
                 SessionCaptureRoutingFixture.Run(check, session, host, editor, toolbar, run, scenario, Snapshot);
@@ -409,22 +469,22 @@ internal static class FocusSessionRoutingFixture
     }
     private static void DrawOwnCanvas(nint target, PixelBounds bounds, int offsetX)
         => DriveOwnPointer(target, new(bounds.Left + 80 + offsetX, bounds.Top + 100), new(bounds.Left + 220 + offsetX, bounds.Top + 200));
-    private static void DriveOwnPointer(nint target, PixelPoint start, PixelPoint end)
+    private static void DriveOwnPointer(nint target, PixelPoint start, PixelPoint end, bool right = false)
     {
         nint previousDpi = SetThreadDpiAwarenessContext(-4);
         GetCursorPos(out var original); bool held = false;
         try
         {
             Move(start.X, start.Y);
-            Send(2); held = true; Pump(75);
+            Send(right ? 8u : 2u); held = true; Pump(75);
             Move(end.X, end.Y);
-            Send(4); held = false; Pump(75);
+            Send(right ? 16u : 4u); held = false; Pump(75);
         }
         finally
         {
             if (IsOwnForeground())
             {
-                if (held) Send(4);
+                if (held) Send(right ? 16u : 4u);
                 SetCursorPos(original.X, original.Y);
             }
             if (previousDpi != 0) SetThreadDpiAwarenessContext(previousDpi);

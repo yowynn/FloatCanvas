@@ -18,6 +18,21 @@ internal sealed class VirtualizingTilePanel : VirtualizingPanel, IScrollInfo
     private double offset;
     private int columns = 1;
     private double cellWidth = StampLibraryWindow.TileFootprint;
+
+    protected override void OnItemsChanged(object sender, ItemsChangedEventArgs args)
+    {
+        switch (args.Action)
+        {
+            case System.Collections.Specialized.NotifyCollectionChangedAction.Remove:
+            case System.Collections.Specialized.NotifyCollectionChangedAction.Replace:
+                RemoveInternalChildRange(args.Position.Index, args.ItemUICount);
+                break;
+            case System.Collections.Specialized.NotifyCollectionChangedAction.Move:
+                RemoveInternalChildRange(args.OldPosition.Index, args.ItemUICount);
+                break;
+        }
+    }
+
     protected override Size MeasureOverride(Size availableSize)
     {
         var owner = ItemsControl.GetItemsOwner(this);
@@ -37,6 +52,9 @@ internal sealed class VirtualizingTilePanel : VirtualizingPanel, IScrollInfo
         {
             var position = new GeneratorPosition(child, 0);
             int index = generator.IndexFromGeneratorPosition(position);
+            // An items source can replace the generator's mapping before the next
+            // measure. Never pass that stale position back into the generator.
+            if (index < 0) continue;
             if (index >= first && index <= last) continue;
             if (generator is IRecyclingItemContainerGenerator recycling) recycling.Recycle(position, 1); else generator.Remove(position, 1);
             RemoveInternalChildRange(child, 1);
