@@ -53,11 +53,12 @@ internal static class Preview4SettingsRuntimeFixture
         check("a completed double-click leaves no delayed entry", !host.IsEditing && !toolbar.IsVisible);
         now = Environment.TickCount64; Click(now); Invoke(mascot.Launcher, "ArmTimer");
         check("single-click waits for the system double-click interval", !host.IsEditing && gestures.HasPendingClick);
-        activate(() => WaitFor(() => host.IsEditing, System.Windows.Forms.SystemInformation.DoubleClickTime + 1000));
-        check("the real delayed timer enters drawing and hides the passive mascot", host.IsEditing && toolbar.IsVisible && !mascot.IsVisible && !gestures.HasPendingClick);
+        activate(() => WaitFor(() => host.IsEditing && !WindowRevealGate.IsPending(toolbar), System.Windows.Forms.SystemInformation.DoubleClickTime + 1000));
+        check("the real delayed timer enters drawing and hides the passive mascot", host.IsEditing && toolbar.IsVisible && (!mascot.IsVisible || WindowRevealGate.IsConcealed(mascot)) && !gestures.HasPendingClick);
         Invoke(session, "SetEditing", false, false); Pump();
         activate(() => Invoke(mascot.Launcher, "OnPreviewMouseRightButtonDown", new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Right) { RoutedEvent = UIElement.PreviewMouseRightButtonDownEvent }));
-        check("right-click enters drawing immediately", host.IsEditing && toolbar.IsVisible && !mascot.IsVisible);
+        WaitFor(() => !WindowRevealGate.IsPending(toolbar), 1000);
+        check("right-click enters drawing immediately", host.IsEditing && toolbar.IsVisible && (!mascot.IsVisible || WindowRevealGate.IsConcealed(mascot)));
         Invoke(session, "SetEditing", false, false); Pump();
         var before = new Point(mascot.Left, mascot.Top);
         mascot.Left += 80; mascot.Top += 60; Invoke(mascot, "CompleteDrag", before); Pump();

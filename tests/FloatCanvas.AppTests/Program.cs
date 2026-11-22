@@ -445,6 +445,7 @@ internal static class Program
             if (args.Contains("--window-layout-only")) { WindowLayoutFixture.Run(Assert); return 0; }
             if (args.Contains("--icons-only")) { AppIconTests.Run(Assert); return 0; }
             if (args.Contains("--launcher-position-only")) { LauncherPositionTests.Run(Assert); return 0; }
+            if (args.Contains("--window-reveal-only")) { WindowRevealGateTests.RunState(Assert); bool pixels = WindowRevealGateTests.Run(Assert); WindowRevealGateTests.RunSession(Assert); return pixels ? 0 : 3; }
             if (args.Contains("--tray-gestures-only")) { TrayLauncherGestureTests.Run(Assert); return 0; }
             if (args.Contains("--toolbar-only")) { LauncherGestureStateTests.Run(Assert); TrayLauncherGestureTests.Run(Assert); ToolbarInteractionTests.Run(Assert); return 0; }
             if (args.Contains("--window-chrome-only")) { WindowChromeTests.Run(Assert); return 0; }

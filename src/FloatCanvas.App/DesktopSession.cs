@@ -62,6 +62,7 @@ internal sealed partial class DesktopSession : IDisposable
     [DllImport("user32.dll", EntryPoint = "GetFocus")] private static extern nint KeyboardFocusHandle();
     private bool _syncingControls;
     private bool _disposed;
+    private Action<string, object>? _revealDiagnostic;
     private bool _inspectorWanted;
     private bool _renderingFrame, _renderAgain;
     private EditorSession Active => _editor.Session;
@@ -104,6 +105,7 @@ internal sealed partial class DesktopSession : IDisposable
         }
         if(_host.UsesSystemInput) {_overlayWindows=new(_host.SystemWindowOwner,()=>_host.IsEditing);AppTheme.Apply(_settings.Theme);}
         _diagnostics.Write("Input.Backend",new {SystemDelegation=_host.UsesSystemInput,OwnerWindow=_host.SystemWindowOwner.ToInt64(),Mode=protection?.Mode.ToString()});
+        _revealDiagnostic = (name, data) => _diagnostics.Write(name, data); WindowRevealGate.Diagnostic = _revealDiagnostic;
         if(protection?.Warning is { } warning) _diagnostics.Write("Input.BackendWarning",new {Reason=warning});
         _host.ApplyRenderPreference(_settings.PreferGpuAcceleration);
         _host.RenderBackendChanged += () => _diagnostics.Write("Rendering.Backend", new
@@ -514,7 +516,7 @@ internal sealed partial class DesktopSession : IDisposable
         // The passive mascot may have moved against the right edge. Fit the full
         // toolbar before showing it, and keep the fitted point as the shared origin.
         PlaceToolbar();
-        SessionWindowCoordinator.Show(_toolbar);
+        SessionWindowCoordinator.Show(_toolbar, revealed: RefreshPassThroughLauncher);
         RefreshPassThroughLauncher();
         // Native canvas activation can occur on every placement/sample press. Keep
         // the captured windows concealed until that complete interaction restores them.
@@ -527,7 +529,7 @@ internal sealed partial class DesktopSession : IDisposable
     {
         var windows = _app.Windows.Cast<Window>();
         foreach (var window in _windowCoordinator?.OrderForRaise(windows) ?? windows)
-            if (window is { IsVisible: true } && new WindowInteropHelper(window).Handle is var handle && handle != 0)
+            if (window is { IsVisible: true } && !WindowRevealGate.IsConcealed(window) && new WindowInteropHelper(window).Handle is var handle && handle != 0)
                 OverlayCoordinates.RaiseToolWindow(handle);
         OverlayPopupWindow.RaiseOpenPopups();
     }
@@ -1269,6 +1271,7 @@ internal sealed partial class DesktopSession : IDisposable
     {
         ForgetBorrowedTool();
         if (_disposed) return;
+        if (ReferenceEquals(WindowRevealGate.Diagnostic, _revealDiagnostic)) WindowRevealGate.Diagnostic = null;
         FinishKeyboardNudge();
         _presentationPrivacy?.Dispose();
         _host.PresentationInputObserved -= OnPresentationHookInput;

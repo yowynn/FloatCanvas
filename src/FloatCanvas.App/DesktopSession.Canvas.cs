@@ -399,7 +399,7 @@ internal sealed partial class DesktopSession
             _canvasPlacementSession = Active;
             _canvasPlacementTarget = CaptureCanvasSettingsTarget();
             _canvasPlacementEditingVersion = _host.EditingSessionVersion;
-            _canvasPlacementWindows = _app.Windows.Cast<Window>().Where(window => window.IsVisible && !ReferenceEquals(window, _toolbar)).ToArray();
+            _canvasPlacementWindows = _app.Windows.Cast<Window>().Where(window => window.IsVisible && !WindowRevealGate.IsConcealed(window) && !ReferenceEquals(window, _toolbar)).ToArray();
             _windowCoordinator?.HideTemporarily(_canvasPlacementWindows);
         }
         _calibrationSession=Active;

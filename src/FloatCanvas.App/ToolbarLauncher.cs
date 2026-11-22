@@ -78,9 +78,13 @@ internal sealed class ToolbarLauncher : System.Windows.Controls.Button
         BeginLeftPress(position, suppressMenu: true);
     }
 
-    internal void SetCanvasVisible(bool visible)
+    internal bool SetCanvasVisible(bool visible)
     {
-        if(Content is Image artwork)artwork.Source=AppIcon.LauncherImage(visible, editing);
+        if (Content is not Image artwork) return false;
+        var source = AppIcon.LauncherImage(visible, editing);
+        if (ReferenceEquals(artwork.Source, source)) return false;
+        artwork.Source = source;
+        return true;
     }
 
     protected override void OnPreviewMouseLeftButtonDown(MouseButtonEventArgs e)

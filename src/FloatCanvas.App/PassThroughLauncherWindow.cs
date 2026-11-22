@@ -62,13 +62,27 @@ internal sealed class PassThroughLauncherWindow : Window
 
     internal void ShowAt(OverlayPoint origin, bool canvasVisible)
     {
-        Launcher.SetCanvasVisible(canvasVisible);
-        new WindowInteropHelper(this).EnsureHandle();
-        OverlayCoordinates.PositionToolWindow(new WindowInteropHelper(this).Handle, origin);
-        if (!IsVisible) Show();
+        SetCanvasVisible(canvasVisible);
+        var handle = new WindowInteropHelper(this).EnsureHandle();
+        var dpi = VisualTreeHelper.GetDpi(this);
+        OverlayCoordinates.PositionToolWindow(handle, origin);
+        if (VisualTreeHelper.GetDpi(this).PixelsPerDip != dpi.PixelsPerDip) WindowRevealGate.MarkChanged(this);
+        if (!IsVisible || WindowRevealGate.IsConcealed(this)) WindowRevealGate.Show(this);
         // Showing on a different-DPI monitor can resize the native window; restore
         // the shared physical origin after WPF has applied that monitor's DPI.
-        OverlayCoordinates.PositionToolWindow(new WindowInteropHelper(this).Handle, origin);
+        OverlayCoordinates.PositionToolWindow(handle, origin);
+    }
+
+    internal void SetCanvasVisible(bool visible)
+    {
+        if (Launcher.SetCanvasVisible(visible)) WindowRevealGate.MarkChanged(this);
+    }
+
+    /// <summary>Keeps the launcher rendering current state while the editing toolbar replaces it.</summary>
+    internal void Conceal()
+    {
+        Launcher.CancelPendingGestures();
+        if (!WindowRevealGate.Conceal(this)) Hide();
     }
 
     internal void SetEntryHint(string? message)

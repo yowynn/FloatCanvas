@@ -70,10 +70,16 @@ internal sealed partial class DesktopSession
     {
         if (_disposed || _toolbar is null) return;
         RefreshMascotVisibility(_host.IsVisible);
-        // An editing request can still be waiting for entry keys or input acknowledgement.
-        // Keep the launcher until ShowEditingWindows has actually shown its replacement.
-        if (!_settings.ShowPassThroughLauncher || _host.IsSystemScreenshotActive || (_host.IsEditing && _toolbar.IsVisible))
+        if (!_settings.ShowPassThroughLauncher || _host.IsSystemScreenshotActive)
         { _passThroughLauncher?.Hide(); return; }
+        // An editing request can still be waiting for entry keys, input acknowledgement or
+        // the toolbar's first current frame. Keep the launcher until its replacement is
+        // visible, then conceal it so returning to pass-through presents current pixels.
+        if (_host.IsEditing && _toolbar.IsVisible)
+        {
+            if (WindowRevealGate.IsPresented(_toolbar)) _passThroughLauncher?.Conceal();
+            return;
+        }
         if (_passThroughLauncher is null)
         {
             _passThroughLauncher = new();

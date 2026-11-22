@@ -100,7 +100,7 @@ internal sealed class SessionWindowCoordinator : IDisposable
         window.GotKeyboardFocus += OnKeyboardFocus;
     }
 
-    internal static void Show(Window window, bool activate = false)
+    internal static void Show(Window window, bool activate = false, Action? revealed = null)
     {
         WindowTitles.Apply(window);
         OverlayWindowScope.Prepare(window);
@@ -108,7 +108,8 @@ internal sealed class SessionWindowCoordinator : IDisposable
         using var transfer = coordinator?.BeginTransition();
         if (window.WindowState == WindowState.Minimized) window.WindowState = WindowState.Normal;
         SessionWindowLayout.PrepareForShow(window);
-        window.Show();
+        // A reused window may have changed while hidden; never expose its retained frame.
+        WindowRevealGate.Show(window, revealed);
         if (activate && coordinator is not null && coordinator.host.UsesSystemInput && coordinator.host.IsEditing)
             coordinator.host.TryFocusEditingWindow(new WindowInteropHelper(window).Handle);
         else if(activate) window.Activate();

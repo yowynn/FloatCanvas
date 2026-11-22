@@ -145,7 +145,7 @@ internal sealed partial class DesktopSession
         _eyedropperSession = Active; _eyedropperEditingVersion = _host.EditingSessionVersion;
         // Color panels are owned windows. Suspend them before hiding their source
         // surfaces, otherwise their owner-visibility handler closes them permanently.
-        var visibleWindows = _app.Windows.Cast<System.Windows.Window>().Where(window => window.IsVisible).ToArray();
+        var visibleWindows = _app.Windows.Cast<System.Windows.Window>().Where(window => window.IsVisible && !WindowRevealGate.IsConcealed(window)).ToArray();
         var openPickers = visibleWindows
             .SelectMany(OpenColorPickers).Append(field).Where(picker => picker.IsPickerOpen).Distinct()
             .OrderBy(picker => ReferenceEquals(picker, field)).ToArray();

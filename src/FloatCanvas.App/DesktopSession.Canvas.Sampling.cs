@@ -47,7 +47,7 @@ internal sealed partial class DesktopSession
         {
             _canvasPlacementSession = Active; _canvasPlacementEditingVersion = _host.EditingSessionVersion;
             _canvasPlacementTarget = _canvasGridCalibrationTarget;
-            _canvasPlacementWindows = _app.Windows.Cast<Window>().Where(w => w.IsVisible && !ReferenceEquals(w, _toolbar)).ToArray();
+            _canvasPlacementWindows = _app.Windows.Cast<Window>().Where(w => w.IsVisible && !WindowRevealGate.IsConcealed(w) && !ReferenceEquals(w, _toolbar)).ToArray();
             _windowCoordinator?.HideTemporarily(_canvasPlacementWindows);
         }
         SetCanvasSampleHint(); _canvasDraftRevision++; RequestRender();

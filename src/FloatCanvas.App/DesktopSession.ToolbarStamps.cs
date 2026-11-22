@@ -35,7 +35,7 @@ internal sealed partial class DesktopSession
     private void RefreshMascotVisibility(bool visible)
     {
         _toolbarLauncher?.SetCanvasVisible(visible);
-        _passThroughLauncher?.Launcher.SetCanvasVisible(visible);
+        _passThroughLauncher?.SetCanvasVisible(visible);
         bool editing = _host.IsEditing && _toolbar?.IsVisible == true;
         if(_mascotCanvasVisible==visible && _mascotEditing==editing)return;
         _mascotCanvasVisible=visible;
