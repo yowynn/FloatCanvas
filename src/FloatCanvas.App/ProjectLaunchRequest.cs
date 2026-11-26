@@ -13,7 +13,7 @@ internal static class ProjectLaunchRequest
         for (int i = 0; i < args.Length; i++)
         {
             string argument = args[i];
-            if (argument is "--profile" or "--smoke-seconds")
+            if (argument is "--profile" or "--smoke-seconds" or EmojiFontDownloads.LocalSourceArgument)
             {
                 if (++i == args.Length) throw new ArgumentException(L.Get("Shell.InvalidArguments"));
                 continue;

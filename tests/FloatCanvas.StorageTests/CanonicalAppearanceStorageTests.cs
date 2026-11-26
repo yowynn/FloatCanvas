@@ -206,6 +206,7 @@ internal static class CanonicalAppearanceStorageTests
         var reopened = (await projects.LoadAsync(path)).Document;
         check(JsonSerializer.Serialize(reopened) == JsonSerializer.Serialize(scene), "text styles, both authored alpha channels, frames and fonts round-trip exactly");
         var mixed = JsonSerializer.SerializeToNode(scene)!.AsObject();
+        mixed["Version"] = 20;
         LegacyFixtureSchema.UseForegroundBackground(mixed["Elements"]![0]);
         string hybrid = Path.Combine(root, "mixed-color-contracts.floatcanvas");
         await Write(hybrid, "project", "scene.json", mixed, 20);
@@ -213,13 +214,21 @@ internal static class CanonicalAppearanceStorageTests
         try { await projects.LoadAsync(hybrid); } catch (InvalidDataException) { mixedRejected = true; }
         check(mixedRejected, "one package cannot mix published and current color field contracts");
         var released = JsonSerializer.SerializeToNode(scene)!.AsObject();
+        released["Version"] = 20;
         LegacyFixtureSchema.UseForegroundBackground(released);
         foreach (var element in released["Elements"]!.AsArray()) element!["Style"]!["Variant"] = ElementAppearance.Default;
         string plain = Path.Combine(root, "plain-release-v20.floatcanvas");
         await Write(plain, "project", "scene.json", released, 20);
         var published = (await projects.LoadAsync(plain)).Document;
-        check(published.Version == 20 && published.Elements.All(e => e.Style.Variant == ElementAppearance.Default &&
+        check(published.Version == SceneDocument.CurrentVersion && published.Elements.All(e => e.Style.Variant == ElementAppearance.Default &&
             e.Style.PrimaryColor == 0x802383E2 && e.Style.FontSize == 32), "published v20 plain text retains its colors and size");
+        var legacyInCurrentEnvelope = released.DeepClone().AsObject();
+        legacyInCurrentEnvelope["Version"] = SceneDocument.CurrentVersion;
+        string wrongColors = Path.Combine(root, "old-colors-in-current-envelope.floatcanvas");
+        await Write(wrongColors, "project", "scene.json", legacyInCurrentEnvelope, SceneDocument.CurrentVersion);
+        bool legacyColorsRejected = false;
+        try { await projects.LoadAsync(wrongColors); } catch (InvalidDataException) { legacyColorsRejected = true; }
+        check(legacyColorsRejected, "v21 requires canonical color fields even if all elements carry published v20 names");
         var oldEmoji = released.DeepClone().AsObject();
         var oldElements = oldEmoji["Elements"]!.AsArray();
         foreach (var item in oldElements) item!["Style"]!["FontFamily"] = "Segoe UI Emoji";
@@ -272,7 +281,7 @@ internal static class CanonicalAppearanceStorageTests
         string newPath=Path.Combine(root,"emoji-roundtrip.floatcanvas");
         await projects.SaveAsync(newPath,migrated,new());
         var emojiRoundtrip=(await projects.LoadAsync(newPath)).Document;
-        check(emojiRoundtrip.Version==20 && emojiRoundtrip.Elements[0].Kind==ElementKind.Emoji && emojiRoundtrip.Elements[1].Kind==ElementKind.Text &&
+        check(emojiRoundtrip.Version==SceneDocument.CurrentVersion && emojiRoundtrip.Elements[0].Kind==ElementKind.Emoji && emojiRoundtrip.Elements[1].Kind==ElementKind.Text &&
             emojiRoundtrip.Elements[0].Width==160 && emojiRoundtrip.Elements[0].Height==60 &&
             emojiRoundtrip.Elements[0].Style.Opacity==migrated.Elements[0].Style.Opacity,
             "current non-square emoji and intentionally authored single-emoji text retain their own kind and frame on reopen");
@@ -280,7 +289,7 @@ internal static class CanonicalAppearanceStorageTests
         bool invalidEmoji=false;
         try { await projects.SaveAsync(newPath,emojiRoundtrip,new()); } catch (InvalidDataException) { invalidEmoji=true; }
         check(invalidEmoji && (await projects.LoadAsync(newPath)).Document.Elements[0].Text=="👩🏽‍🎨","an invalid emoji cannot replace the saved project");
-        foreach (int version in new[] { 4, 5, 7, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 21, 22 })
+        foreach (int version in new[] { 4, 5, 7, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 22 })
         {
             released["Version"] = version;
             string draft = Path.Combine(root, "unsupported-" + version + ".floatcanvas");

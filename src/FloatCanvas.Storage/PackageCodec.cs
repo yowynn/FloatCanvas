@@ -585,16 +585,16 @@ internal static class PackageCodec
         await using var stream = entry.Open();
         await stream.WriteAsync(bytes, ct).ConfigureAwait(false);
     }
-    // The released v20 palette uses Foreground/Background. The working model uses
-    // PrimaryColor/SecondaryColor under the same version until the next release.
-    // Determine the contract while validating the payload, before any model is exposed.
+    // Released v19/v20 packages use Foreground/Background. Development builds
+    // also saved canonical colors under v20 before v21 formalized the new schema.
     private sealed class SourceColorSchema
     {
         private bool? current;
         public bool UsesPublishedColors => current == false;
         public bool Observe(JsonElement style, int version)
         {
-            bool hasCurrentNames = version >= 20 && (style.TryGetProperty("PrimaryColor", out _) || style.TryGetProperty("SecondaryColor", out _));
+            bool hasCurrentNames = version >= 21 || version == 20 &&
+                (style.TryGetProperty("PrimaryColor", out _) || style.TryGetProperty("SecondaryColor", out _));
             if (current.HasValue && current != hasCurrentNames)
                 throw new InvalidDataException("Mixed color field contracts in one payload.");
             current = hasCurrentNames;

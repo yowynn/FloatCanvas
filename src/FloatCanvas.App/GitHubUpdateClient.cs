@@ -219,6 +219,9 @@ internal sealed class GitHubUpdateClient : IDisposable
         finally { if (!complete) { try { Directory.Delete(staging, true); } catch (IOException) { } catch (UnauthorizedAccessException) { } } }
     }
 
+    internal Task<HttpResponseMessage> GetReleaseAssetAsync(Uri uri, CancellationToken cancellationToken) =>
+        GetAsync(uri, asset: true, cancellationToken);
+
     private async Task<HttpResponseMessage> GetAsync(Uri uri, bool asset, CancellationToken cancellationToken)
     {
         for (int redirects = 0; redirects <= 5; redirects++)

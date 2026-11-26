@@ -49,7 +49,9 @@ internal static class EmojiBoundsProfile
         var mismatches = new List<EmojiBoundsProfileMismatch>();
         foreach (var frame in Frames)
         {
-            string actual = EmojiFontSources.Sha256(frame.FontId);
+            string actual;
+            try { actual = EmojiFontSources.Sha256(frame.FontId); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { continue; }
             if (actual.Length == 0 || string.Equals(actual, frame.ExpectedSha256, StringComparison.Ordinal)) continue;
             mismatches.Add(new(frame.FontId, frame.ExpectedSha256, actual));
         }

@@ -23,7 +23,7 @@ internal static class SceneFormatMigration
             options.Converters.Insert(0, new HistoricalElementReader(version, currentOptions));
         }
         var value = json.Deserialize<T>(options) ?? throw new InvalidDataException(L.Get("Project.EmptyContent"));
-        NormalizePresentationLayouts(value);
+        if (version < SceneDocument.CurrentVersion) NormalizePresentationLayouts(value);
         return value;
     }
 

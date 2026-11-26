@@ -54,6 +54,17 @@ internal sealed partial class DesktopSession
     private long _failedPresentationRevision;
     private bool _presentationUncertain;
     private DispatcherOperation? _hiddenPresentationRecovery;
+    private long _emojiFontRevision;
+
+    private void OnEmojiFontSourcesChanged()
+    {
+        _app.Dispatcher.BeginInvoke(() =>
+        {
+            if (_disposed) return;
+            _emojiFontRevision++;
+            RequestRender();
+        });
+    }
 
     private CanvasPreviewContext CurrentPreviewContext()
     {
@@ -73,7 +84,7 @@ internal sealed partial class DesktopSession
             View: EditingCanvasView == CanvasViewTransform.Identity ? null : EditingCanvasView,
             DepthPriorityOcclusion: PreviewAppearance.DepthPriorityOcclusion, ContinuityEpoch: _canvasContinuityEpoch,
             WindowContinuityEpoch: WindowOwnerToken(Active), PresentationContinuityEpoch: _presentationRuntime?.PixelContinuity,
-            OpaqueCalibrationGuides: gridSample);
+            OpaqueCalibrationGuides: gridSample, EmojiFontRevision: _emojiFontRevision);
         if (_currentCanvasContext is { } current && current with { Epoch = 0 } == context) return current;
         long epoch = _currentCanvasContext is { } prior && prior.HasSameScene(context with { Epoch = prior.Epoch })
             ? prior.Epoch : ++_canvasContextEpoch;

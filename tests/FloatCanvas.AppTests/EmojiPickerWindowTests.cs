@@ -34,8 +34,9 @@ internal static class EmojiPickerWindowTests
                 check("emoji font picker constructor defers availability probes",
                     Equals(notoItem.Content,L.Get("Emoji.Font.Noto")));
                 lazyPicker.RefreshAvailability();
-                check("emoji font picker refreshes missing styles when its dropdown is opened",
-                    Equals(notoItem.Content,L.Format("Emoji.Font.Unavailable",L.Get("Emoji.Font.Noto")))&&!notoItem.IsEnabled);
+                check("emoji font picker exposes a download action for a missing release font",
+                    Equals(notoItem.Content,L.Format("Emoji.Font.Unavailable",L.Get("Emoji.Font.Noto")))&&notoItem.IsEnabled &&
+                    notoItem.Template == Application.Current.FindResource("CanvasEmojiFontDownloadItem"));
             }
             finally { ApplicationPaths.Configure(["--profile",originalProfile]); }
             foreach(var (locale,theme) in new[]{("zh-CN","dark"),("en","light")})

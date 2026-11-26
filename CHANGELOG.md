@@ -5,6 +5,67 @@ Major user-facing changes, with explicit language and category markers. See the 
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-11-27
+
+<!-- floatcanvas-notes:1 -->
+### 简体中文
+<!-- lang:zh-CN -->
+
+#### 新功能
+<!-- category:feature -->
+- **笔迹修整和扁头荧光笔。** 自由画笔可实时修整笔迹。荧光笔支持可旋转的扁头和单笔连续积墨，画布上会预览实际笔头。
+- **可编辑弧线与线型。** 直线工具可沿鼠标轨迹拟合半椭圆，选中后可拖动弧线手柄。新增点划线，矩形可在画布上直接调圆角。
+- **文字样式和编号。** 文字支持普通、描边和标签样式。序号支持字母、罗马数字、中文数字和自定义序列。
+- **自定义符号。** 提供 18 个内置符号，也能从所选图层提取单色矢量轮廓，调整不透明度阈值与轮廓细节后保存为预设。
+- **完整的表情选择器。** 按类别、关键词和肤色选择表情，最近使用会保留。表情图层拥有独立样式，可按需下载 Google、OpenMoji 和 Blobmoji 字体。
+- **实时键盘布局编辑。** 多选移动和调整键位，为单键覆盖字体、字号或颜色，并可录入鼠标按键、滚轮方向和手柄按键。
+
+#### 改进
+<!-- category:improvement -->
+- **快捷键查找。** 在设置中按命令或按键搜索，查看绑定的生效条件，也可以在键盘预览中检查组合键。
+- **普通与增强模式切换。** 可从托盘菜单双向切换，保留当前画布、文件绑定和撤销记录。
+- **样式与色板。** 形状和序号采用实心与描边选项，多选按主次颜色合并。色板可切换颜色组、设为透明和恢复本次打开时的颜色。
+
+#### 修复
+<!-- category:fix -->
+- **编辑焦点与历史恢复。** 改善弹窗关闭、恢复历史画布和普通模式下使用中文输入法时的输入行为。恢复历史时，绑定工程且有修改的画布才询问保存。
+- **合成与缩放。** 透明箭头与线身、文字与背景、形状描边与填充的接合更干净。旋转后的单图层沿选框自己的方向缩放。
+- **复制与印章。** 复制图层和生成印章快照时排除画布网格。剪贴板被占用只在工具条提示。印章按槽位高亮，缩略图保留完整轮廓。
+
+#### 兼容性
+<!-- category:compatibility -->
+- **工程格式升级至 v21。** 已发布的 v20 和更早的已发布格式在读取时转换。新保存的工程、预制体及恢复文件需要支持 v21 的浮绘。需要降级或与旧版交换时，请保留保存前的原文件。
+<!-- /lang -->
+
+### English
+<!-- lang:en -->
+
+#### Features
+<!-- category:feature -->
+- **Stroke correction and chisel-tip highlighter.** The freehand pen can refine strokes while you draw. The highlighter supports a rotatable chisel tip and ink buildup within a stroke. Both tools preview their tips on the canvas.
+- **Editable arcs and line patterns.** The line tool fits a half-ellipse to the drag path and exposes an arc handle when selected. Dash-dot lines are available, and rectangle corners can be rounded directly on the canvas.
+- **Text styles and numbering.** Text supports plain, outlined and label styles. Number badges support letters, Roman numerals, Chinese numerals and custom sequences.
+- **Custom symbols.** Choose from 18 built-in designs or extract a monochrome vector shape from selected layers. Adjust the opacity threshold and contour detail before saving it as a preset.
+- **Complete emoji picker.** Browse by category, search by name, choose skin tones and return to recently used emoji. Emoji layers have independent styles, with Google, OpenMoji and Blobmoji fonts available on demand.
+- **Live keyboard layout editing.** Move and resize multiple keys, override font, text size or colors per key, and capture mouse buttons, wheel directions and gamepad buttons.
+
+#### Improvements
+<!-- category:improvement -->
+- **Shortcut discovery.** Search commands or key combinations, check when each shortcut applies, and inspect combinations in the keyboard preview.
+- **Switch between Ordinary and Enhanced modes.** Both directions are available from the tray menu while the current canvas, file association and undo history stay available.
+- **Styles and palettes.** Shapes and number badges offer filled and outlined styles, with shared primary and secondary colors in multi-selection. Switch palettes, set transparency or restore the color from when the picker opened.
+
+#### Fixes
+<!-- category:fix -->
+- **Editing focus and history recovery.** Improve input after closing dialogs or restoring canvas history, and when using a Chinese input method in Ordinary mode. Restoring history asks to save only when the current canvas has unsaved changes to a bound project.
+- **Compositing and resizing.** Improve joins between translucent arrows and lines, text and backgrounds, and shape outlines and fills. Resizing a single rotated layer follows the axes of its selection box.
+- **Copy and stamps.** Canvas grids stay out of copied layers and stamp thumbnails. Clipboard contention appears in the toolbar. Stamp slots highlight independently and previews retain their full outlines.
+
+#### Compatibility
+<!-- category:compatibility -->
+- **Scene format advances to v21.** Published v20 and earlier released formats migrate on read. Newly saved projects, prefabs and recovery files require v21 support. Keep the original files when exchanging with older versions or downgrading.
+<!-- /lang -->
+
 ## [0.4.1] - 2026-11-17
 
 <!-- floatcanvas-notes:1 -->

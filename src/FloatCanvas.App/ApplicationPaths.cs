@@ -30,6 +30,7 @@ internal static class ApplicationPaths
         }
         else if (args.Contains("--smoke"))
             ProfileDirectory = Path.Combine(Path.GetTempPath(), "FloatCanvas-Smoke", Guid.NewGuid().ToString("N"));
+        EmojiFontDownloads.Configure(args);
         EmojiFontSources.Configure(ProfileDirectory);
     }
 

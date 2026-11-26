@@ -145,8 +145,8 @@ internal static class PopupOpeningGestureTests
             foreach (var child in Descendants(VisualTreeHelper.GetChild(root, index))) yield return child;
     }
 
-    private static void Press(IInputElement target, MouseButton button) => Send(target, button, Mouse.PreviewMouseDownEvent, MouseButtonState.Pressed);
-    private static void Release(IInputElement target, MouseButton button) => Send(target, button, Mouse.PreviewMouseUpEvent, MouseButtonState.Released);
+    internal static void Press(IInputElement target, MouseButton button) => Send(target, button, Mouse.PreviewMouseDownEvent, MouseButtonState.Pressed);
+    internal static void Release(IInputElement target, MouseButton button) => Send(target, button, Mouse.PreviewMouseUpEvent, MouseButtonState.Released);
     private static void Send(IInputElement target, MouseButton button, RoutedEvent routed, MouseButtonState state)
     {
         var device = (MouseDevice)Activator.CreateInstance(MouseType.Value, InputManager.Current, target, state)!;

@@ -69,11 +69,19 @@ internal static class PresentationStorageTests
                     "v15 prefab retains the owned custom keyboard layout without runtime held data");
                 string emptyLayout=stylePath+"-empty-layout";File.Copy(stylePath,emptyLayout);
                 await Edit(emptyLayout,"scene.json",n=>Settings(n)["KeyboardLayout"]!["Keys"]=new JsonArray());
+                bool currentEmptyRejected=false;
+                try { await store.LoadAsync(emptyLayout); } catch (InvalidDataException) { currentEmptyRejected=true; }
+                check(currentEmptyRejected,"v21 rejects a zero-key layout");
+                await Edit(emptyLayout,"manifest.json",n=>n["Version"]=20);
+                await Edit(emptyLayout,"scene.json",n=>{n["Version"]=20;LegacyFixtureSchema.UseForegroundBackground(n);});
                 check((await store.LoadAsync(emptyLayout)).Document.Definitions[0].Graph.Elements[0].Presentation!.KeyboardLayout is null,
                     "historical zero-key layouts normalize to the standard keyboard instead of failing the scene");
                 string hiddenLayout=stylePath+"-hidden-layout";File.Copy(stylePath,hiddenLayout);
+                await Edit(hiddenLayout,"manifest.json",n=>n["Version"]=20);
                 await Edit(hiddenLayout,"scene.json",n=>
                 {
+                    n["Version"]=20;
+                    LegacyFixtureSchema.UseForegroundBackground(n);
                     foreach(var key in Settings(n)["KeyboardLayout"]!["Keys"]!.AsArray().OfType<JsonObject>()) key["Enabled"]=false;
                 });
                 check((await store.LoadAsync(hiddenLayout)).Document.Definitions[0].Graph.Elements[0].Presentation!.KeyboardLayout is null,

@@ -815,12 +815,16 @@ internal sealed class KeyboardLayoutEditorWindow : Window
     private (double X, double Y) FindFreePosition(double width, double height,
         IReadOnlyList<PresentationKeyboardKey>? pending = null)
     {
-        IEnumerable<PresentationKeyboardKey> occupied = pending is { Count: > 0 }
-            ? draft.Keys.Concat(pending) : draft.Keys;
-        for (double y = 0; y + height <= 64; y += GridStep)
-            for (double x = 0; x + width <= 64; x += GridStep)
-                if (!occupied.Any(key => x < key.X + key.Width && x + width > key.X && y < key.Y + key.Height && y + height > key.Y))
-                    return (x, y);
+        var occupied = pending is { Count: > 0 } ? draft.Keys.Concat(pending).ToArray() : draft.Keys.ToArray();
+        double maximum = PresentationKeyboardKey.MaximumPosition;
+        // Preserve the usual top-to-bottom placement, then try negative space
+        // outward from the origin before giving up on a packed layout.
+        foreach (double yStep in new[] { GridStep, -GridStep })
+            foreach (double xStep in new[] { GridStep, -GridStep })
+                for (double y = yStep > 0 ? 0 : -GridStep; y >= MinimumPosition && y + height <= maximum; y += yStep)
+                    for (double x = xStep > 0 ? 0 : -GridStep; x >= MinimumPosition && x + width <= maximum; x += xStep)
+                        if (!occupied.Any(key => x < key.X + key.Width && x + width > key.X && y < key.Y + key.Height && y + height > key.Y))
+                            return (x, y);
         return (double.NaN, double.NaN);
     }
     private PresentationKeyboardKey[] SelectedKeys() => draft.Keys.Where(key => selectedIds.Contains(key.Id)).ToArray();

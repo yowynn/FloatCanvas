@@ -95,17 +95,7 @@ internal static class EmojiArtwork
         using var bitmap=new SKBitmap(32,32,SKColorType.Bgra8888,SKAlphaType.Premul);
         using var canvas=new SKCanvas(bitmap);
         canvas.Clear(SKColors.Transparent);
-        using var border=new SKPaint{Color=new SKColor(0xFF8792A6),Style=SKPaintStyle.Stroke,StrokeWidth=1.5f,IsAntialias=true};
-        using var fill=new SKPaint{Color=new SKColor(0x225E6A7D),Style=SKPaintStyle.Fill,IsAntialias=true};
-        canvas.DrawRoundRect(new SKRect(3,3,29,29),7,7,fill);
-        canvas.DrawRoundRect(new SKRect(3,3,29,29),7,7,border);
-        using var typeface=SKTypeface.FromFamilyName("Segoe UI");
-        using var font=new SKFont(typeface,14){Edging=SKFontEdging.Antialias};
-        using var ink=new SKPaint{Color=new SKColor(0xFFD1D6E0),IsAntialias=true};
-        font.MeasureText("?",out var textBounds);
-        float x=(bitmap.Width-textBounds.Width)/2-textBounds.Left;
-        float baseline=(bitmap.Height-textBounds.Height)/2-textBounds.Top;
-        canvas.DrawText("?",x,baseline,SKTextAlign.Left,font,ink);
+        EmojiGlyphs.DrawMissingGlyph(canvas, bitmap.Width, bitmap.Height);
         var frame=BitmapSource.Create(bitmap.Width,bitmap.Height,96,96,PixelFormats.Pbgra32,null,
             bitmap.GetPixels(),bitmap.ByteCount,bitmap.RowBytes);
         frame.Freeze();

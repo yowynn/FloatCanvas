@@ -23,6 +23,7 @@ internal static class PresentationRuntimeTests
             DeviceButtons(check);
             DeviceButtonRoutes(dispatcher, check);
             BrokerLifecycle(dispatcher,check);
+            HeldKeyObserverFailure(dispatcher,check);
             RegistrationRoles(dispatcher,check);
             LateStarts(dispatcher,check);
             NotificationsAndSourceIsolation(dispatcher,check);
@@ -30,6 +31,23 @@ internal static class PresentationRuntimeTests
             NoAmbientContext(dispatcher,check);
         }
         finally { SynchronizationContext.SetSynchronizationContext(previous); }
+    }
+
+    private static void HeldKeyObserverFailure(Dispatcher dispatcher, Action<string, bool> check)
+    {
+        var factory = new FakeFactory();
+        bool keyboardAvailable = true;
+        using var broker = new PresentationRuntimeBroker(dispatcher, () => { }, factory.Start,
+            keyboardAvailable: () => keyboardAvailable);
+        broker.Configure(new(true, false, false, false, true, 900, 450, 5000), true, new(), "Paused");
+        broker.SetArmed(true);
+        PumpUntil(dispatcher, () => broker.Observing);
+        factory.Requests[0].Source.Queue([Key(0xA2, scan: 29)]);
+        PumpUntil(dispatcher, () => broker.Frame.PressedKeys.Count != 0);
+        keyboardAvailable = false;
+        PumpUntil(dispatcher, () => !broker.Observing);
+        check("a stopped key observer clears a lone held modifier without another input event or gamepad timer",
+            !broker.Observing && broker.Frame.PressedKeys.Count == 0);
     }
 
     private static void DeviceButtons(Action<string, bool> check)

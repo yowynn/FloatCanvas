@@ -200,6 +200,7 @@ internal sealed partial class DesktopSession : IDisposable
         _canvasPreview = new(_app.Dispatcher, CaptureCanvasPreview, captureAsync: CaptureCanvasPreviewAsync);
         _canvasPreview.FrameReady += PresentCanvasPreview;
         _canvasPreview.RequestFailed += CanvasPreviewRequestFailed;
+        EmojiFontSources.Changed += OnEmojiFontSourcesChanged;
         _host.Draw += Draw;
         _host.FrameRendering += BeginCanvasSubmission;
         _host.FrameSubmitted += CompleteCanvasSubmission;
@@ -1386,6 +1387,7 @@ internal sealed partial class DesktopSession : IDisposable
     {
         ForgetBorrowedTool();
         if (_disposed) return;
+        EmojiFontSources.Changed -= OnEmojiFontSourcesChanged;
         if (ReferenceEquals(WindowRevealGate.Diagnostic, _revealDiagnostic)) WindowRevealGate.Diagnostic = null;
         FinishKeyboardNudge();
         _presentationPrivacy?.Dispose();

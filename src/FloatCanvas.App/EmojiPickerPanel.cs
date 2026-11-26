@@ -8,6 +8,7 @@ using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using FloatCanvas.Core;
+using FloatCanvas.Rendering;
 using L = FloatCanvas.Localization.AppText;
 
 namespace FloatCanvas.App;
@@ -280,8 +281,9 @@ internal sealed class EmojiThumbnail : Image
     public EmojiThumbnail()
     {
         IsHitTestVisible=false; Stretch=Stretch.Uniform;
-        DataContextChanged += (_,_) => Load(); Loaded += (_,_) => Load();
-        Unloaded += (_,_) => { pending?.Cancel(); Source=null; };
+        DataContextChanged += (_,_) => Load();
+        Loaded += (_,_) => { EmojiFontSources.Changed += FontSourcesChanged; Load(); };
+        Unloaded += (_,_) => { EmojiFontSources.Changed -= FontSourcesChanged; pending?.Cancel(); Source=null; };
     }
     public string FontId
     {
@@ -294,6 +296,12 @@ internal sealed class EmojiThumbnail : Image
         set => SetValue(AllowFallbackProperty,value);
     }
     internal void SetFont(string fontId) => FontId=EmojiFontIds.Normalize(fontId);
+    private void FontSourcesChanged()
+    {
+        if (Dispatcher.CheckAccess()) Load();
+        else Dispatcher.BeginInvoke(Load);
+    }
+
     private async void Load()
     {
         string fontId=FontId;

@@ -13,7 +13,8 @@ internal sealed record CanvasPreviewContext(object Session, object Monitors, Poi
     bool Hidden, bool Calibration, bool Placing, object? DocumentEpoch = null, object? VisibilityEpoch = null, long Epoch = 0, double GuideOpacity = 1,
     object? ScreenDraftEpoch = null, object? PresentationEpoch = null, object? WindowEpoch = null, object? GroupEpoch = null,
     CanvasViewTransform? View = null, bool DepthPriorityOcclusion = false, object? ContinuityEpoch = null,
-    object? WindowContinuityEpoch = null, object? PresentationContinuityEpoch = null, bool OpaqueCalibrationGuides = false)
+    object? WindowContinuityEpoch = null, object? PresentationContinuityEpoch = null, bool OpaqueCalibrationGuides = false,
+    long EmojiFontRevision = 0)
 {
     // Editing guides may lag one worker frame; never discard the matching base
     // scene while they update. Epoch still rejects a completed A→B→A transition.
@@ -173,7 +174,9 @@ internal sealed class CanvasPreviewRenderer : IDisposable
         var windowDamage = ReferenceEquals(previousWindows, windows) ? [] : (previousWindows?.DirtyBounds ?? []).Concat(windows.DirtyBounds).ToArray();
         // A graph revision invalidates static tiles once. Animation ticks reuse the
         // same immutable world view and must not permanently bypass those tiles.
-        if (snapshot.GraphChanged && !ReferenceEquals(previous?.Document, document)) cache.Invalidate();
+        if (snapshot.GraphChanged && !ReferenceEquals(previous?.Document, document) ||
+            previous is not null && previous.Context.EmojiFontRevision != snapshot.Context.EmojiFontRevision)
+            cache.Invalidate();
         bool Filter(CanvasElement element) => element.Kind == ElementKind.Image && element.Visible && element.Style.Opacity > 0 &&
             SceneRenderer.ProjectedBounds(document, element).Intersects(document.Viewport) &&
             element.Effects.Any(effect => effect.Kind is ImageEffectKind.Blur or ImageEffectKind.Pixelate);

@@ -711,6 +711,18 @@ internal static class AppTheme
               </ControlTemplate>
             </Setter.Value></Setter>
           </Style>
+          <ControlTemplate x:Key="CanvasEmojiFontDownloadItem" TargetType="ComboBoxItem">
+            <Border x:Name="Chrome" Padding="{TemplateBinding Padding}" CornerRadius="4" Background="{TemplateBinding Background}">
+              <DockPanel>
+                <Button x:Name="Download" DockPanel.Dock="Right" MinWidth="58" MinHeight="24" Padding="8,2" Margin="10,0,0,0"/>
+                <ContentPresenter VerticalAlignment="Center"/>
+              </DockPanel>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasHover}"/></Trigger>
+              <Trigger Property="IsSelected" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasHover}"/></Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
           <Style TargetType="ComboBox" BasedOn="{StaticResource CanvasControlBase}">
             <Setter Property="MinHeight" Value="34"/>
             <Setter Property="Padding" Value="8,5"/>

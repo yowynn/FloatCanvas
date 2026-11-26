@@ -28,7 +28,29 @@ internal static class KeyboardLayoutEditorFeatureTests
         Model(check);
         FormEnter(check);
         CaptureOtherDevices(check);
+        AddOutsidePositiveQuadrant(check);
         Editor(app, check);
+    }
+
+    private static void AddOutsidePositiveQuadrant(Action<string, bool> check)
+    {
+        var layout = new PresentationKeyboardLayout { Keys = [] };
+        for (int row = 0; row < 4; row++)
+            for (int column = 0; column < 4; column++)
+            {
+                var key = PresentationKeyboardLayout.CreatePlaceholder("Existing key");
+                key.X = column * 16; key.Y = row * 16; key.Width = key.Height = 16;
+                layout.Keys.Add(key);
+            }
+        var dialog = new KeyboardLayoutEditorWindow(layout);
+        try
+        {
+            dialog.AddPlaceholder();
+            var added = dialog.Draft.Keys.Single(key => key.Id == dialog.SelectedKeyId);
+            check("a packed positive quadrant still permits adding a key to valid negative space",
+                dialog.Draft.Keys.Count == 17 && added.IsValid() && (added.X < 0 || added.Y < 0));
+        }
+        finally { dialog.Close(); }
     }
 
     private static void CaptureOtherDevices(Action<string, bool> check)

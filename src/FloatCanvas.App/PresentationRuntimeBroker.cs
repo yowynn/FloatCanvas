@@ -17,6 +17,7 @@ internal sealed class PresentationRuntimeBroker : IDisposable
     private readonly PresentationTimeline outsideTimeline = new(), insideTimeline = new();
     private bool? observedInternalInput;
     private readonly DispatcherTimer animation;
+    private readonly DispatcherTimer heldKeyWatch;
     private readonly ushort[] gamepadState = new ushort[PresentationDeviceButtons.GamepadSlots];
     private readonly Func<int, ushort> readGamepad;
     private IPresentationInputSource? input;
@@ -65,6 +66,8 @@ internal sealed class PresentationRuntimeBroker : IDisposable
         this.readGamepad = readGamepad ?? PresentationDeviceButtons.ReadGamepad;
         animation = new(DispatcherPriority.Background, dispatcher) { Interval = TimeSpan.FromMilliseconds(33) };
         animation.Tick += (_, _) => Tick();
+        heldKeyWatch = new(DispatcherPriority.Background, dispatcher) { Interval = TimeSpan.FromMilliseconds(100) };
+        heldKeyWatch.Tick += (_, _) => StopIfKeyboardUnavailable();
     }
     internal void Toggle()
         => SetArmed(!Armed);
@@ -323,9 +326,8 @@ internal sealed class PresentationRuntimeBroker : IDisposable
     }
     private void Tick()
     {
-        animation.Stop(); if (!Observing || disposed) return;
-        if (demand.Keyboard && !keyboardAvailable())
-        { faulted = true; Stop(retainTrail: false); NotifyChanged(); return; }
+        animation.Stop();
+        if (StopIfKeyboardUnavailable() || !Observing || disposed) return;
         bool scopeChanged = RefreshKeyboardScope();
         if (demand.GamepadButtons) PollGamepads();
         bool transient = HasTransients; var now = clock();
@@ -335,7 +337,18 @@ internal sealed class PresentationRuntimeBroker : IDisposable
         Schedule();
     }
     private void Schedule()
-    { if (Observing && (HasTransients || demand.GamepadButtons)) animation.Start(); else animation.Stop(); }
+    {
+        bool animate = Observing && (HasTransients || demand.GamepadButtons);
+        animation.IsEnabled = animate;
+        heldKeyWatch.IsEnabled = !animate && Observing && demand.Keyboard && timeline.HasHeldKeys;
+    }
+    private bool StopIfKeyboardUnavailable()
+    {
+        if (disposed || input is null || !demand.Keyboard || input.IsRunning && keyboardAvailable()) return false;
+        faulted = true;
+        Stop(retainTrail: false); NotifyChanged();
+        return true;
+    }
     private void PollGamepads()
     {
         List<PresentationObservedInput>? transitions = null;
@@ -418,7 +431,7 @@ internal sealed class PresentationRuntimeBroker : IDisposable
         editingInput = false;
         rawTransitionCutoff = -1;
         Array.Clear(gamepadState);
-        ++connection; starting?.Cancel(); starting = null; animation.Stop();
+        ++connection; starting?.Cancel(); starting = null; animation.Stop(); heldKeyWatch.Stop();
         if (retainTrail && Frame.Trail.Count > 1) PausedTrail = Frame;
         else if (!retainTrail) PausedTrail = null;
         var old = input; input = null;

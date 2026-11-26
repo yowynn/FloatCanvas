@@ -6,7 +6,7 @@ FloatCanvas ships unsigned Windows ZIP and EXE installer packages containing the
 
 ## 工程格式版本
 
-工程、预制体、自动恢复包共用 `SceneDocument.CurrentVersion`。只有为新发布版本定稿时才调整这个数。一次发布周期内的功能和提交共用当前格式号。兼容转换集中在读取入口，只维护已公开发行的稳定版及公开预览版；开发过程中的中间结构不产生独立版本或迁移链。0.4.1 对应工程格式 v20。对同一个发布号，读取入口按已发布字段约定识别需要转换的数据，再向编辑器交付当前模型。
+工程、预制体、自动恢复包共用 `SceneDocument.CurrentVersion`。只有为新发布版本定稿时才调整这个数。一次发布周期内的功能和提交共用当前格式号。兼容转换集中在读取入口，只为已发布格式维护迁移路径。0.4.1 对应工程格式 v20，0.4.2 对应 v21。
 
 ## 更新日志写作 / Release-note style
 
@@ -105,3 +105,9 @@ gh release upload "v$releaseVersion" ".local/release-assets/$releaseVersion/Floa
 上传后核对远端文件名、PNG 类型及下载内容的 SHA256 与本地一致，并打开中英文 README 确认图片显示。附件上传之前，新地址尚不可用；不得把仅修改引用当作发布完成。预览图是文档附件，不加入应用 ZIP 或安装包。
 
 README previews are version-pinned PNG release assets, not Git-tracked images. Stage the reviewed image under the ignored `.local/release-assets/<version>/` directory. After CI creates the release, upload it from the local machine without overwriting existing assets, verify the downloaded bytes against the local SHA256, and check both rendered READMEs before declaring publication complete. Do not pre-create the release or include the image in application packages.
+
+## 表情字体附件 / Emoji font assets
+
+0.4.2 的可选字体在同一 GitHub Release 中单独发布，文件名为 `Noto-COLRv1.ttf`、`OpenMoji-COLRv0.ttf` 和 `Blobmoji-COLRv1.ttf`。软件使用固定的 `releases/download/v0.4.2/` 地址，并按字体框配置中记录的 SHA-256 校验。发布前将字体放入 Git 忽略目录 `.local/release-assets/0.4.2/`。CI 创建 Release 后再上传这三份附件。上传后在空字体配置中验证下载和工程字形刷新。字体文件独立于应用 ZIP 和安装包。
+
+The three optional fonts for 0.4.2 are separate assets on the same GitHub Release, named `Noto-COLRv1.ttf`, `OpenMoji-COLRv0.ttf` and `Blobmoji-COLRv1.ttf`. The app uses version-pinned URLs under `releases/download/v0.4.2/` and checks the SHA-256 values in the font frame profile. Stage the files under the ignored `.local/release-assets/0.4.2/` directory and upload them after CI creates the release. Verify downloads and project glyph refresh with a font-free profile before closing out publication. The fonts are separate from the app ZIP and installer.

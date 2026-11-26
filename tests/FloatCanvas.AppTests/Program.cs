@@ -439,6 +439,11 @@ internal static class Program
             if (args.Contains("--stamp-preview-only")) { StampPreviewTests.Run(Assert); return 0; }
             if (args.Contains("--billboard-stamp-preview-only")) { BillboardStampPreviewTests.Run(Assert); return 0; }
             if (args.Contains("--emoji-only")) { EmojiTests.Run(Assert); return 0; }
+            if (args.Contains("--emoji-font-download-only"))
+            {
+                EmojiFontDownloadTests.Run(Assert, args.SkipWhile(arg => arg != "--emoji-font-download-only").Skip(1).First());
+                return 0;
+            }
             if (args.Contains("--layer-names-only")) { LayerRenameTests.Run(Assert); return 0; }
             if (args.Contains("--layer-row-polish-only")) { LayerRowPolishTests.Run(Assert, args.SkipWhile(a => a != "--layer-row-polish-only").Skip(1).FirstOrDefault()); return 0; }
             if (args.Contains("--project-drop-only")) { ProjectDropIntegrationTests.Run(Assert, args.SkipWhile(a => a != "--project-drop-only").Skip(1).FirstOrDefault()); return 0; }

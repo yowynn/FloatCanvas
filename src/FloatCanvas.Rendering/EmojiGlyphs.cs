@@ -45,6 +45,11 @@ public static class EmojiGlyphs
         lock (Gate)
         {
             var glyph = Get(emoji, EmojiFontIds.Normalize(emojiFontId));
+            if (glyph.Blob is null)
+            {
+                DrawMissingGlyph(canvas, width, height);
+                return;
+            }
             int saved = canvas.Save();
             try
             {
@@ -66,6 +71,11 @@ public static class EmojiGlyphs
         lock (Gate)
         {
             var glyph = Get(emoji, EmojiFontIds.Normalize(emojiFontId));
+            if (glyph.Blob is null)
+            {
+                DrawMissingGlyph(canvas, width, height);
+                return;
+            }
             if (glyph.Ink.Width <= 0 || glyph.Ink.Height <= 0) return;
             float available = (float)Math.Min(width, height) * .84f;
             float scale = Math.Min(available / glyph.Ink.Width, available / glyph.Ink.Height);
@@ -97,28 +107,27 @@ public static class EmojiGlyphs
             shaped = result.Shaped;
             break;
         }
-        if (blob is null || shaped is null) throw new InvalidOperationException("No emoji font is available for the selected style.");
         try
         {
-            var ink = MeasureInk(blob, shaped.Width);
+            var ink = blob is not null && shaped is not null ? MeasureInk(blob, shaped.Width) : SKRect.Empty;
             var safe = GlobalFrame(emojiFontId);
-            var glyph = new Glyph(blob, ink, safe, shaped.Codepoints.Length, shaped.Codepoints.Count(g => g == 0), clock);
+            var glyph = new Glyph(blob, ink, safe, shaped?.Codepoints.Length ?? 0, shaped?.Codepoints.Count(g => g == 0) ?? 1, clock);
             Cache.Add(key, glyph);
             while (Cache.Count > Capacity)
             {
                 var oldest = Cache.MinBy(pair => pair.Value.Used);
-                Cache.Remove(oldest.Key); oldest.Value.Blob.Dispose();
+                Cache.Remove(oldest.Key); oldest.Value.Blob?.Dispose();
             }
             return glyph;
         }
-        catch { blob.Dispose(); throw; }
+        catch { blob?.Dispose(); throw; }
     }
 
     public static void ClearCache()
     {
         lock (Gate)
         {
-            foreach (var glyph in Cache.Values) glyph.Blob.Dispose();
+            foreach (var glyph in Cache.Values) glyph.Blob?.Dispose();
             Cache.Clear();
             Support.Clear();
         }
@@ -126,6 +135,28 @@ public static class EmojiGlyphs
 
     internal static SKRect GlobalFrame(string? emojiFontId = null)
         => EmojiBoundsProfile.Frame(emojiFontId, ReferenceSize);
+
+    internal static void DrawMissingGlyph(SKCanvas canvas, double width, double height)
+    {
+        float side = (float)Math.Min(width, height);
+        int saved = canvas.Save();
+        try
+        {
+            canvas.Translate((float)((width - side) / 2), (float)((height - side) / 2));
+            canvas.Scale(side / 32);
+            using var border = new SKPaint { Color = new SKColor(0xFF8792A6), Style = SKPaintStyle.Stroke, StrokeWidth = 1.5f, IsAntialias = true };
+            using var fill = new SKPaint { Color = new SKColor(0x225E6A7D), IsAntialias = true };
+            canvas.DrawRoundRect(new SKRect(3, 3, 29, 29), 7, 7, fill);
+            canvas.DrawRoundRect(new SKRect(3, 3, 29, 29), 7, 7, border);
+            using var typeface = SKTypeface.FromFamilyName("Segoe UI");
+            using var font = new SKFont(typeface, 14) { Edging = SKFontEdging.Antialias };
+            using var ink = new SKPaint { Color = new SKColor(0xFFD1D6E0), IsAntialias = true };
+            font.MeasureText("?", out var bounds);
+            canvas.DrawText("?", (32 - bounds.Width) / 2 - bounds.Left,
+                (32 - bounds.Height) / 2 - bounds.Top, SKTextAlign.Left, font, ink);
+        }
+        finally { canvas.RestoreToCount(saved); }
+    }
 
     /// <summary>Keeps every visible ink edge inside the frame by scaling around the frame center.</summary>
     internal static float FitScale(SKRect ink, SKRect frame)
@@ -199,9 +230,9 @@ public static class EmojiGlyphs
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException) { return null; }
     }
 
-    private sealed class Glyph(SKTextBlob blob, SKRect ink, SKRect safe, int glyphCount, int missingCount, long used)
+    private sealed class Glyph(SKTextBlob? blob, SKRect ink, SKRect safe, int glyphCount, int missingCount, long used)
     {
-        public SKTextBlob Blob { get; } = blob;
+        public SKTextBlob? Blob { get; } = blob;
         public SKRect Ink { get; } = ink;
         public SKRect Safe { get; } = safe;
         public int GlyphCount { get; } = glyphCount;
