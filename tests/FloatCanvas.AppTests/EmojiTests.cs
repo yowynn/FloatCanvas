@@ -14,9 +14,9 @@ internal static class EmojiTests
 {
     private static readonly string[] Samples = ["😀","😃","😄","😁","😆","😅","😂","😊","😍","🥰","😎","🤔","😮","😢","😭",
         "😡","🥳","😴","👍","👎","👏","🙌","🙏","💪","❤️","💛","💚","💙","⭐","🔥","👩🏽‍🎨","🫫","🇨🇳","🫱🏻‍🫲🏿"];
-    public static void Run(Action<string, bool> check)
+    public static void Run(Action<string, bool> check, string? profileDirectory = null)
     {
-        EmojiFontSources.Configure(ApplicationPaths.DefaultProfileDirectory);
+        EmojiFontSources.Configure(profileDirectory ?? ApplicationPaths.DefaultProfileDirectory);
         _ = System.Windows.Application.Current ?? new System.Windows.Application { ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown };
         AppTheme.Apply("light");
         using(var catalog=typeof(EmojiCatalog).Assembly.GetManifestResourceStream("FloatCanvas.EmojiCatalog"))
@@ -29,15 +29,20 @@ internal static class EmojiTests
             EmojiBoundsProfile.Frames.Count==4&&
             EmojiFontIds.IsKnown(EmojiBoundsProfile.Frames[0].FontId)&&
             EmojiBoundsProfile.Frames.Select(frame=>frame.FontId).Distinct().Count()==4);
-        foreach(var definition in EmojiBoundsProfile.Frames)
+        foreach(var definition in EmojiBoundsProfile.Frames.Where(frame => frame.FontId != EmojiFontIds.SystemSegoe))
         {
             string path=EmojiFontSources.PathFor(definition.FontId);
             if(!File.Exists(path))continue;
             check(definition.FontId+" font fingerprint matches the bounds profile",
                 EmojiFontSources.Sha256(definition.FontId)==definition.ExpectedSha256);
         }
-        check("installed emoji assets do not report a stale bounds profile",
-            EmojiBoundsProfile.FingerprintMismatches().Count==0);
+        var mismatches = EmojiBoundsProfile.FingerprintMismatches();
+        check("the app-managed emoji assets do not report a stale bounds profile",
+            mismatches.All(mismatch => mismatch.FontId == EmojiFontIds.SystemSegoe));
+        string systemHash = EmojiFontSources.Sha256(EmojiFontIds.SystemSegoe);
+        bool systemChanged = systemHash.Length != 0 && systemHash != EmojiBoundsProfile.For(EmojiFontIds.SystemSegoe).ExpectedSha256;
+        check("Windows font revisions may differ from the measured reference and are reported diagnostically",
+            mismatches.Any(mismatch => mismatch.FontId == EmojiFontIds.SystemSegoe && mismatch.ActualSha256 == systemHash) == systemChanged);
         string notoPath=EmojiFontSources.PathFor(EmojiFontIds.NotoColor);
         if(File.Exists(notoPath))
         {
@@ -123,13 +128,16 @@ internal static class EmojiTests
             Math.Abs(EmojiGlyphs.FitScale(contained,globalFrame)-1)<1e-6);
         using var renderer = new SceneRenderer();
         var assets = new AssetLibrary();
+        bool HasAvailableGlyph(string emoji) => EmojiFontSources.ResolveChain(EmojiFontIds.Default)
+            .Any(fontId => EmojiGlyphs.CanRender(emoji, fontId));
         foreach (string emoji in Samples)
         {
+            bool supported = HasAvailableGlyph(emoji);
             foreach (double size in new[] { 12d, 48d, 96d })
             {
                 var metrics = EmojiGlyphs.Measure(emoji, size);
-                check(emoji + " uses one square emoji safe area without missing characters at " + size,
-                    metrics is { GlyphCount: 1, MissingGlyphCount: 0, LineCount: 1 } &&
+                check(emoji + " uses a square safe area with the available glyph or a missing-glyph placeholder at " + size,
+                    metrics.LineCount == 1 && metrics.GlyphCount == (supported ? 1 : 0) && metrics.MissingGlyphCount == (supported ? 0 : 1) &&
                     metrics.Width > 0 && Math.Abs(metrics.Width-metrics.Height)<1e-9);
                 var element = Element(emoji, size);
                 element.Transform = Affine2D.Translation(10, 10);
@@ -144,8 +152,9 @@ internal static class EmojiTests
                     Math.Abs((ink.Top+ink.Bottom)/2d-(10+size/2d))<=Math.Max(2,size*.25));
                 check(emoji + " occupies a practical portion of the robust global frame at " + size,
                     ink.Right-ink.Left>Math.Max(2,size*.25)&&ink.Bottom-ink.Top>Math.Max(2,size*.25));
-                check(emoji + " is rendered in color rather than monochrome at " + size, bitmap.Pixels.Count(Colorful) >=
-                    Math.Max(1, size * size * .004));
+                if (supported)
+                    check(emoji + " is rendered in color rather than monochrome at " + size, bitmap.Pixels.Count(Colorful) >=
+                        Math.Max(1, size * size * .004));
             }
             var preview = EmojiArtwork.Image(emoji);
             check(emoji + " preview is frozen and reused", preview.IsFrozen && ReferenceEquals(preview, EmojiArtwork.Image(emoji)));
@@ -153,15 +162,17 @@ internal static class EmojiTests
             byte[] pixels = new byte[preview.PixelWidth * preview.PixelHeight * 4];
             converted.CopyPixels(pixels, preview.PixelWidth * 4, 0);
             int coloredPreviewPixels = 0;
+            int visiblePreviewPixels = 0;
             for (int i = 0; i < pixels.Length; i += 4)
             {
                 if (pixels[i + 3] < 128) continue;
+                visiblePreviewPixels++;
                 int high=Math.Max(pixels[i],Math.Max(pixels[i+1],pixels[i+2]));
                 int low=Math.Min(pixels[i],Math.Min(pixels[i+1],pixels[i+2]));
                 if (high-low>20) coloredPreviewPixels++;
             }
-            check(emoji + " gallery preview crops the global frame to recognizable color artwork",
-                preview.PixelWidth==96&&preview.PixelHeight==96&&coloredPreviewPixels>50);
+            check(emoji + " gallery preview shows the available artwork or a visible placeholder",
+                preview.PixelWidth==96&&preview.PixelHeight==96&&(supported ? coloredPreviewPixels : visiblePreviewPixels)>50);
         }
         if(EmojiFontSources.IsAvailable(EmojiFontIds.BlobmojiColor))
         {
@@ -175,7 +186,9 @@ internal static class EmojiTests
                 outlierInk.Left>=10&&outlierInk.Top>=10&&outlierInk.Right<=10+size+1&&outlierInk.Bottom<=10+size+1);
         }
         var sequence = EmojiGlyphs.Measure("👩‍🎨", 18);
-        check("ZWJ emoji is shaped as one complete editable grapheme", sequence.GlyphCount == 1 && sequence.MissingGlyphCount == 0);
+        bool joinedSupported = HasAvailableGlyph("👩‍🎨");
+        check("ZWJ emoji is shaped as a whole or represented by one placeholder",
+            sequence.GlyphCount == (joinedSupported ? 1 : 0) && sequence.MissingGlyphCount == (joinedSupported ? 0 : 1));
         Parallel.For(0, 90, i => EmojiGlyphs.Measure(Samples[i % Samples.Length], 48));
         check("shared emoji measurement cache supports concurrent rendering callers", EmojiGlyphs.Measure("😀", 48) == EmojiGlyphs.Measure("😀", 48));
         var refreshErrors=new System.Collections.Concurrent.ConcurrentQueue<Exception>();

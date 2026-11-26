@@ -438,7 +438,11 @@ internal static class Program
             if (args.Contains("--drag-sized-objects-only")) { DragSizedObjectsTests.Run(Assert); return 0; }
             if (args.Contains("--stamp-preview-only")) { StampPreviewTests.Run(Assert); return 0; }
             if (args.Contains("--billboard-stamp-preview-only")) { BillboardStampPreviewTests.Run(Assert); return 0; }
-            if (args.Contains("--emoji-only")) { EmojiTests.Run(Assert); return 0; }
+            if (args.Contains("--emoji-only"))
+            {
+                EmojiTests.Run(Assert, args.SkipWhile(arg => arg != "--emoji-only").Skip(1).FirstOrDefault());
+                return 0;
+            }
             if (args.Contains("--emoji-font-download-only"))
             {
                 EmojiFontDownloadTests.Run(Assert, args.SkipWhile(arg => arg != "--emoji-font-download-only").Skip(1).First());
