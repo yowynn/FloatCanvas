@@ -20,13 +20,18 @@ internal sealed partial class DesktopSession
         button.ToolTip=entry is null ? L.Get("Stamp.LibraryTitle")+(shortcut.Length>0?" · "+shortcut:"") : StampPreviewTooltip.Create(_stampLibrary,entry,shortcut);
         if(_toolbarLibraryStamp==entry)return;
         _toolbarLibraryStamp=entry;
+        // The shortcut mask can overlap the first column of a 20-DIP thumbnail.
+        Panel.SetZIndex(glyph, selected ? 1 : 0);
         glyph.Content=_stampLibraryDefaultGlyph;
         if(entry is null)return;
         try
         {
             var bitmap=await StampPreviewTooltip.GetThumbnailAsync(_stampLibrary,entry);
             if(_toolbarLibraryStamp!=entry || bitmap is null)return;
-            glyph.Content=new Image {Source=bitmap,Width=20,Height=20,Stretch=Stretch.Uniform};
+            var image = new Image { Source = bitmap, Width = 20, Height = 20, Stretch = Stretch.Uniform,
+                UseLayoutRounding = false, SnapsToDevicePixels = false };
+            RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.HighQuality);
+            glyph.Content = image;
         }
         catch(Exception ex) when(ex is IOException or FormatException or NotSupportedException or InvalidOperationException or KeyNotFoundException)
         { if(_toolbarLibraryStamp==entry)button.ToolTip=ex.Message; }

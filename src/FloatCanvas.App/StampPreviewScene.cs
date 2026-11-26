@@ -13,6 +13,7 @@ internal static class StampPreviewScene
         var bounds = document.Elements.Select(element => SceneRenderer.ProjectedBounds(document, element, true))
             .DefaultIfEmpty(document.Viewport).Aggregate(RectD.Union);
         document.Canvas = GroupCanvasScene.ResolveEditingCanvas(document.Canvas, document.Viewport);
+        document.Canvas.Grid.Visible = false;
         document.Viewport = new(bounds.X, bounds.Y, Math.Max(1, bounds.Width), Math.Max(1, bounds.Height));
         return document;
     }

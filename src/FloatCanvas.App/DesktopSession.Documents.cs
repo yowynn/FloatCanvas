@@ -18,6 +18,7 @@ namespace FloatCanvas.App;
 internal sealed partial class DesktopSession
 {
     private const string ObjectClipboardFormat = "FloatCanvas.Objects.v1";
+    private const int ClipboardCannotOpen = unchecked((int)0x800401D0);
     private readonly ProjectStore _projectStore = new();
     private readonly RecoveryStore _recoveryStore = new(Path.Combine(ApplicationPaths.ProfileDirectory, "recovery"));
     private WorkspaceRecoveryHistory? _workspaceRecoveryHistory;
@@ -673,6 +674,7 @@ internal sealed partial class DesktopSession
         bool objects = selected.Elements.Count > 0 || selected.Groups.Count > 0 || selected.Instances.Count > 0;
         Guid? ownerTransfer = null;
         var snapshot = objects ? ObjectClipboardCommand.CreateRasterSnapshot(session, selected) : session.Document.Clone();
+        if (!objects) snapshot.Canvas.Grid.Visible = false;
         var resources = ResourceSnapshot(snapshot).ToList();
         var effectContext = objects && SceneRenderer.HasLiveEffects(snapshot) ? session.Document.Clone() : null;
         var rasterResources = effectContext is null ? resources.ToList() : ResourceSnapshot(effectContext).ToList();
@@ -680,6 +682,7 @@ internal sealed partial class DesktopSession
         var screenOrigin = _editor.ScreenOrigin;
         using var selectedWindowFrames = objects ? CaptureWindowPackage(session, selected, resources) : null;
         using var contextWindowFrames = effectContext is null ? null : CaptureWindowPackage(session, effectContext, rasterResources);
+        Exception? failure = null;
         _documentBusy = true;
         try
         {
@@ -708,6 +711,7 @@ internal sealed partial class DesktopSession
             }
             var encoded = await Task.Run(() =>
             {
+                if (effectContext is not null) effectContext.Canvas.Grid.Visible = false;
                 using var backdrop = CreateScreenBackdrop(screenCapture, screenOrigin);
                 var assets = ResourceLibrary(rasterResources); using var renderer = new SceneRenderer { LiveEffectContext = effectContext, AnimationTime = animationTime, ScreenBackdrop = backdrop };
                 windowRaster?.ApplyTo(renderer);
@@ -730,8 +734,14 @@ internal sealed partial class DesktopSession
                 session.Selection.SetEquals(cutSelection)) session.DeleteSelection();
             UpdateStatus(WithCaptureWarning(objects ? L.Get("Clipboard.CopiedObjects") : L.Get("Clipboard.CopiedImage"), captureWarning));
         }
-        catch (Exception ex) when (ex is not OperationCanceledException) { ShowError(L.Get("Clipboard.CopyFailed") + ex.Message); }
+        catch (Exception ex) when (ex is not OperationCanceledException) { failure = ex; }
         finally { _documentBusy = false; PruneDocumentResources(); ScheduleRecovery(); }
+        if (failure is not null)
+        {
+            _diagnostics.Write("Clipboard.CopyFailed", new { Cut = cut, failure.HResult }, exception: failure);
+            UpdateStatus(failure.HResult == ClipboardCannotOpen ? L.Get("Clipboard.Busy") :
+                L.Get("Clipboard.CopyFailed").TrimEnd() + " " + failure.Message);
+        }
     }
 
     private async Task PasteAsync()

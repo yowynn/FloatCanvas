@@ -53,6 +53,7 @@ internal static class ObjectClipboardCommand
     {
         var snapshot = objects.Clone();
         snapshot.Canvas = session.Document.Canvas.Clone();
+        snapshot.Canvas.Grid.Visible = false;
         var world = SceneEvaluation.Build(snapshot).RenderDocument;
         var visible = world.Elements.Where(element => element.Visible).ToArray();
         if (visible.Length > 0)

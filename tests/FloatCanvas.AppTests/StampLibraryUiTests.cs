@@ -91,8 +91,10 @@ internal static class StampLibraryUiTests
     private static async Task<(StampLibrary Library, Guid Editable, Guid Merged)> Prepare(string profile)
     {
         var library = new StampLibrary(profile); await library.LoadAsync();
-        var source = new EditorSession(); source.Add(new() { Kind = ElementKind.Rectangle, Width = 120, Height = 75, Style = new() { StrokeWidth = 0, Fill = 0xFF2383E2 } });
+        var source = new EditorSession(); source.Add(new() { Kind = ElementKind.Rectangle, Width = 120, Height = 75,
+            Style = new() { Stroke = 0xFFE03838, StrokeWidth = 5, Fill = 0 } });
         var editable = await library.SaveSelectionAsync(source, "Editable specimen");
+        source.Document.Elements[0].Style.StrokeWidth = 0;
         source.Document.Elements[0].Style.Fill = 0xFFEA6840;
         var merged = await library.SaveSelectionAsync(source, "Merged specimen", StampSaveMode.RasterMerge);
         // A continuous gallery must expose all 51 real revisions across several rows.
@@ -142,13 +144,13 @@ internal static class StampLibraryUiTests
                 item.Content is Controls.StackPanel tile && tile.Children.Count == 3 && tile.Children[0] is Controls.Grid && tile.Children[1] is Controls.TextBlock && tile.Children[2] is Controls.TextBlock { Tag: "Stamp.Mode" }));
             PumpUntil(() => Realized(list).All(item => Thumbnail(item).Source is not null));
             check(locale + " all realized continuous-list thumbnails load from the isolated real revisions", Realized(list).All(item => Thumbnail(item).Source is not null));
-            check(locale + " shelf matches toolbar digit order one through nine then zero", Field<Controls.WrapPanel>(window, "slotShelf").Children.Cast<Wpf.FrameworkElement>()
+            var shelf = Field<Controls.Primitives.UniformGrid>(window, "slotShelf");
+            check(locale + " shelf matches toolbar digit order one through nine then zero", shelf.Children.Cast<Wpf.FrameworkElement>()
                 .Select(frame => ((int)frame.Tag + 1) % 10).SequenceEqual(Enumerable.Range(0, 10).Select(index => (index + 1) % 10)) && Field<int?>(window, "selectedSlot") is null);
-            check(locale + " fixed compact slots stay left aligned with small independent clear buttons", Field<Controls.WrapPanel>(window, "slotShelf").HorizontalAlignment == Wpf.HorizontalAlignment.Left &&
-                Field<Controls.WrapPanel>(window, "slotShelf").Children.Cast<Wpf.FrameworkElement>().All(slot => slot.Width == 46 && slot.Height == 46) &&
+            check(locale + " shelf uses one row with small independent clear buttons", shelf is { Rows: 1, Columns: 10 } &&
                 Field<Dictionary<int, Controls.Button>>(window, "slotClearButtons").Values.All(button => button.Width == 14 && button.Height == 14));
-            check(locale + " shelf slot number badges remain plain digits without duplicated pin glyphs", Field<Dictionary<int, Controls.Button>>(window, "slotButtons").Values.All(button =>
-                ((Controls.Grid)button.Content).Children.OfType<Controls.Border>().Single().Child is Controls.TextBlock));
+            check(locale + " shelf slot number badges remain noninteractive plain digits", shelf.Children.Cast<Controls.Grid>().All(slot =>
+                slot.Children.OfType<Controls.Border>().Single() is { IsHitTestVisible: false, Child: Controls.TextBlock }));
 
             list.SelectedItem = Entry(editable);
             check(locale + " editable stamps cannot invoke the merged-source action", !buttons["Stamp.UseSource"].IsEnabled);
@@ -202,6 +204,10 @@ internal static class StampLibraryUiTests
             var badge = ((Controls.Grid)((Controls.StackPanel)Tile(merged).Content).Children[0]).Children.OfType<Controls.Border>().Single(item => Equals(item.Tag, "Stamp.PinBadge"));
             check(locale + " duplicate pins show a compact vector pin with the first toolbar-order slot number", badge.Child is Controls.StackPanel pinBadge &&
                 pinBadge.Children.Count == 2 && pinBadge.Children[0] is Controls.Viewbox { Width: 12, Height: 12 } && pinBadge.Children[1] is Controls.TextBlock { Text: "6" });
+            list.UpdateLayout();
+            var tileImage = Thumbnail(Tile(merged));
+            check(locale + " pin badge stays above the library image instead of covering its upper left edge",
+                badge.TranslatePoint(new(0, badge.ActualHeight), tileImage).Y <= 0);
             Click(Menu(merged, "Stamp.Unpin")); PumpUntil(() => !Field<bool>(window, "busy") && library.Pins[5] is null);
             check(locale + " repeated unpin follows toolbar order one through nine then zero and retains other stamps", library.Pins[9] == merged && library.Pins[0] == editable);
             Click(Field<Dictionary<int, Controls.Button>>(window, "slotButtons")[5]);
@@ -304,8 +310,26 @@ internal static class StampLibraryUiTests
             var firstCharacter = search.GetRectFromCharacterIndex(0);
             check(locale + " compact search text fits fully inside its content box", !firstCharacter.IsEmpty && firstCharacter.Left >= 24 &&
                 firstCharacter.Top >= 0 && firstCharacter.Bottom <= search.ActualHeight && firstCharacter.Height >= 14);
-            check(locale + " all ten compact slots fit on one row at the minimum supported width", Field<Controls.WrapPanel>(window, "slotShelf").Children.Cast<Wpf.FrameworkElement>()
-                .All(frame => frame.ActualWidth == 46 && frame.ActualHeight == 46 && Math.Abs(Bounds(frame).Top - Bounds(Field<Controls.WrapPanel>(window, "slotShelf")).Top - 2) < 1 && Bounds(frame).Right <= background.Width));
+            var shelf = Field<Controls.Primitives.UniformGrid>(window, "slotShelf");
+            var slots = shelf.Children.Cast<Controls.Grid>().ToArray();
+            var shelfBounds = Bounds(shelf);
+            check(locale + " all ten cells evenly span one row at the minimum supported width",
+                slots.Length == 10 && slots.All(slot => Math.Abs(Bounds(slot).Top - shelfBounds.Top) < 1 &&
+                    Math.Abs(slot.ActualWidth + 2 - shelfBounds.Width / 10) < 2) &&
+                Math.Abs(shelfBounds.Left - Bounds(slots[0]).Left) < 2 && Math.Abs(shelfBounds.Right - Bounds(slots[^1]).Right) < 2);
+            check(locale + " corner badges straddle their slot frame and leave preview pixels clear",
+                slots.All(slot =>
+                {
+                    var frame = slot.Children.OfType<SelectionTileButton>().Single();
+                    var digit = slot.Children.OfType<Controls.Border>().Single();
+                    var image = (Controls.Image)frame.Content;
+                    var frameBounds = Bounds(frame); var digitBounds = Bounds(digit);
+                    var clear = slot.Children.OfType<Controls.Button>().Single(button => button != frame);
+                    return digitBounds.Left < frameBounds.Left && digitBounds.Right > frameBounds.Left && digitBounds.Top < frameBounds.Top &&
+                        (clear.Visibility != Wpf.Visibility.Visible || (Bounds(clear).Left < frameBounds.Right && Bounds(clear).Right > frameBounds.Right &&
+                            Bounds(clear).Top < frameBounds.Top && Bounds(image).Top >= Bounds(clear).Bottom - 1)) &&
+                        image.Stretch == Wpf.Media.Stretch.Uniform && Bounds(image).Top >= digitBounds.Bottom - 1;
+                }));
         }
         finally { background.Child = null; window.Content = content; }
     }

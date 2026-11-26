@@ -87,7 +87,7 @@ internal sealed partial class DesktopSession
             CompleteGlobalCapture(inserted:false,restoreMode:false);
         if (command.Tool is { } tool) { SelectTool(tool); return; }
         if (id.StartsWith("Stamp.Slot", StringComparison.Ordinal) && int.TryParse(id[10..], out int slot))
-        { if (_stampLibrary.Pins[slot] is { } stamp) SelectStampSlot(stamp); else UpdateStatus(FloatCanvas.Localization.AppText.Get("Shortcuts.EmptyStamp")); return; }
+        { SelectStampSlot(slot); return; }
         if (id.StartsWith("Move.", StringComparison.Ordinal))
         {
             _editor.Cancel();

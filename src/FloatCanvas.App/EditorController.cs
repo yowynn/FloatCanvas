@@ -553,11 +553,6 @@ internal sealed partial class EditorController
                 { var ids = shiftDeselectTarget is { } id && ResolveHitSelectableNode(id,deepSelectionGesture) is { } node ? new[] { node } : []; Session.Cancel(); Session.SetSelection(Session.Selection.Except(ids)); }
                 else if (completed == "move" && !gestureMoved && selectionOnClick is { } clicked)
                 { CommitPointerEdit(); Session.SetSelection(clicked); }
-                else if (completed == "draw" && drawing is { } arc && ElementGeometry.LineArcHandle(arc).HasValue)
-                {
-                    if (!screenBillboardDrawing) Session.Selection.Add(arc.Id);
-                    CommitPointerEdit();
-                }
                 else CommitPointerEdit();
             }
             resizeTextRenderer?.Dispose(); resizeTextRenderer = null;

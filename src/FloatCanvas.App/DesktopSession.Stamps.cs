@@ -16,7 +16,7 @@ internal sealed partial class DesktopSession
     private long _stampSelectionRequest;
     private StampPlacementRequestGuard? _stampPlacementGuard;
     private ColorField? _eyedropper;
-    private bool _selectedStampFromSlot;
+    private int? _selectedStampSlot;
     private PropertiesClickSequence? _propertiesClicks;
     private EditorSession? _propertiesClickSession;
     private EditorTool _propertiesClickTool;
@@ -126,7 +126,7 @@ internal sealed partial class DesktopSession
         {
             if (_selectedStamp is null || _stampSelectionPending) return;
             if (_selectedStampRevision != rasterEntry.Revision)
-            { SelectStamp(billboardStampId, useSource: _selectedStampUsesSource, fromSlot: _selectedStampFromSlot); return; }
+            { SelectStamp(billboardStampId, useSource: _selectedStampUsesSource, slot: _selectedStampSlot); return; }
             if (!_editor.HasPendingBillboardInsertion)
             {
                 var loaded = _selectedStamp; var target = Active; var document = target.Document;
@@ -211,19 +211,23 @@ internal sealed partial class DesktopSession
         StampLibrary.Place(loaded, request.Target, request.Position, current.Name);
     }
 
-    private void SelectStamp(Guid id) => SelectStamp(id, useSource: false, fromSlot: false);
-    private void SelectStampSlot(Guid id) => SelectStamp(id, useSource: false, fromSlot: true);
+    private void SelectStamp(Guid id) => SelectStamp(id, useSource: false);
+    private void SelectStampSlot(int slot)
+    {
+        if (_stampLibrary.Pins[slot] is { } id) SelectStamp(id, useSource: false, slot: slot);
+        else UpdateStatus(L.Get("Shortcuts.EmptyStamp"));
+    }
     private void SelectStampSource(Guid id) => SelectStamp(id, useSource: true);
-    private void SelectStamp(Guid id, bool useSource, bool fromSlot = false) => _ = RunCommand(async () =>
+    private void SelectStamp(Guid id, bool useSource, int? slot = null) => _ = RunCommand(async () =>
     {
         CloseToolOptions();
         var expected = _stampLibrary.Items.FirstOrDefault(item => item.Id == id);
         if (expected is null) { UpdateStatus(L.Get("Stamp.Missing")); return; }
         CancelBorrowedTool();ForgetBorrowedTool();
         CompleteGlobalCapture(inserted:false,restoreMode:false);
-        SwitchToolState(EditorTool.Stamp);
         _selectedStamp = null; _selectedStampId = id;
-        _selectedStampFromSlot = fromSlot; _selectedStampUsesSource = useSource;
+        _selectedStampSlot = slot; _selectedStampUsesSource = useSource;
+        SwitchToolState(EditorTool.Stamp);
         var request = StampRequestGuard.Capture(++_stampSelectionRequest, id, expected.Revision, useSource, default);
         _stampSelectionPending = true; UpdateStatus(L.Get("Stamp.Loading"));
         LoadedStamp loaded;
@@ -233,7 +237,6 @@ internal sealed partial class DesktopSession
         if (entry is null || !StampRequestGuard.CanContinue(request, _stampSelectionRequest, entry.Revision, !_disposed && !_documentStopped && !DocumentOperationBusy)) return;
         _selectedStamp = loaded; _selectedStampId = id; _selectedStampRevision = entry.Revision;
         _selectedStampUsesSource = useSource;
-        _selectedStampFromSlot = fromSlot;
         SwitchToolState(EditorTool.Stamp);
         if (_stampWindow is not null) SessionWindowCoordinator.Hide(_stampWindow);
         if (!_host.IsEditing) SetEditing(true);
@@ -276,8 +279,10 @@ internal sealed partial class DesktopSession
     private void ValidateSelectedStamp()
     {
         if (_editor.Tool != EditorTool.Stamp || _selectedStampId is not { } id) return;
-        if (_stampLibrary.Items.Any(item => item.Id == id) && (!_selectedStampFromSlot || _stampLibrary.Pins.Contains(id))) return;
+        if (_stampLibrary.Items.Any(item => item.Id == id) &&
+            (_selectedStampSlot is not { } slot || _stampLibrary.Pins[slot] == id)) return;
         _selectedStamp = null; _selectedStampId = null; _stampSelectionRequest++;
+        _selectedStampSlot = null; _stampSelectionPending = false;
         SwitchToolState(EditorTool.Select);
     }
 

@@ -11,10 +11,10 @@ namespace FloatCanvas.App;
 internal sealed class StampShelfControl : Controls.UserControl
 {
     private readonly StampLibrary library;
-    private readonly Action<Guid> selectStamp;
+    private readonly Action<int> selectSlot;
     internal Func<Guid,int,Controls.ContextMenu>? EntryMenuFactory { get; set; }
     private readonly Controls.StackPanel slots = new() { Orientation = Controls.Orientation.Horizontal };
-    private Guid? active;
+    private int? activeSlot;
     private long revision;
     private bool subscribed;
     private bool showShortcutHints = true;
@@ -26,15 +26,15 @@ internal sealed class StampShelfControl : Controls.UserControl
         </ControlTemplate>
         """);
 
-    public StampShelfControl(StampLibrary library, Action<Guid> selectStamp)
+    public StampShelfControl(StampLibrary library, Action<int> selectSlot)
     {
-        this.library = library; this.selectStamp = selectStamp;
+        this.library = library; this.selectSlot = selectSlot;
         Content = slots;
         Loaded += (_, _) => ObserveVisibility();
         Unloaded += (_, _) => StopObserving();
         IsVisibleChanged += (_, _) => ObserveVisibility();
     }
-    public void SetActive(Guid? id) { if (active == id) return; active = id; Refresh(); }
+    public void SetActive(int? slot) { if (activeSlot == slot) return; activeSlot = slot; Refresh(); }
     public void SetShortcutHintsVisible(bool visible)
     {
         showShortcutHints = visible;
@@ -62,7 +62,7 @@ internal sealed class StampShelfControl : Controls.UserControl
             string digit = EditorCommandCatalog.Hint(command);
             var entry = library.Items.FirstOrDefault(item => item.Id == library.Pins[index]);
             var content = new Controls.Grid { Width = 26, Height = 26 };
-            bool selected = active == entry?.Id && entry is not null;
+            bool selected = activeSlot == slotIndex && entry is not null;
             var frame = new Controls.Border { Width=26,Height=26,CornerRadius = new Wpf.CornerRadius(3), BorderThickness = new Wpf.Thickness(1), Opacity = selected ? 1 : entry is null ? .10 : .38 };
             frame.SetResourceReference(Controls.Border.BorderBrushProperty, selected ? "CanvasAccent" : "CanvasMuted");
             content.Children.Add(frame);
@@ -81,7 +81,7 @@ internal sealed class StampShelfControl : Controls.UserControl
             if (entry is not null)
             {
                 Guid id = entry.Id;
-                button.Click += (_, _) => selectStamp(id);
+                button.Click += (_, _) => selectSlot(slotIndex);
                 var menu = new OverlayContextMenu();
                 var clear = new Controls.MenuItem { Header = L.Get("Stamp.Unpin"), Icon = ActionIconButton.Glyph(PanelActionIcon.Unpin) };
                 clear.Click += async (_, _) => { try { await library.PinAsync(slotIndex, null); } catch (Exception ex) { button.ToolTip = ex.Message; } };

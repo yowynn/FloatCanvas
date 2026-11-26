@@ -135,6 +135,7 @@ internal sealed class StampLibrary(string profileDirectory)
         if(renderContext is not null)
         {
             context=renderContext.Document.Clone();
+            context.Canvas.Grid.Visible = false;
             if (!projectedLive)
             {
                 var shift=Affine2D.Translation(-originalBounds.X,-originalBounds.Y);
@@ -179,6 +180,7 @@ internal sealed class StampLibrary(string profileDirectory)
                         new PointD(originalBounds.X, originalBounds.Y) + (renderContext?.ScreenOrigin ?? default), scale);
                     renderer.ScreenBackdrop = backdrop;
                     var local = Scaled(source, scale);
+                    local.Canvas.Grid.Visible = false;
                     // A stamp preview owns local ink, independent of the author's screen-root slot.
                     local.RootCanvasAssignments.Clear();
                     return renderer.ExportPng(local,renderAssets,transparent:true,

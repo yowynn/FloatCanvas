@@ -3,6 +3,8 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
 using System.Windows.Threading;
 using FloatCanvas.App;
 using FloatCanvas.Core;
@@ -44,24 +46,43 @@ internal static class StampSelectionIntegrationTests
                 var b = await library.SaveSelectionAsync(source, "Unpinned B");
                 int slot = library.Pins.ToList().FindIndex(id => id == b.Id);
                 if (slot >= 0) await library.PinAsync(slot, null);
-                return (a, b, loaded: await library.LoadStampAsync(a.Id));
+                await library.PinAsync(2, a.Id);
+                return (a, b);
             }).GetAwaiter().GetResult();
             Pump();
             check("stamp race fixture has an existing pinned A and an unpinned B", library.Pins.Contains(saved.a.Id) && !library.Pins.Contains(saved.b.Id));
-            Set("_selectedStampId", (Guid?)saved.a.Id); Set("_selectedStamp", saved.loaded);
-            Set("_selectedStampRevision", saved.a.Revision); Set("_selectedStampFromSlot", true);
-            editor.Tool = EditorTool.Stamp; Invoke("RefreshToolbarState");
-            editor.Tool = EditorTool.Freehand; Pump();
             gate = Field<SemaphoreSlim>(library, "gate"); gate.Wait(); gateHeld = true;
-            var select = typeof(DesktopSession).GetMethod("SelectStamp", PrivateInstance, null, [typeof(Guid), typeof(bool), typeof(bool)], null)!;
-            select.Invoke(session, [saved.b.Id, false, false]);
+            var shelf = Field<StampShelfControl>(session, "_stampShelf");
+            Button ButtonAt(int slot) => (Button)((StackPanel)shelf.Content).Children[slot];
+            bool Highlighted(int slot) => ((Grid)ButtonAt(slot).Content).Children.OfType<Border>().Single().Opacity == 1;
+            shelf.PrepareForShow();
+            ButtonAt(0).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Invoke("RefreshToolbarState"); shelf.PrepareForShow();
+            check("clicking one of two slots with the same stamp highlights just the clicked slot",
+                Field<int?>(session, "_selectedStampSlot") == 0 && Highlighted(0) && !Highlighted(2));
+            Set("_commandModifiers", OverlayModifiers.None);
+            typeof(DesktopSession).GetMethod("OnKey", PrivateInstance)!.Invoke(session, [0x33]);
+            Set("_commandModifiers", null);
+            Invoke("RefreshToolbarState"); shelf.PrepareForShow();
+            check("the other slot shortcut moves the only highlight to the requested slot",
+                Field<int?>(session, "_selectedStampSlot") == 2 && !Highlighted(0) && Highlighted(2));
+            var select = typeof(DesktopSession).GetMethod("SelectStamp", PrivateInstance, null, [typeof(Guid), typeof(bool), typeof(int?)], null)!;
+            select.Invoke(session, [saved.b.Id, false, null]);
             check("real SelectStamp is suspended inside the package gate", Field<bool>(session, "_stampSelectionPending") && Field<object?>(session, "_selectedStamp") is null);
-            check("pending inventory request already owns its non-slot source flags", !Field<bool>(session, "_selectedStampFromSlot") && !Field<bool>(session, "_selectedStampUsesSource"));
+            check("pending inventory request already owns its non-slot source flags", Field<int?>(session, "_selectedStampSlot") is null && !Field<bool>(session, "_selectedStampUsesSource"));
             Invoke("RefreshToolbarState"); Pump();
             check("validation and queued render keep unpinned B selected while IO is pending", editor.Tool == EditorTool.Stamp &&
                 Field<Guid?>(session, "_selectedStampId") == saved.b.Id && Field<bool>(session, "_stampSelectionPending"));
             check("pending request does not expose a canvas input surface or activate a window", !host.IsEditing && !host.IsVisible &&
                 host.Diagnostics.All(pair => !pair.InputVisible && !pair.DisplayVisible) && app.Windows.Cast<Window>().All(window => !window.IsVisible) && GetForegroundWindow() == foreground);
+            var glyph = Field<ContentPresenter>(session, "_stampLibraryGlyph");
+            var hint = ((Grid)glyph.Parent).Children.OfType<TextBlock>().Single();
+            var thumbnailDeadline = DateTime.UtcNow.AddSeconds(5);
+            while (glyph.Content is not Image && DateTime.UtcNow < thumbnailDeadline)
+            { Pump(); Thread.Sleep(5); }
+            check("the active library thumbnail paints its thin edges over the shortcut mask",
+                Panel.GetZIndex(glyph) > Panel.GetZIndex(hint) && glyph.Content is Image { SnapsToDevicePixels: false } image &&
+                RenderOptions.GetBitmapScalingMode(image) == BitmapScalingMode.HighQuality);
 
             // A genuine tool change invalidates the request before allowing the package read to
             // finish. This exercises the real guard without taking an editing lease or foreground.

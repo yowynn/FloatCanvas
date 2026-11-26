@@ -463,6 +463,7 @@ internal static class Program
             if (args.Contains("--recovery-only")) { Task.Run(() => WorkspaceRecoveryHistoryTests.RunAsync(Assert)).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--workspace-preview-only")) { WorkspacePreviewTests.RunAsync(Assert).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--clipboard-only")) { ObjectClipboardTests.Run(Assert); return 0; }
+            if (args.Contains("--clipboard-busy-only")) { ClipboardBusyTests.Run(Assert); return 0; }
             if (args.Contains("--tool-options-input-only")) { ToolOptionsInputFixture.Run(Assert); return 0; }
             if (args.Contains("--tool-options-only")) { ToolOptionsPanelTests.Run(Assert); return 0; }
             if (args.Contains("--tool-compatibility-only")) { ToolCompatibilityTests.Run(Assert); return 0; }

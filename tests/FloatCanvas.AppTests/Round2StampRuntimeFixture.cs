@@ -104,7 +104,7 @@ internal static class Round2StampRuntimeFixture
         var loaded=Await(library.LoadStampAsync(entry.Id));
         void Set(string field,object? value)=>session.GetType().GetField(field,BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(session,value);
         Set("_selectedStampId",(Guid?)entry.Id);Set("_selectedStamp",loaded);Set("_selectedStampRevision",entry.Revision);
-        Set("_selectedStampUsesSource",false);Set("_selectedStampFromSlot",false);Set("_stampSelectionPending",false);
+        Set("_selectedStampUsesSource",false);Set("_selectedStampSlot",null);Set("_stampSelectionPending",false);
         editor.Tool=EditorTool.Stamp;
         Click(new(260,260));
         check("raster stamp uses the same first depth click without inserting prematurely",editor.Session.Document.Elements.Count==countAfter&&editor.ActiveBillboardDepthLine is not null);

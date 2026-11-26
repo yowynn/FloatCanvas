@@ -37,7 +37,11 @@ internal static class CreationSelectionTests
         Gesture(controller, new(50, 80), new(250, 80));
         var arc = session.Document.Elements.Single();
         var ends = arc.Points.ToArray();
-        check("drawing in arc mode selects the new arc and reveals its midpoint",
+        check("drawing in arc mode leaves no selection, just like a straight line",
+            controller.SelectionScreenArcHandle is null && session.Selection.Count == 0);
+        controller.Tool = EditorTool.Select;
+        Gesture(controller, new(150, 120), new(150, 120));
+        check("explicitly selecting the arc reveals its midpoint",
             controller.SelectionScreenArcHandle == new PointD(150, 120) && session.Selection.SetEquals([arc.Id]));
         Gesture(controller, new(150, 120), new(150, 40));
         arc = session.Document.Elements.Single();
@@ -112,9 +116,9 @@ internal static class CreationSelectionTests
             });
             check(name + " follows the mouse before release, including unevenly spaced samples", maxError < 1);
             Send(editor, OverlayPointerKind.Up, start + end);
-            check(name + " commits the live ellipse with two endpoints and an editable handle",
+            check(name + " commits the live ellipse with two endpoints and no selection",
                 live.SequenceEqual(ElementGeometry.LineShaftPoints(line)) && line.Points.SequenceEqual(new PointD[] { default, end }) &&
-                editor.SelectionScreenArcHandle.HasValue && session.UndoCount == 1);
+                ElementGeometry.LineArcHandle(line).HasValue && editor.SelectionScreenArcHandle is null && session.Selection.Count == 0 && session.UndoCount == 1);
             check(name + " leaves the tool preset intact and undoes as one line",
                 editor.Style.LineArcBulge == ElementGeometry.DefaultLineArcBulge && editor.Style.LineArcOffset == 0 &&
                 session.Undo() && session.Document.Elements.Count == 0 && session.Redo() &&
@@ -142,7 +146,8 @@ internal static class CreationSelectionTests
         Send(controller, OverlayPointerKind.Move, start + new PointD(70, 0));
         Send(controller, OverlayPointerKind.Up, start + new PointD(200, 0));
         check("a collinear trace creates a flat, editable arc with no previous bend",
-            controller.Session.Document.Elements.Single().Style.LineArcBulge == 0 && controller.SelectionScreenArcHandle == start + new PointD(100, 0));
+            controller.Session.Document.Elements.Single() is { Style.LineArcBulge: 0 } flatArc &&
+            ElementGeometry.LineArcHandle(flatArc) == new PointD(100, 0) && controller.Session.Selection.Count == 0);
 
         controller = new(new()) { Tool = EditorTool.Line };
         Send(controller, OverlayPointerKind.Down, start);
@@ -175,6 +180,8 @@ internal static class CreationSelectionTests
             check("a slight off-center wobble keeps the live handle over the midpoint and preserves the small bend",
                 Math.Abs(centered.X) < .01 && centered.Y * wobble > 0 && Math.Abs(centered.Y) < 3);
             Send(editor, OverlayPointerKind.Up, start + end);
+            editor.Tool = EditorTool.Select;
+            editor.Session.SetSelection([draft.Id]);
             check("the committed nearly straight handle stays at its preview position",
                 editor.SelectionScreenArcHandle is { } handle && handle.DistanceTo(live) < .01);
             var newHandle = start + rotate.TransformPoint(new(width * .8, 4));
@@ -194,6 +201,8 @@ internal static class CreationSelectionTests
         Send(projected, OverlayPointerKind.Down, start);
         Send(projected, OverlayPointerKind.Move, start + new PointD(50, 2));
         Send(projected, OverlayPointerKind.Up, start + new PointD(400, 0));
+        projected.Tool = EditorTool.Select;
+        projected.Session.SelectAll();
         check("two screen pixels of hand movement still center the handle on a foreshortened canvas",
             projected.SelectionScreenArcHandle is { } pivot && Math.Abs(pivot.X - start.X - 200) < .01 && Math.Abs(pivot.Y - start.Y) < 3);
     }

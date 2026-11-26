@@ -1,6 +1,7 @@
 using System.Text.Json;
 using FloatCanvas.App;
 using FloatCanvas.Core;
+using FloatCanvas.Rendering;
 using FloatCanvas.Storage;
 using SkiaSharp;
 
@@ -8,6 +9,24 @@ internal static class ObjectClipboardTests
 {
     internal static void Run(Action<string, bool> check)
     {
+        var outlined = new CanvasElement { Kind = ElementKind.Rectangle, Width = 60, Height = 40,
+            Transform = Affine2D.Translation(10, 10), Style = new() { Stroke = 0xFFFF0000, StrokeWidth = 3, Fill = 0 } };
+        var gridded = new EditorSession(new() { Viewport = new(0, 0, 100, 100), Elements = [outlined] });
+        gridded.Document.Canvas.Grid = new() { Visible = true, Color = 0xFF00FF00, Width = 2, FlatCellSize = 10, FlatOrigin = new(0, 0) };
+        gridded.SetSelection([outlined.Id]);
+        var raster = ObjectClipboardCommand.CreateRasterSnapshot(gridded, ObjectClipboardCommand.CreateSnapshot(gridded));
+        using (var renderer = new SceneRenderer())
+        using (var bitmap = SKBitmap.Decode(renderer.ExportPng(raster, gridded.Assets, transparent: true, useAuthoredFrame: false)))
+        {
+            raster.Canvas.Grid.Visible = true;
+            using var baseline = SKBitmap.Decode(renderer.ExportPng(raster, gridded.Assets, transparent: true, useAuthoredFrame: false));
+            check("selected clipboard PNG keeps the outline and alpha without the live canvas grid",
+                bitmap.GetPixel(bitmap.Width / 2, bitmap.Height / 2).Alpha == 0 &&
+                bitmap.Pixels.Any(pixel => pixel.Red > 200 && pixel.Alpha > 200) &&
+                !bitmap.Pixels.Any(pixel => pixel.Green > 0 && pixel.Alpha > 0) &&
+                baseline.Pixels.Any(pixel => pixel.Green > 200 && pixel.Alpha > 200) && gridded.Document.Canvas.Grid.Visible);
+        }
+
         var assets = new AssetLibrary();
         using var image = SKImage.FromBitmap(new SKBitmap(12, 8));
         using var encoded = image.Encode(SKEncodedImageFormat.Png, 100);

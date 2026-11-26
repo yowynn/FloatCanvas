@@ -321,12 +321,12 @@ internal static class ToolbarAcceptanceTests
             display.RaiseEvent(new Input.MouseEventArgs(Input.Mouse.PrimaryDevice,Environment.TickCount) {RoutedEvent=Input.Mouse.MouseLeaveEvent});
             check("LCD's actual leave handler cancels animation and restores ellipsis",!scroll.HasAnimatedProperties && scroll.X==0 && status.TextTrimming==Wpf.TextTrimming.CharacterEllipsis && double.IsNaN(status.Width));
 
-            Set(session,"_selectedStampId",(Guid?)saved.second.Id);Set(session,"_selectedStampFromSlot",true);Set(session,"_selectedStampRevision",saved.second.Revision);Set(session,"_selectedStamp",saved.loaded);
+            Set(session,"_selectedStampId",(Guid?)saved.second.Id);Set(session,"_selectedStampSlot",1);Set(session,"_selectedStampRevision",saved.second.Revision);Set(session,"_selectedStamp",saved.loaded);
             editor.Tool=EditorTool.Stamp;Invoke(session,"RefreshToolbarState");
             check("a bound selected stamp retains stamp mode",editor.Tool==EditorTool.Stamp);
-            check("slot selection highlights its slot and leaves the library launcher unselected",Field<Guid?>(session,"_toolbarActiveStamp")==saved.second.Id && Wpf.Automation.AutomationProperties.GetItemStatus(manage)=="");
-            Set(session,"_selectedStampFromSlot",false);Invoke(session,"RefreshToolbarState");PumpToIdle(app.Dispatcher);
-            check("library selection highlights its launcher and clears every slot highlight",Field<Guid?>(session,"_toolbarActiveStamp") is null && Wpf.Automation.AutomationProperties.GetItemStatus(manage)==L.Get("ToolbarV2.Selected") && manage.ToolTip is StampPreviewTooltip);
+            check("slot selection highlights its slot and leaves the library launcher unselected",Field<int?>(shelf,"activeSlot")==1 && Wpf.Automation.AutomationProperties.GetItemStatus(manage)=="");
+            Set(session,"_selectedStampSlot",null);Invoke(session,"RefreshToolbarState");PumpToIdle(app.Dispatcher);
+            check("library selection highlights its launcher and clears every slot highlight",Field<int?>(shelf,"activeSlot") is null && Wpf.Automation.AutomationProperties.GetItemStatus(manage)==L.Get("ToolbarV2.Selected") && manage.ToolTip is StampPreviewTooltip);
             check("selected library launcher replaces its glyph with a static image",Glyph(manage) is Controls.Image {Source:Imaging.BitmapSource {IsFrozen:true}});
             foreach(string theme in new[]{"light","dark"})
             {
@@ -335,7 +335,7 @@ internal static class ToolbarAcceptanceTests
                 check(theme+" active library launcher retains the common action-button hover and press template",ReferenceEquals(manage.Template,saveStamp.Template));
                 Save(shell,Path.Combine(output,"stamp-library-active-"+theme+".png"),1.5);
             }
-            Set(session,"_selectedStampFromSlot",true);Invoke(session,"RefreshToolbarState");
+            Set(session,"_selectedStampSlot",1);Invoke(session,"RefreshToolbarState");
             check("leaving the library stamp restores its normal trigger glyph and gray background",ReferenceEquals(Glyph(manage),Field<object>(session,"_stampLibraryDefaultGlyph")) && ((Media.SolidColorBrush)manage.Background).Color==((Media.SolidColorBrush)saveStamp.Background).Color && ((Media.SolidColorBrush)manage.BorderBrush).Color.A==0 && manage.ToolTip?.ToString()==L.Get("Stamp.LibraryTitle")+" · F8");
             Task.Run(()=>library.PinAsync(1,null)).GetAwaiter().GetResult();PumpToIdle(app.Dispatcher);
             check("unbinding the active last slot restores Select through the library notification",editor.Tool==EditorTool.Select && Field<Guid?>(session,"_selectedStampId") is null);

@@ -99,7 +99,7 @@ internal static class HiddenSecondaryPanelsTests
                     var list = Field<ListBox>(window, "grid");
                     Image? TilePreview() => list.ItemContainerGenerator.ContainerFromIndex(0) is ListBoxItem { Content: StackPanel tile }
                         ? ((Grid)tile.Children[0]).Children.OfType<Image>().Single() : null;
-                    Image SlotPreview() => ((Grid)Field<Dictionary<int, Button>>(window, "slotButtons")[0].Content).Children.OfType<Image>().Single();
+                    Image SlotPreview() => (Image)Field<Dictionary<int, Button>>(window, "slotButtons")[0].Content;
                     bool WaitForPreviews()
                     {
                         var until = DateTime.UtcNow.AddSeconds(3);
@@ -133,7 +133,7 @@ internal static class HiddenSecondaryPanelsTests
                     var shelfLifetime = Field<CancellationTokenSource>(shelf, "thumbnails").Token;
                     shelf.Visibility = Visibility.Collapsed; Pump();
                     findings.Add(("hidden stamp shelf cancels previews and unsubscribes from the library", shelfLifetime.IsCancellationRequested && !Field<bool>(shelf, "subscribed")));
-                    shelf.SetActive(entry.Id); shelf.SetShortcutHintsVisible(false);
+                    shelf.SetActive(0); shelf.SetShortcutHintsVisible(false);
                     Task.Run(() => stamps.RenameAsync(entry.Id, "Latest shelf")).GetAwaiter().GetResult(); Pump(); shelf.Refresh();
                     findings.Add(("hidden stamp shelf keeps controls unchanged while retaining new state", children.SequenceEqual(slots.Children.Cast<UIElement>())));
                     shelf.Visibility = Visibility.Visible; Pump();

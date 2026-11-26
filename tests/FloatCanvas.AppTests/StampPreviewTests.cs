@@ -71,7 +71,7 @@ internal static class StampPreviewTests
             }
             var independentDpi = StampPreviewTooltip.Geometry(160,80,new Wpf.DpiScale(1.5,2));
             check("unequal DPI scales remain truthful on both axes", Math.Abs(independentDpi.ScaleX-1.65)<.000001 && Math.Abs(independentDpi.ScaleY-2.2)<.000001);
-            var clicks = new List<Guid>();
+            var clicks = new List<int>();
             foreach (string theme in new[] {"light","dark"})
             {
                 AppTheme.Apply(theme);
@@ -106,13 +106,13 @@ internal static class StampPreviewTests
                 check(theme+" empty slot outline remains faint but discernible against its actual toolbar surface", emptyContrast is >= 1.08 and <= 1.3);
                 check(theme+" an assigned slot has a moderately stronger neutral outline than an empty slot", boundContrast is >= 1.5 and <= 2.3 && boundContrast > emptyContrast + .25);
                 bound.RaiseEvent(new Wpf.RoutedEventArgs(Controls.Button.ClickEvent,bound));
-                check(theme+" bound slot invokes only its assigned stamp", clicks.Count==before+1 && clicks[^1]==saved.entry.Id);
+                check(theme+" bound slot invokes its own slot index", clicks.Count==before+1 && clicks[^1]==0);
                 var tooltip = (StampPreviewTooltip)bound.ToolTip;
                 var body = (Controls.StackPanel)tooltip.Content;
                 var stage = body.Children.OfType<Controls.Grid>().Single();
                 check(theme+" bound tooltip contains name shortcut and a fixed large image stage", body.Children.OfType<Controls.TextBlock>().Any(text=>text.Text==saved.entry.Name) && body.Children.OfType<Controls.TextBlock>().Any(text=>text.Text.Contains("1")) && stage.Width==176 && stage.Height==176 && stage.Children.OfType<Controls.Image>().Single().Source is null);
                 check(theme+" previews remain lazy before a hover opens", stage.Children.OfType<Controls.Image>().Single().Source is null);
-                shelf.SetActive(saved.entry.Id);
+                shelf.SetActive(0);
                 var selected = (Controls.Grid)((Controls.Button)row.Children[0]).Content;
                 PumpUntil(() => row.Children.Cast<Controls.Button>().Take(2).All(button=>((Controls.Grid)button.Content).Children.OfType<Controls.Image>().Single().Source is not null));
                 check(theme+" shelf thumbnail is decoded without opening a large preview", selected.Children.OfType<Controls.Image>().Single().Source is not null);

@@ -498,6 +498,10 @@
     "zh": "复制失败。\n",
     "en": "Copy failed.\n"
   },
+  "Clipboard.Busy": {
+    "zh": "剪贴板暂时被占用，请重试。",
+    "en": "The clipboard is busy. Try again."
+  },
   "Clipboard.Empty": {
     "zh": "剪贴板没有图片或浮绘对象。",
     "en": "The clipboard contains no image or FloatCanvas objects."

@@ -48,6 +48,9 @@ internal static class BillboardScreenCreationTests
         }
         Send(editor, OverlayPointerKind.Up, 440, 480);
         item = session.Document.Elements.Single();
+        check("a screen-first arc also leaves no selection after placing it", session.Selection.Count == 0);
+        editor.Tool = EditorTool.Select;
+        session.SetSelection([item.Id]);
         check("a screen-first arc fits the screen trace and keeps the projected handle after placement",
             item.IsBillboard && item.Points.Count == 2 && editor.SelectionScreenArcHandle is { } apex && apex.DistanceTo(new(280, 390)) < 1);
 

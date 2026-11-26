@@ -33,7 +33,6 @@ internal sealed partial class DesktopSession
     private string? _toolbarParameterFingerprint;
     private NumberSequenceSettings? _toolbarNumbering;
     private EditorTool _toolbarObservedTool = EditorTool.Freehand;
-    private Guid? _toolbarActiveStamp;
     private ToolbarStatusDisplay _toolbarStatusDisplay = null!;
     private readonly List<Controls.TextBlock> _toolbarShortcutHintLabels=[];
     private readonly Dictionary<EditorTool,Controls.ContentPresenter> _toolbarGlyphHosts=[];
@@ -383,9 +382,8 @@ internal sealed partial class DesktopSession
         if (IsToolOptionsOpen && _toolbarObservedTool != _editor.Tool) AnchorToolOptions();
         _toolbarObservedTool = _editor.Tool;
         Guid? activeStamp = _editor.Tool == EditorTool.Stamp ? _selectedStampId : null;
-        Guid? slotStamp = _selectedStampFromSlot ? activeStamp : null;
-        if (_toolbarActiveStamp != slotStamp) { _toolbarActiveStamp = slotStamp; _stampShelf.SetActive(slotStamp); }
-        RefreshLibraryStamp(activeStamp is not null && !_selectedStampFromSlot ? _stampLibrary.Items.FirstOrDefault(entry=>entry.Id==activeStamp) : null);
+        _stampShelf.SetActive(activeStamp is not null ? _selectedStampSlot : null);
+        RefreshLibraryStamp(activeStamp is not null && _selectedStampSlot is null ? _stampLibrary.Items.FirstOrDefault(entry=>entry.Id==activeStamp) : null);
         if (!_host.IsEditing || !_toolbar.IsVisible) CloseToolOptions();
     }
 

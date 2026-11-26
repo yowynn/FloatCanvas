@@ -12,6 +12,7 @@ internal static class StampLibraryTests
         string profile = Path.Combine(Path.GetTempPath(), "FloatCanvas-StampLibraryTests", Guid.NewGuid().ToString("N"));
         await RootCanvasThumbnailsAsync(profile + "-roots", assert);
         await StampPrefabFormatTests.RunAsync(profile + "-formats", assert);
+        await GridFreeThumbnailsAsync(profile + "-grid", assert);
         var library = new StampLibrary(profile);
         await library.LoadAsync();
         assert("new stamp library has ten empty shortcut slots and no files until a mutation", library.Items.Count == 0 && library.Pins.Count == 10 && library.Pins.All(id => id is null) && !Directory.Exists(library.DirectoryPath));
@@ -115,6 +116,33 @@ internal static class StampLibraryTests
         try { await broken.PinAsync(0, null); } catch (InvalidOperationException) { refusedMutation = true; }
         assert("malformed catalog blocks mutation and remains byte-for-byte available for repair", refused && refusedMutation && await File.ReadAllTextAsync(brokenIndex) == "{broken catalog");
         await BillboardStampsAsync(profile + "-billboard", assert);
+    }
+
+    private static async Task GridFreeThumbnailsAsync(string profile, Action<string, bool> check)
+    {
+        var library = new StampLibrary(profile);
+        await library.LoadAsync();
+        var outline = new CanvasElement { Kind = ElementKind.Rectangle, Width = 60, Height = 40,
+            Transform = Affine2D.Translation(10, 10), Style = new() { Stroke = 0xFFFF0000, StrokeWidth = 3, Fill = 0 } };
+        var session = new EditorSession(new() { Viewport = new(0, 0, 100, 100), Elements = [outline] });
+        session.Document.Canvas.Grid = new() { Visible = true, Color = 0xFF00FF00, Width = 2, FlatCellSize = 10, FlatOrigin = new(0, 0) };
+        session.SetSelection([outline.Id]);
+        foreach (var mode in Enum.GetValues<StampSaveMode>())
+        {
+            var entry = await library.SaveSelectionAsync(session, mode.ToString(), mode);
+            using var bitmap = SKBitmap.Decode(await library.GetThumbnailAsync(entry.Id));
+            var loaded = await library.LoadStampAsync(entry.Id);
+            check(mode + " stamp preview retains all four outline edges and alpha without the grid",
+                bitmap.GetPixel(bitmap.Width / 2, bitmap.Height / 2).Alpha == 0 &&
+                Enumerable.Range(0, 5).All(offset => offset < bitmap.Width && offset < bitmap.Height) &&
+                Enumerable.Range(0, 5).Any(offset => bitmap.GetPixel(offset, bitmap.Height / 2).Red > 200) &&
+                Enumerable.Range(0, 5).Any(offset => bitmap.GetPixel(bitmap.Width - 1 - offset, bitmap.Height / 2).Red > 200) &&
+                Enumerable.Range(0, 5).Any(offset => bitmap.GetPixel(bitmap.Width / 2, offset).Red > 200) &&
+                Enumerable.Range(0, 5).Any(offset => bitmap.GetPixel(bitmap.Width / 2, bitmap.Height - 1 - offset).Red > 200) &&
+                !bitmap.Pixels.Any(pixel => pixel.Green > 0 && pixel.Alpha > 0));
+            check(mode + " stamp publication retains its editable grid settings",
+                loaded.Document.Canvas.Grid.Visible && session.Document.Canvas.Grid.Visible);
+        }
     }
 
     private static async Task RootCanvasThumbnailsAsync(string profile, Action<string, bool> check)

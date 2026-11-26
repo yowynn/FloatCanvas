@@ -33,7 +33,7 @@ internal sealed class StampLibraryWindow : Wpf.Window
     private readonly Controls.TextBox search = new() { Height = 34, MinHeight = 34, MinWidth = 0, Padding = new(28, 5, 8, 5) };
     private readonly StampListBox grid = new() { HorizontalContentAlignment = Wpf.HorizontalAlignment.Stretch };
     private readonly Controls.TextBlock status = new() { TextWrapping = Wpf.TextWrapping.Wrap, Margin = new(0, 6, 0, 0), Visibility = Wpf.Visibility.Collapsed };
-    private readonly Controls.WrapPanel slotShelf = new() { HorizontalAlignment = Wpf.HorizontalAlignment.Left, Margin = new(0, 0, 0, 6) };
+    private readonly Controls.Primitives.UniformGrid slotShelf = new() { Rows = 1, Columns = 10, Margin = new(0, 0, 0, 6) };
     private readonly Dictionary<int, Controls.Button> slotButtons = [];
     private readonly Dictionary<int, Controls.Button> slotClearButtons = [];
     private readonly Controls.WrapPanel actions = new() { VerticalAlignment = Wpf.VerticalAlignment.Center };
@@ -214,7 +214,8 @@ internal sealed class StampLibraryWindow : Wpf.Window
         string shortcut = pinnedSlot < 0 ? "" : ((pinnedSlot + 1) % 10).ToString();
         var tile = new Controls.StackPanel { Width = TileContentWidth, Margin = new Wpf.Thickness(TileContentMargin), ToolTip = StampPreviewTooltip.Create(library, entry, shortcut) };
         var artwork = new Controls.Grid();
-        var image = new Controls.Image { Height = 82, Width = 100, Stretch = Media.Stretch.Uniform, Margin = new(0, 2, 0, 6) };
+        var image = new Controls.Image { Height = 76, Width = 100, Stretch = Media.Stretch.Uniform, Margin = new(0, 18, 0, 2),
+            UseLayoutRounding = false, SnapsToDevicePixels = false };
         artwork.Children.Add(image);
         var placeholder = new Controls.TextBlock { Text = L.Get("Recovery.PreviewLoading"), FontSize = 11, TextWrapping = Wpf.TextWrapping.Wrap, HorizontalAlignment = Wpf.HorizontalAlignment.Center, VerticalAlignment = Wpf.VerticalAlignment.Center };
         artwork.Children.Add(placeholder);
@@ -246,23 +247,22 @@ internal sealed class StampLibraryWindow : Wpf.Window
         {
             int slotIndex = index, digit = (index + 1) % 10;
             var entry = library.Items.FirstOrDefault(item => item.Id == library.Pins[index]);
-            var artwork = new Controls.Grid();
-            var image = new Controls.Image { Width = 26, Height = 26, Stretch = Media.Stretch.Uniform, Margin = new(2, 14, 2, 0) };
-            artwork.Children.Add(image); artwork.Children.Add(Badge(digit.ToString(), Wpf.HorizontalAlignment.Left));
-            var button = new SelectionTileButton { Content = artwork, MinWidth = 0, MinHeight = 0, BorderThickness = new(2), Padding = new(1),
-                HorizontalContentAlignment = Wpf.HorizontalAlignment.Stretch, Tag = index,
+            var image = new Controls.Image { Stretch = Media.Stretch.Uniform, UseLayoutRounding = false, SnapsToDevicePixels = false };
+            var button = new SelectionTileButton { Content = image, MinWidth = 0, MinHeight = 0, BorderThickness = new(2), Padding = new(5),
+                Margin = new(7, 7, 7, 0), HorizontalContentAlignment = Wpf.HorizontalAlignment.Stretch,
+                VerticalContentAlignment = Wpf.VerticalAlignment.Stretch, Tag = index,
                 ToolTip = entry is null ? L.Format("StampShelf.EmptySlot", digit) : StampPreviewTooltip.Create(library, entry, digit.ToString()) };
             Wpf.Automation.AutomationProperties.SetName(button, L.Format("StampShelf.Slot", digit, entry?.Name ?? L.Get("StampShelf.Empty")));
             button.Click += (_, _) => SelectSlot(slotIndex);
             var clear = new Controls.Button { Content = ActionIconButton.Glyph(PanelActionIcon.Close, 8), Width = 14, Height = 14,
-                MinWidth = 0, MinHeight = 0, Padding = new(2), Margin = new(0, 3, 3, 0),
+                MinWidth = 0, MinHeight = 0, Padding = new(0), FocusVisualStyle = null,
                 HorizontalAlignment = Wpf.HorizontalAlignment.Right, VerticalAlignment = Wpf.VerticalAlignment.Top,
                 Visibility = entry is null ? Wpf.Visibility.Collapsed : Wpf.Visibility.Visible, ToolTip = L.Format("StampShelf.ClearSlot", digit) };
             clear.SetResourceReference(StyleProperty, "CanvasCaptionButton");
             Wpf.Automation.AutomationProperties.SetName(clear, L.Format("StampShelf.ClearSlot", digit));
             clear.Click += (_, e) => { e.Handled = true; RunAsync(() => library.PinAsync(slotIndex, null)); };
-            var slot = new Controls.Grid { Width = 46, Height = 46, Margin = new(2), Tag = index };
-            slot.Children.Add(button); slot.Children.Add(clear);
+            var slot = new Controls.Grid { Height = 53, Margin = new(1, 0, 1, 0), Tag = index };
+            slot.Children.Add(button); slot.Children.Add(Badge(digit.ToString(), Wpf.HorizontalAlignment.Left)); slot.Children.Add(clear);
             slotShelf.Children.Add(slot); slotButtons.Add(index, button); slotClearButtons.Add(index, clear);
             if (entry is not null) LoadThumbnail(entry, image, button, token);
         }
@@ -280,8 +280,8 @@ internal sealed class StampLibraryWindow : Wpf.Window
             var pin = ActionIconButton.Glyph(PanelActionIcon.Pin, 12); pin.Margin = new(0, 0, 2, 0);
             var row = new Controls.StackPanel { Orientation = Controls.Orientation.Horizontal }; row.Children.Add(pin); row.Children.Add(number); content = row;
         }
-        var badge = new Controls.Border { Child = content, MinWidth = tag is null ? 14 : 18, Padding = tag is null ? new(1, 0, 1, 0) : new(3, 1, 3, 1),
-            CornerRadius = new(4), Margin = tag is null ? new(1) : new(2),
+        var badge = new Controls.Border { Child = content, MinWidth = tag is null ? 14 : 18, Padding = tag is null ? new(0) : new(3, 1, 3, 1),
+            CornerRadius = new(4), Margin = tag is null ? new(0) : new(2),
             HorizontalAlignment = alignment, VerticalAlignment = Wpf.VerticalAlignment.Top, IsHitTestVisible = false, Tag = tag };
         badge.SetResourceReference(Controls.Border.BackgroundProperty, "CanvasSurface");
         return badge;

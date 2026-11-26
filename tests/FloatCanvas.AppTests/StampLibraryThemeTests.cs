@@ -110,7 +110,7 @@ internal static class StampLibraryThemeTests
         }
         void CheckSlots(string name, double scale)
         {
-            var shelf = Field<WrapPanel>(window, "slotShelf");
+            var shelf = Field<UniformGrid>(window, "slotShelf");
             var slots = Field<Dictionary<int, Button>>(window, "slotButtons");
             var hover = (DependencyPropertyKey)typeof(UIElement).GetField("IsMouseOverPropertyKey", BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!;
             var press = (DependencyPropertyKey)typeof(ButtonBase).GetField("IsPressedPropertyKey", BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!;
@@ -126,8 +126,8 @@ internal static class StampLibraryThemeTests
                 {
                     var button = slots[(int)host.Tag];
                     var frame = (Border)button.Template.FindName("Chrome", button);
-                    var origin = host.TranslatePoint(new Point(), window);
-                    int x = (int)Math.Floor((origin.X + host.ActualWidth / 2) * scale);
+                    var origin = button.TranslatePoint(new Point(), window);
+                    int x = (int)Math.Floor((origin.X + button.ActualWidth / 2) * scale);
                     int y = (int)Math.Round(origin.Y * scale);
                     int thickness = (int)Math.Round(2 * scale);
                     var row = new byte[4 * (thickness + 1)];
@@ -136,7 +136,7 @@ internal static class StampLibraryThemeTests
                     var fill = ((SolidColorBrush)frame.Background).Color;
                     bool ColorAt(int i, Color c) => row[i * 4] == c.B && row[i * 4 + 1] == c.G && row[i * 4 + 2] == c.R;
                     correct &= ColorAt(0, edge) && ColorAt(thickness - 1, edge) && ColorAt(thickness, fill)
-                        && frame.RenderSize == host.RenderSize;
+                        && frame.RenderSize == button.RenderSize;
                 }
                 Observe(name + $" all ten slots paint one 2-DIP outline (third selected={selectThird})", correct);
             }
