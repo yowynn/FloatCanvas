@@ -21,7 +21,7 @@ internal sealed class SymbolTraceWindow : Window
         Visibility = Visibility.Collapsed
     };
     private readonly NumericValueField opacity, detail;
-    private readonly Button accept = new() { Content = L.Get("Dialog.OK"), IsDefault = true, IsEnabled = false };
+    private readonly Button accept = new() { Content = L.Get("Dialog.OK"), IsEnabled = false };
     private readonly SemaphoreSlim traceWorker = new(1, 1);
     private CancellationTokenSource? pending;
     private readonly double previewScale;
@@ -41,6 +41,7 @@ internal sealed class SymbolTraceWindow : Window
         cancel.MinWidth = accept.MinWidth = 78; cancel.Height = accept.Height = PropertyPanelLayout.ControlHeight;
         accept.Margin = new(8, 0, 0, 0);
         accept.Click += (_, _) => { if (Result is not null && !IsUpdating) SessionWindowCoordinator.SetModalResult(this, true); };
+        AppInputPolicy.AttachFormSubmit(this, accept);
         actions.Children.Add(cancel); actions.Children.Add(accept); DockPanel.SetDock(actions, Dock.Bottom); body.Children.Add(actions);
 
         var controls = new StackPanel { Margin = new(0, 8, 0, 0) };

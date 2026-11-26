@@ -130,6 +130,7 @@ internal sealed class StampLibraryWindow : Wpf.Window
         };
         searchDelay.Tick += (_, _) => { searchDelay.Stop(); Refresh(); };
         search.TextChanged += (_, _) => { searchDelay.Stop(); refreshPending = true; if (IsVisible) searchDelay.Start(); };
+        AppInputPolicy.AttachSearchEnter(search, () => { searchDelay.Stop(); Refresh(); });
         library.Changed += OnLibraryChanged;
         Closed += (_, _) => { closed = true; searchDelay.Stop(); CloseTileMenus(); thumbnails.Cancel(); thumbnails.Dispose(); library.Changed -= OnLibraryChanged; };
         IsVisibleChanged += (_, _) =>
@@ -599,9 +600,11 @@ internal sealed class StampLibraryWindow : Wpf.Window
         var shared = new Controls.RadioButton { Content = L.Get("Prefab.SharedStamp"), IsChecked = mode == StampSaveMode.SharedPrefab, Margin = new(0, 0, 0, 14) };
         if (showMode) { panel.Children.Add(editable); panel.Children.Add(raster); panel.Children.Add(shared); }
         var buttons = new Controls.StackPanel { Orientation = Controls.Orientation.Horizontal, HorizontalAlignment = Wpf.HorizontalAlignment.Right };
-        var save = Button("Stamp.Save", () => { }); save.IsDefault = true; buttons.Children.Add(save);
+        var save = Button("Stamp.Save", () => { }); save.IsDefault = !showMode; buttons.Children.Add(save);
         var cancel = Button("Stamp.Cancel", () => { }); cancel.IsCancel = true; buttons.Children.Add(cancel); panel.Children.Add(buttons);
         var dialog = Dialog(panel, L.Get(showMode ? "Stamp.SaveSelection" : "Stamp.Rename"));
+        if (showMode) AppInputPolicy.AttachFormSubmit(dialog, save);
+        else AppInputPolicy.AllowPromptSubmit(name);
         NamePrompt.AttachValidation(name, save, panel);
         save.Click += (_, _) => { if (!string.IsNullOrWhiteSpace(name.Text)) SessionWindowCoordinator.SetModalResult(dialog, true); };
         dialog.Loaded += (_, _) => { name.Focus(); name.SelectAll(); };

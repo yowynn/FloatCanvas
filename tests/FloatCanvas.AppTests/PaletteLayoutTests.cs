@@ -136,7 +136,7 @@ internal static class PaletteLayoutTests
             Math.Abs(inset.X - chrome.BorderThickness.Left) * scale <= .51 && Math.Abs(inset.Y - chrome.BorderThickness.Top) * scale <= .51 &&
             Math.Abs(trigger.ActualWidth - inset.X - face.ActualWidth - chrome.BorderThickness.Right) * scale <= .51 &&
             Math.Abs(trigger.ActualHeight - inset.Y - face.ActualHeight - chrome.BorderThickness.Bottom) * scale <= .51 &&
-            face.Clip is RectangleGeometry clip && clip.RadiusX > 0 && Near(clip.RadiusX + inset.X, chrome.CornerRadius.TopLeft));
+            face.Clip is RectangleGeometry clip && clip.RadiusX > 0 && Near(clip.RadiusX, chrome.CornerRadius.TopLeft - inset.X / 2));
         field.Value = 0xFFFF0000; Layout(field, scale);
         var colorRuns = Runs(Raster(trigger, scale), (int)Math.Floor(trigger.ActualHeight * scale / 2));
         check(name + " current-color pixels leave no button-background band inside the outline", chrome is not null && colorRuns.Count > 0 &&

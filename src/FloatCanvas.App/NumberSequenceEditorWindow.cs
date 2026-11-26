@@ -38,7 +38,8 @@ internal sealed class NumberSequenceEditorWindow : Window
         var body = new DockPanel { Margin = WindowLayout.ContentMargin() };
         var footer = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new(0, 12, 0, 0) };
         var cancel = ActionButton("Dialog.Cancel"); cancel.IsCancel = true; cancel.MinWidth = accept.MinWidth = 78;
-        accept.IsDefault = true; accept.Margin = new(8, 0, 0, 0);
+        AppInputPolicy.AttachFormSubmit(this, accept);
+        accept.Margin = new(8, 0, 0, 0);
         footer.Children.Add(cancel); footer.Children.Add(accept); DockPanel.SetDock(footer, Dock.Bottom); body.Children.Add(footer);
 
         var settings = new StackPanel { Margin = new(0, 6, 0, 0) };

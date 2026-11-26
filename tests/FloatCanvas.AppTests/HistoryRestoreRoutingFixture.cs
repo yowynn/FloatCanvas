@@ -68,7 +68,7 @@ internal static class HistoryRestoreRoutingFixture
             finally { heldTimer.Stop(); }
             return;
         }
-        bool entryEditing = scenario != "history-pass-through";
+        bool entryEditing = scenario is not ("history-pass-through" or "history-entry-failure");
         if (!entryEditing) typeof(DesktopSession).GetMethod("SetEditing", Private)!.Invoke(session, [false, false]);
         if (!entryEditing) typeof(DesktopSession).GetMethod("OpenWelcome", Private)!.Invoke(session, [true]);
         Process? external = null; nint externalHandle = 0;
@@ -102,13 +102,14 @@ internal static class HistoryRestoreRoutingFixture
                 {
                     var chooser = app.Windows.Cast<Window>().FirstOrDefault(w => w.IsVisible && w is WorkspaceHistoryWindow);
                     if (chooser is null) return;
+                    var list = Descendants(chooser).OfType<ListBox>().Single();
+                    if (list.Items.Count == 0 || list.SelectedIndex < 0) return;
                     snapshot("history-chooser-opened");
-                    check("history restore opens the actual populated production chooser", Descendants(chooser).OfType<ListBox>().Single().Items.Count > 0 && host.IsEditing == entryEditing && host.IsKeyboardIsolationActive == entryEditing);
+                    check("history restore opens the actual populated production chooser", host.IsEditing == entryEditing && host.IsKeyboardIsolationActive == entryEditing);
                     stage = 1;
                     if (scenario == "history-pass-through")
                     {
                         check("opening history closes the manually opened welcome window", Field<Window?>(session, "_welcomeWindow") is null);
-                        var list = Descendants(chooser).OfType<ListBox>().Single();
                         var item = (ListBoxItem)list.ItemContainerGenerator.ContainerFromIndex(list.SelectedIndex);
                         list.RaiseEvent(new System.Windows.Input.MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice,
                             Environment.TickCount, System.Windows.Input.MouseButton.Left) { RoutedEvent = Control.MouseDoubleClickEvent, Source = item });
@@ -121,6 +122,8 @@ internal static class HistoryRestoreRoutingFixture
                     var confirmation = app.Windows.Cast<Window>().FirstOrDefault(w => w.IsVisible && w.Title == WindowTitles.Format(L.Get("App.Name"), !host.IsEditing) &&
                         Descendants(w).OfType<Button>().Any(button => Equals(button.Content, L.Get("Dialog.No"))));
                     if (confirmation is null) return;
+                    if (scenario == "history-pass-through")
+                        throw new InvalidOperationException("An unbound workspace unexpectedly opened a save confirmation.");
                     snapshot("history-unsaved-confirmation-opened");
                     check("history replacement reaches the actual unsaved confirmation without changing its entry mode", host.IsEditing == entryEditing && host.IsKeyboardIsolationActive == entryEditing);
                     if (scenario == "history-mode-exit")
@@ -163,12 +166,28 @@ internal static class HistoryRestoreRoutingFixture
         timer.Start();
         try
         {
+            var recoveryHistory = scenario == "history-entry-failure"
+                ? (WorkspaceRecoveryHistory)typeof(DesktopSession).GetProperty("RecoveryHistory", Private)!
+                    .GetValue(session)!
+                : null;
+            long entryEpoch = recoveryHistory is null ? 0 : Field<long>(recoveryHistory, "entryEpoch");
+            if (scenario == "history-entry-failure")
+                typeof(DesktopSession).GetField("_overlaySwitchPending", Private)!.SetValue(session, true);
             var task = (Task)typeof(DesktopSession).GetMethod("RestoreWorkspaceHistoryAsync", Private)!.Invoke(session, null)!;
             Await(task);
             nativeSave?.GetAwaiter().GetResult();
             if (dialogFailure is not null) throw dialogFailure;
             Pump(200); snapshot("history-restore-completed");
+            Wait(() => !host.IsEditing || host.HasEditingInput, "restored input lease");
             check("history fixture completes its actual production dialog sequence", stage == (scenario == "history-pass-through" ? 1 : 2));
+            if (scenario == "history-pass-through")
+            {
+                var history = (WorkspaceRecoveryHistory)typeof(DesktopSession).GetProperty("RecoveryHistory", Private)!.GetValue(session)!;
+                var archived = history.GetEntries().Where(entry => !entry.IsCurrent)
+                    .Select(entry => history.LoadAsync(entry).GetAwaiter().GetResult());
+                check("the unbound workspace is archived before replacement",
+                    archived.Any(item => item?.State.LiveDocument.Elements.Select(element => element.Id).SequenceEqual([original.Id]) == true));
+            }
             if (scenario == "history-cancel")
                 check("cancelling history replacement preserves the current document", editor.Session.Document.Elements.Select(element => element.Id).SequenceEqual([original.Id]));
             else if (scenario is not ("history-mode-exit" or "history-external"))
@@ -178,9 +197,97 @@ internal static class HistoryRestoreRoutingFixture
                 var saved = new ProjectStore().LoadAsync(savePath).GetAwaiter().GetResult();
                 check("choosing save writes the actual pre-restoration document into only this fixture directory", saved.Document.Elements.Select(element => element.Id).SequenceEqual([original.Id]));
             }
-            bool expectedEditing = scenario == "history-cancel" ? entryEditing : scenario is not ("history-mode-exit" or "history-external");
-            check("successful history restoration enters editing with its toolbar", host.IsEditing == expectedEditing && toolbar.IsVisible == expectedEditing && toolbar.IsEnabled);
+            if (recoveryHistory is not null)
+            {
+                Wait(() => Field<long>(recoveryHistory, "entryEpoch") > entryEpoch, "restored recovery baseline");
+                check("history persistence starts even when interaction entry fails",
+                    Field<long>(recoveryHistory, "entryEpoch") > entryEpoch);
+            }
+            // ToggleEditing intentionally ignores a global-mode request while a native
+            // modal owns input. history-mode-exit therefore remains editing afterward.
+            bool expectedEditing = scenario == "history-cancel" ? entryEditing :
+                scenario is not ("history-external" or "history-entry-failure");
+            check("successful history restoration enters editing with an interactable native toolbar",
+                host.IsEditing == expectedEditing && toolbar.IsVisible == expectedEditing &&
+                (!expectedEditing || toolbar.IsEnabled && IsWindowEnabled(new WindowInteropHelper(toolbar).Handle)) &&
+                !Field<bool>(session, "_documentBusyValue") &&
+                !Field<bool>(session, "_documentExitRequestedValue"));
             check("history restore keeps the matching actual keyboard lease without native mouse capture", host.IsKeyboardIsolationActive == expectedEditing && host.CaptureHandle == 0);
+            if (scenario is not ("history-cancel" or "history-mode-exit" or "history-external" or "history-entry-failure"))
+            {
+                Wait(() => WindowRevealGate.IsPresented(toolbar), "restored toolbar reveal");
+                var buttons = (Dictionary<EditorTool, Button>)session.GetType()
+                    .GetField("_toolbarToolButtons", Private)!.GetValue(session)!;
+                var originalTool = editor.Tool;
+                var requested = originalTool == EditorTool.Symbol ? EditorTool.Emoji : EditorTool.Symbol;
+                var button = buttons[requested];
+                toolbar.UpdateLayout();
+                var buttonCenter = button.TranslatePoint(new Point(button.ActualWidth / 2, button.ActualHeight / 2), toolbar);
+                var dpi = System.Windows.Media.VisualTreeHelper.GetDpi(toolbar);
+                nint toolbarHandle = new WindowInteropHelper(toolbar).Handle;
+                if (!GetWindowRect(toolbarHandle, out var toolbarRect))
+                    throw new InvalidOperationException("Could not read the restored toolbar's native rectangle.");
+                var point = new Point(toolbarRect.Left + buttonCenter.X * dpi.DpiScaleX,
+                    toolbarRect.Top + buttonCenter.Y * dpi.DpiScaleY);
+                var local = button.PointFromScreen(point);
+                check("history toolbar click geometry resolves to the requested visible button",
+                    button.IsVisible && button.IsEnabled && button.InputHitTest(local) is DependencyObject);
+                var target = new FocusSessionRoutingFixture.PixelPoint((int)Math.Round(point.X), (int)Math.Round(point.Y));
+                Console.WriteLine("HISTORY_TOOLBAR_TARGET " + string.Join(";",
+                    app.Windows.Cast<Window>().Select(candidate =>
+                    {
+                        nint handle = new WindowInteropHelper(candidate).Handle;
+                        return $"{candidate.Title}:{handle:X}:visible={candidate.IsVisible}:enabled={candidate.IsEnabled}:" +
+                            $"native={IsWindowEnabled(handle)}";
+                    }).Append($"canvas={string.Join(',', host.Diagnostics.Select(pair => $"{pair.DisplayHandle:X}/{pair.InputHandle:X}"))}") ));
+                Console.WriteLine($"HISTORY_TOOLBAR_POINT requested={requested} screen={point.X:0.##},{point.Y:0.##} " +
+                    $"client={buttonCenter.X:0.##},{buttonCenter.Y:0.##} dpi={dpi.DpiScaleX:0.###},{dpi.DpiScaleY:0.###} " +
+                    $"native={toolbarRect.Left},{toolbarRect.Top},{toolbarRect.Right},{toolbarRect.Bottom}");
+                var physicalTarget = FocusSessionRoutingFixture.WindowAtPhysicalPoint(
+                    (int)Math.Round(point.X), (int)Math.Round(point.Y));
+                Console.WriteLine("HISTORY_TOOLBAR_PHYSICAL_TARGET expected=" + DescribeWindow(toolbarHandle) +
+                    " actual=" + DescribeWindow(physicalTarget) +
+                    " root=" + DescribeWindow(GetAncestor(physicalTarget, 2)));
+                check("restored toolbar owns its physical button point without a test-only raise",
+                    physicalTarget == toolbarHandle);
+                int buttonClicks = 0;
+                var clickCounter = new RoutedEventHandler((_, _) => buttonClicks++);
+                button.AddHandler(System.Windows.Controls.Primitives.ButtonBase.ClickEvent, clickCounter, true);
+                try
+                {
+                    FocusSessionRoutingFixture.DriveOwnPointer(toolbarHandle, target, target,
+                        allowDelegatedInput: host.UsesSystemInput && host.HasEditingInput);
+                    Pump(150);
+                    snapshot("history-toolbar-physical-click");
+                    Console.WriteLine($"HISTORY_TOOLBAR_RESULT requested={requested} actual={editor.Tool} clicks={buttonClicks} " +
+                        $"editing={host.IsEditing} lease={host.IsKeyboardIsolationActive} toolbar={toolbar.IsVisible}/{toolbar.IsEnabled} " +
+                        $"capture={host.CaptureHandle}");
+                    check("a physical toolbar click still works after successful history restoration",
+                        buttonClicks == 1 && editor.Tool == requested &&
+                        host.IsEditing && host.IsKeyboardIsolationActive &&
+                        toolbar.IsVisible && toolbar.IsEnabled && host.CaptureHandle == 0);
+                }
+                finally
+                {
+                    button.RemoveHandler(System.Windows.Controls.Primitives.ButtonBase.ClickEvent, clickCounter);
+                }
+
+                if (scenario == "history-editing")
+                {
+                    var setEditing = typeof(DesktopSession).GetMethod("SetEditing", Private)!;
+                    setEditing.Invoke(session, [false, false]);
+                    check("restored canvas can leave editing", !host.IsEditing && !toolbar.IsVisible);
+                    check("restored canvas can enter editing again", (bool)setEditing.Invoke(session, [true, false])!);
+                    Wait(() => host.IsKeyboardIsolationActive && WindowRevealGate.IsPresented(toolbar), "toolbar after reentry");
+                    var next = buttons[originalTool];
+                    var center = next.PointToScreen(new Point(next.ActualWidth / 2, next.ActualHeight / 2));
+                    var nextPoint = new FocusSessionRoutingFixture.PixelPoint((int)Math.Round(center.X), (int)Math.Round(center.Y));
+                    FocusSessionRoutingFixture.DriveOwnPointer(toolbarHandle, nextPoint, nextPoint,
+                        allowDelegatedInput: host.UsesSystemInput && host.HasEditingInput);
+                    check("the first toolbar click after reentry switches tools",
+                        editor.Tool == originalTool && host.IsEditing && host.IsKeyboardIsolationActive);
+                }
+            }
             if (scenario == "history-external") check("late history completion leaves the external receiver in foreground", GetForegroundWindow() == externalHandle);
         }
         finally
@@ -194,6 +301,16 @@ internal static class HistoryRestoreRoutingFixture
         }
     }
     private static T Field<T>(object instance, string name) => (T)instance.GetType().GetField(name, Private)!.GetValue(instance)!;
+    private static string DescribeWindow(nint handle)
+    {
+        if (handle == 0 || !IsWindow(handle)) return "0";
+        var className = new StringBuilder(128);
+        GetClassName(handle, className, className.Capacity);
+        GetWindowThreadProcessId(handle, out uint process);
+        GetWindowRect(handle, out var bounds);
+        return $"{handle:X}[process={process},class={className},visible={IsWindowVisible(handle)},enabled={IsWindowEnabled(handle)}," +
+            $"rect={bounds.Left},{bounds.Top},{bounds.Right},{bounds.Bottom},owner={GetWindow(handle, 4):X},root={GetAncestor(handle, 2):X}]";
+    }
     private static void Click(Button button) => typeof(Button).GetMethod("OnClick", Private)!.Invoke(button, null);
     private static IEnumerable<DependencyObject> Descendants(DependencyObject root)
     {
@@ -258,6 +375,12 @@ internal static class HistoryRestoreRoutingFixture
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(nint window, out uint process);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(nint window, StringBuilder name, int length);
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(nint window);
+    [DllImport("user32.dll")] private static extern bool IsWindowEnabled(nint window);
+    [DllImport("user32.dll")] private static extern bool IsWindow(nint window);
+    [DllImport("user32.dll")] private static extern nint GetWindow(nint window, uint command);
+    [DllImport("user32.dll")] private static extern nint GetAncestor(nint window, uint flags);
+    [StructLayout(LayoutKind.Sequential)] private struct NativeRect { public int Left, Top, Right, Bottom; }
+    [DllImport("user32.dll")] private static extern bool GetWindowRect(nint window, out NativeRect rectangle);
     [DllImport("user32.dll")] private static extern nint GetForegroundWindow();
     [DllImport("user32.dll")] private static extern bool AllowSetForegroundWindow(uint process);
     [DllImport("user32.dll")] private static extern bool PostMessage(nint window, uint message, nuint wparam, nint lparam);

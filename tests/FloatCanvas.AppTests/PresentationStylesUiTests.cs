@@ -27,6 +27,7 @@ internal static class PresentationStylesUiTests
         string folder = output ?? Path.Combine(Path.GetTempPath(), "FloatCanvas-layout-ui-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(folder);
         ApplicationPaths.Configure(["--profile", Path.Combine(folder, "profile")]); L.Initialize("en"); AppTheme.Apply("dark");
         KeyboardCoordinates(check);
+        KeyboardFontScaleAnchor(check);
         KeyboardMultiSelection(check,folder);
         var layer = new CanvasElement { Kind = ElementKind.Presentation, Width = 760, Height = 260, Presentation = new() { DisplayStyle = PresentationDisplayStyle.Keyboard } };
         var session = new EditorSession(new() { Elements = [layer] }); session.SetSelection([layer.Id]);
@@ -34,7 +35,7 @@ internal static class PresentationStylesUiTests
         Field<Button>(inspector, "pin").RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); inspector.PrepareForShow(); inspector.Show(); Pump();
         var panel = Field<PresentationSettingsPanel>(inspector, "presentationSettings");
         string original = JsonSerializer.Serialize(session.Document); int undo = session.UndoCount;
-        check("keyboard settings expose three peer styles with standard numeric fields", Entry<SegmentedChoice>(panel, "DisplayStyle").Items.Select(item => item.Tag).SequenceEqual(Enum.GetValues<PresentationDisplayStyle>().Cast<object>()) && !Rows(panel).ContainsKey("LogStyle") && Entry<NumericValueField>(panel, "KeyHoldMilliseconds").Input is not null && Entry<NumericValueField>(panel, "RecentChordLimit").Slider.IsSnapToTickEnabled);
+        check("keyboard settings expose every peer style with standard numeric fields", Entry<SegmentedChoice>(panel, "DisplayStyle").Items.Select(item => item.Tag).SequenceEqual(Enum.GetValues<PresentationDisplayStyle>().Cast<object>()) && !Rows(panel).ContainsKey("LogStyle") && Entry<NumericValueField>(panel, "KeyHoldMilliseconds").Input is not null && Entry<NumericValueField>(panel, "RecentChordLimit").Slider.IsSnapToTickEnabled);
         check("live keyboard shows layout editor while irrelevant log controls stay hidden", Rows(panel)["KeyboardLayout"].IsVisible && !Rows(panel)["KeyPanelAlignment"].IsVisible && !Rows(panel)["RecentChordLimit"].IsVisible && !Rows(panel)["KeyHoldMilliseconds"].IsVisible && !Rows(panel)["KeyDisplay"].IsVisible);
         string aId = PresentationKeyboardLayout.CreateDefault().Keys.Single(key => key.VirtualKey == 0x41).Id;
         PresentationKeyboardLayout? published = null;
@@ -100,6 +101,28 @@ internal static class PresentationStylesUiTests
         check("keyboard layout UI stays on the private desktop without observing physical input", !PresentationDesktopAvailability.IsCurrentInputDesktop());
         Console.WriteLine("PRESENTATION_STYLES_UI " + folder);
     }
+    private static void KeyboardFontScaleAnchor(Action<string, bool> check)
+    {
+        foreach (var alignment in new[] { PresentationPanelAlignment.TopLeft, PresentationPanelAlignment.BottomRight })
+        {
+            var layer = new CanvasElement { Kind = ElementKind.Presentation, Width = 300, Height = 100,
+                Transform = Affine2D.Translation(160, 90).Compose(Affine2D.Rotation(25)),
+                Presentation = new() { DisplayStyle = PresentationDisplayStyle.Keyboard, KeyPanelAlignment = alignment } };
+            layer.Style.FontSize = 24;
+            var session = new EditorSession(new() { Elements = [layer] });
+            session.SetSelection([layer.Id]);
+            var inspector = new InspectorWindow(() => session) { ShowActivated = false };
+            inspector.PrepareForShow(); inspector.Show(); Pump();
+            var oldCenter = ElementGeometry.LocalToPlane(layer).TransformPoint(new(150, 50));
+            Field<Dictionary<string, NumericValueField>>(inspector, "numericFields")["FontSize"].Input.Text = "48";
+            inspector.CompletePendingEdit();
+            var edited = session.Document.Elements.Single();
+            var center = ElementGeometry.LocalToPlane(edited).TransformPoint(new(edited.Width / 2, edited.Height / 2));
+            check("keyboard font size scales about the layer center regardless of old record alignment " + alignment,
+                edited.Width == 600 && edited.Height == 200 && center.DistanceTo(oldCenter) < 1e-6);
+            inspector.Close();
+        }
+    }
     private static void KeyboardMultiSelection(Action<string,bool> check,string folder)
     {
         var source=PresentationKeyboardLayout.CreateDefault();
@@ -123,12 +146,15 @@ internal static class PresentationStylesUiTests
         Click(ids[1],ModifierKeys.Control);views[ids[0]].Focus();
         check("keyboard focusing a selected key preserves the multi-selection",dialog.SelectedKeyIds.Count==2);
         SendKey(Key.Space,ModifierKeys.None,views[ids[0]]);
-        check("Space disables all selected keys without changing the source layout",dialog.Draft.Keys.Where(k=>ids.Contains(k.Id)).All(k=>!k.Enabled)&&source.Keys.All(k=>k.Enabled));
+        check("Space leaves selected keys enabled",dialog.Draft.Keys.Where(k=>ids.Contains(k.Id)).All(k=>k.Enabled));
+        var enabledToggle = Field<CheckBox>(dialog,"enabled");
+        enabledToggle.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+        check("the enable switch disables all selected keys without changing the source layout",dialog.Draft.Keys.Where(k=>ids.Contains(k.Id)).All(k=>!k.Enabled)&&source.Keys.All(k=>k.Enabled));
         dialog.SelectKey(ids[0]);dialog.ToggleSelectedEnabled();dialog.SelectKeys(ids);
         check("mixed selected enable state is shown explicitly",Field<CheckBox>(dialog,"enabled").IsChecked is null);
         Save(dialog,Path.Combine(folder,"keyboard-multiselect.png"));
-        SendKey(Key.Space,ModifierKeys.None,views[ids[0]]);
-        check("Space enables a mixed selection together",dialog.Draft.Keys.Where(k=>ids.Contains(k.Id)).All(k=>k.Enabled));
+        enabledToggle.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+        check("the enable switch enables a mixed selection together",dialog.Draft.Keys.Where(k=>ids.Contains(k.Id)).All(k=>k.Enabled));
         SendKey(Key.A,ModifierKeys.Control,views[ids[0]]);
         check("Ctrl+A selects every keyboard key",dialog.SelectedKeyIds.Count==source.Keys.Count);
         dialog.SelectKeys(ids);
@@ -145,12 +171,18 @@ internal static class PresentationStylesUiTests
         dialog.SelectKeys(ids);
         views[ids[1]].RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice,Environment.TickCount,MouseButton.Left){RoutedEvent=Control.PreviewMouseDoubleClickEvent});
         check("double-click toggles only its key and leaves an explicit single selection",dialog.SelectedKeyIds.SetEquals([ids[1]]) && !dialog.Draft.Keys.Single(k=>k.Id==ids[1]).Enabled && dialog.Draft.Keys.Single(k=>k.Id==ids[0]).Enabled);
+        var disableAll=Descendants(dialog).OfType<Button>().Single(button=>
+            AutomationProperties.GetAutomationId(button)=="Presentation.Layout.DisableAll");
+        disableAll.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        check("an all-hidden keyboard layout is invalid and cannot be applied",
+            !dialog.Draft.IsValid() && !Field<Button>(dialog,"apply").IsEnabled &&
+            Field<TextBlock>(dialog,"status").Text==L.Get("Presentation.Layout.NoEnabledKeys"));
         dialog.Close();
     }
 
     private static void KeyboardCoordinates(Action<string,bool> check)
     {
-        foreach (bool move in new[]{false,true})
+        foreach (var layoutChange in new[]{"hide","move","negative"})
         foreach (var pose in new[]{"rotated","projective","billboard"})
         {
             var layout=PresentationKeyboardLayout.CreateDefault();
@@ -165,15 +197,24 @@ internal static class PresentationStylesUiTests
             var session=new EditorSession(document);session.SetSelection([source.Id]);
             var inspector=new InspectorWindow(()=>session);inspector.PrepareForShow();inspector.Show();Pump();
             var panel=Field<PresentationSettingsPanel>(inspector,"presentationSettings");
-            var targetKey=layout.Keys.Single(k=>k.VirtualKey==(move?0x1B:0x44));
+            bool negative = layoutChange == "negative";
+            var targetKey=layout.Keys.Single(k=>k.VirtualKey==(layoutChange == "hide" ? 0x44 : 0x1B));
             var expected=KeyPoint(source,targetKey.X,targetKey.Y,mapping);
             var expectedEnd=KeyPoint(source,targetKey.X+1,targetKey.Y+1,mapping);
-            var changed=layout.Clone();foreach(var key in changed.Keys)key.Enabled=key.VirtualKey==0x44;
-            var d=changed.Keys.Single(k=>k.VirtualKey==0x44);if(move){d.X=targetKey.X;d.Y=targetKey.Y;}
+            var changed=layout.Clone();
+            var d=changed.Keys.Single(k=>k.VirtualKey==0x44);
+            if (negative) { d.X = -2; d.Y = -1; d = changed.Keys.Single(k => k.VirtualKey == 0x1B); }
+            else
+            {
+                foreach (var key in changed.Keys) key.Enabled = key.VirtualKey == 0x44;
+                if (layoutChange == "move") { d.X=targetKey.X; d.Y=targetKey.Y; }
+            }
             typeof(PresentationSettingsPanel).GetMethod("Commit",Hidden)!.Invoke(panel,["KeyboardLayout",changed]);inspector.CompletePendingEdit();
             var actual=session.Document.Elements.Single();
-            Console.WriteLine($"KEYBOARD_ANCHOR pose={pose} move={move} distance={KeyPoint(actual,d.X,d.Y,mapping).DistanceTo(expected)} size={actual.Width},{actual.Height} undo={session.UndoCount}");
-            check(pose+" keyboard layout coordinates stay aligned when "+(move?"D moves to ESC":"only D remains"),KeyPoint(actual,d.X,d.Y,mapping).DistanceTo(expected)<1e-6 && actual.Width<760 && actual.Height<260);
+            Console.WriteLine($"KEYBOARD_ANCHOR pose={pose} change={layoutChange} distance={KeyPoint(actual,d.X,d.Y,mapping).DistanceTo(expected)} size={actual.Width},{actual.Height} undo={session.UndoCount}");
+            check(pose+" keyboard layout coordinates stay aligned after "+layoutChange,
+                KeyPoint(actual,d.X,d.Y,mapping).DistanceTo(expected)<1e-6 &&
+                (negative ? actual.Width > 760 && actual.Height > 260 : actual.Width < 760 && actual.Height < 260));
             check(pose+" keyboard key scale is preserved",KeyPoint(actual,d.X+1,d.Y+1,mapping).DistanceTo(expectedEnd)<1e-6);
             check("keyboard layout reframing is one undoable edit",session.UndoCount==1 && session.Undo() && session.Document.Elements.Single().Width==760 && session.Redo());
             inspector.Close();
@@ -201,6 +242,12 @@ internal static class PresentationStylesUiTests
         if (failure is not null) throw new InvalidOperationException("Modal layout fixture failed.", failure);
     }
     private static Dictionary<string, FrameworkElement> Rows(PresentationSettingsPanel panel) => Field<Dictionary<string, FrameworkElement>>(panel, "rows");
+    private static IEnumerable<DependencyObject> Descendants(DependencyObject root)
+    {
+        yield return root;
+        foreach (var child in LogicalTreeHelper.GetChildren(root).OfType<DependencyObject>())
+            foreach (var descendant in Descendants(child)) yield return descendant;
+    }
     private static T Entry<T>(PresentationSettingsPanel panel, string key) where T : FrameworkElement
     { var entries = Field<IDictionary>(panel, "entries"); var entry = entries[key]!; return (T)entry.GetType().GetProperty("Control")!.GetValue(entry)!; }
     private static void Toggle(CheckBox check, bool value) { check.IsChecked = value; check.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent)); }

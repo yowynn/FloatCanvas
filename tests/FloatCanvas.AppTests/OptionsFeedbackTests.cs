@@ -36,8 +36,13 @@ internal static class OptionsFeedbackTests
             var session = new EditorSession(); var controller = new EditorController(session) { Tool = tool, DefaultWidth = 96, DefaultHeight = 64, Symbol = SymbolKind.Star };
             Click(controller, new(300, 200)); var element = session.Document.Elements.Single(); var first = element.Id;
             bool line = ElementGeometry.IsLine(element.Kind);
+            bool symbol = element.Kind == ElementKind.Symbol;
+            var initial = symbol
+                ? SymbolBounds(controller.Symbol, new(252, 168, 96, 64), centerInBox: true)
+                : new RectD(252, 168, 96, 64);
             check(tool + " click creates a centered object with configured dimensions or line length", controller.Tool == tool && session.Selection.SetEquals([first]) && session.UndoCount == 1 &&
                 (line ? element.Points.SequenceEqual([new PointD(0, 0), new PointD(96, 0)]) && element.Transform == Affine2D.Translation(252, 200) :
+                    symbol ? NearlyRect(ElementGeometry.Bounds(element, false), initial) :
                     element.Width == 96 && element.Height == 64 && element.Transform == Affine2D.Translation(252, 168)));
             string before = JsonSerializer.Serialize(session.Document);
             Click(controller, new(600, 400));
@@ -48,7 +53,11 @@ internal static class OptionsFeedbackTests
             session.SetSelection([]);
             Send(controller, OverlayPointerKind.Down, new(800, 500)); Send(controller, OverlayPointerKind.Move, new(880, 540)); Send(controller, OverlayPointerKind.Up, new(880, 540));
             element = session.Document.Elements[^1];
-            check(tool + " dragging overrides default dimensions with the actual gesture", line ? element.Points[^1] == new PointD(80, 40) : element.Width == 80 && element.Height == 40);
+            var dragged = symbol ? SymbolBounds(controller.Symbol, new(800, 500, 80, 40), centerInBox: false) : new RectD(800, 500, 80, 40);
+            check(tool + " dragging overrides default dimensions with the actual gesture",
+                line ? element.Points[^1] == new PointD(80, 40) :
+                symbol ? NearlyRect(ElementGeometry.Bounds(element, false), dragged) :
+                element.Width == 80 && element.Height == 40);
         }
         var square = new EditorController(new EditorSession()) { Tool = EditorTool.Ellipse, ConstrainAspect = true, DefaultWidth = 90, DefaultHeight = 50 };
         Click(square, new(100, 100));
@@ -57,6 +66,17 @@ internal static class OptionsFeedbackTests
         var copy = parameters.Clone(); copy.DefaultWidth = 123;
         check("default dimensions clone independently", parameters.DefaultWidth == 99 && copy.DefaultHeight == 77);
         check("invalid default dimensions are rejected before application", !new ToolParameters { DefaultWidth = 0 }.IsValid() && !new ToolParameters { DefaultHeight = double.NaN }.IsValid());
+
+        static RectD SymbolBounds(SymbolKind kind, RectD box, bool centerInBox)
+        {
+            var size = SymbolGeometry.Shape(kind).SizeAtLongEdge(Math.Max(box.Width, box.Height));
+            return centerInBox
+                ? new(box.X + (box.Width - size.X) / 2, box.Y + (box.Height - size.Y) / 2, size.X, size.Y)
+                : new(box.X, box.Y, size.X, size.Y);
+        }
+        static bool NearlyRect(RectD actual, RectD expected) =>
+            Math.Abs(actual.X - expected.X) < 1e-7 && Math.Abs(actual.Y - expected.Y) < 1e-7 &&
+            Math.Abs(actual.Width - expected.Width) < 1e-7 && Math.Abs(actual.Height - expected.Height) < 1e-7;
     }
 
     private static void NumericInput(Action<string, bool> check)
@@ -94,7 +114,7 @@ internal static class OptionsFeedbackTests
         var preset = library.Save("Dimensions", p); var read = new ToolPresetLibrary(file).Apply(preset.Id);
         check("user presets persist complete default dimensions", read.DefaultWidth == 321 && read.DefaultHeight == 123);
         var official = library.Apply("official.rounded-rectangle");
-        check("official geometry presets restore their fixed default dimensions", official.DefaultWidth == 144 && official.DefaultHeight == 108);
+        check("official geometry presets restore their fixed default dimensions", official.DefaultWidth == 108 && official.DefaultHeight == 108);
         var legacy = JsonSerializer.Deserialize<ToolParameters>("{\"Tool\":5}")!;
         check("existing presets missing default dimensions gain safe initial values", legacy.DefaultWidth == 160 && legacy.DefaultHeight == 100 && legacy.IsValid());
     }

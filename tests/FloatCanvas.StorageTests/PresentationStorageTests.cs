@@ -31,7 +31,21 @@ internal static class PresentationStorageTests
             var styled=document.Clone();var settings=styled.Definitions[0].Graph.Elements[0].Presentation!;settings.DisplayStyle=style;
             settings.KeyboardLayout=PresentationKeyboardLayout.CreateDefault();
             foreach(var key in settings.KeyboardLayout.Keys)key.Enabled=key.VirtualKey is 0x57 or 0x41 or 0x53 or 0x44;
+            settings.KeyboardLayout.Keys.Add(new() { DeviceType = PresentationKeyDevice.Mouse, VirtualKey = 4, Label = "Mouse 4", X = 30 });
+            settings.KeyboardLayout.Keys.Add(new()
+            {
+                DeviceType = PresentationKeyDevice.Gamepad, VirtualKey = (int)PresentationGamepadButton.A, Label = "Controller A", X = 32
+            });
             settings.KeyboardLayout.Keys.Single(key=>key.VirtualKey==0x57).X=25;settings.KeyboardLayout.Keys.Single(key=>key.VirtualKey==0x57).Height=2;
+            var shiftedKey = settings.KeyboardLayout.Keys.Single(key => key.VirtualKey == 0x41);
+            shiftedKey.X = -1.25;
+            shiftedKey.Y = -.5;
+            shiftedKey.CustomStyle = new()
+            {
+                RelativeSize = -1.5, FontFamily = "Consolas", Foreground = 0xFF421245, Background = 0,
+                Enabled = style == PresentationDisplayStyle.Keyboard,
+                Overrides = style == PresentationDisplayStyle.Keyboard ? PresentationKeyStyleOverrides.Font | PresentationKeyStyleOverrides.Background : null
+            };
             string stylePath=Path.Combine(root,"style-"+style+".floatcanvas");await store.SaveAsync(stylePath,styled,assets);
             check(JsonSerializer.Serialize((await store.LoadAsync(stylePath)).Document)==JsonSerializer.Serialize(styled),
                 "v15 roundtrips authored style and full custom key identities geometry and enabled state: "+style);
@@ -53,6 +67,17 @@ internal static class PresentationStorageTests
                 await keyboardPrefabStore.SaveAsync(keyboardPrefab,keyboardPackage,assets);
                 check(JsonSerializer.Serialize((await keyboardPrefabStore.LoadAsync(keyboardPrefab)).Package)==JsonSerializer.Serialize(keyboardPackage),
                     "v15 prefab retains the owned custom keyboard layout without runtime held data");
+                string emptyLayout=stylePath+"-empty-layout";File.Copy(stylePath,emptyLayout);
+                await Edit(emptyLayout,"scene.json",n=>Settings(n)["KeyboardLayout"]!["Keys"]=new JsonArray());
+                check((await store.LoadAsync(emptyLayout)).Document.Definitions[0].Graph.Elements[0].Presentation!.KeyboardLayout is null,
+                    "historical zero-key layouts normalize to the standard keyboard instead of failing the scene");
+                string hiddenLayout=stylePath+"-hidden-layout";File.Copy(stylePath,hiddenLayout);
+                await Edit(hiddenLayout,"scene.json",n=>
+                {
+                    foreach(var key in Settings(n)["KeyboardLayout"]!["Keys"]!.AsArray().OfType<JsonObject>()) key["Enabled"]=false;
+                });
+                check((await store.LoadAsync(hiddenLayout)).Document.Definitions[0].Graph.Elements[0].Presentation!.KeyboardLayout is null,
+                    "historical all-hidden layouts normalize to the standard keyboard instead of failing the scene");
             }
         }
         var copy=document.Clone();copy.Definitions[0].Graph.Elements[0].Presentation!.CursorRadiusPixels=99;
@@ -69,7 +94,7 @@ internal static class PresentationStorageTests
             ("missing-settings",n=>Leaf(n).Remove("Presentation")),("null-settings",n=>Leaf(n)["Presentation"]=null),
             ("missing-modules",n=>Settings(n).Remove("Modules")),("unknown-module-bit",n=>Settings(n)["Modules"]=16),
             ("unknown-key-mode",n=>Settings(n)["KeyDisplay"]=2),("unknown-alignment",n=>Settings(n)["KeyPanelAlignment"]=6),
-            ("unknown-display-style",n=>Settings(n)["DisplayStyle"]=3),
+            ("unknown-display-style",n=>Settings(n)["DisplayStyle"]=99),
             ("invalid-hidden-width",n=>Settings(n)["TrailWidthPixels"]=0),("wrong-kind",n=>Leaf(n)["Kind"]=(int)ElementKind.Rectangle),
             ("runtime-injection",n=>Settings(n)["Frame"]=new JsonObject{["PressedKeys"]=new JsonArray("secret")}),
             ("point-payload",n=>Leaf(n)["Points"]=new JsonArray(new JsonObject{["X"]=1,["Y"]=1})),

@@ -11,6 +11,8 @@ internal sealed partial class EditorController
     private Dictionary<Guid, CanvasElement> nodeOriginalAuthoredElements = [];
     private CanvasMapping? nodeStartMapping;
     private readonly Dictionary<Guid, Guid?> drawingParents = [];
+    private bool suppressGeometryNotifications;
+    private bool geometryNotificationPending;
 
     private void InsertWorldDrawing()
     {
@@ -36,6 +38,8 @@ internal sealed partial class EditorController
     }
     private void NotifyGeometryChanged()
     {
+        if (suppressGeometryNotifications) { geometryNotificationPending = true; return; }
+        geometryNotificationPending = false;
         if (screenBillboardDrawing) { Changed?.Invoke(); return; }
         PublishDrawing(); Session.NotifyChanged();
     }

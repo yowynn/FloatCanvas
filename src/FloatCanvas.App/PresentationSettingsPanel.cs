@@ -6,7 +6,7 @@ using L = FloatCanvas.Localization.AppText;
 
 namespace FloatCanvas.App;
 
-/// <summary>Authored keyboard display fields. The three stored display styles are directly selectable.</summary>
+/// <summary>Authored keyboard display fields. Every stored display style is directly selectable.</summary>
 internal sealed class PresentationSettingsPanel : StackPanel
 {
     private sealed record Entry(FrameworkElement Control, Action<object?> Display);
@@ -19,6 +19,7 @@ internal sealed class PresentationSettingsPanel : StackPanel
     internal Action<string>? ReportError { get; set; }
     private readonly TextBlock error = new() { FontSize = 11, TextWrapping = TextWrapping.Wrap, Visibility = Visibility.Collapsed };
     private PresentationSettings sample = new();
+    private ElementStyle? keyboardAppearance;
     private object? context;
     private bool refreshing;
     internal event Action<string>? ValueChanged;
@@ -58,7 +59,7 @@ internal sealed class PresentationSettingsPanel : StackPanel
         parameters.Style.Foreground = 0xff4285d4; parameters.Style.Background = 0x224285d4;
         return (FrameworkElement)ToolParameterIcon.Create(parameters, 18);
     }
-    internal void Refresh(IEnumerable<PresentationSettings> values, object modelContext, bool canEdit = true)
+    internal void Refresh(IEnumerable<PresentationSettings> values, object modelContext, bool canEdit = true, ElementStyle? keyboardStyle = null)
     {
         var settings = values.ToArray(); if (settings.Length == 0) return;
         bool changedContext = !Equals(context, modelContext);
@@ -67,7 +68,7 @@ internal sealed class PresentationSettingsPanel : StackPanel
         refreshing = true;
         try
         {
-            sample = settings[0].Clone(); editedValues.Clear(); IsEnabled = canEdit;
+            sample = settings[0].Clone(); keyboardAppearance = keyboardStyle?.Clone(); editedValues.Clear(); IsEnabled = canEdit;
             if (changedContext) { error.Text = ""; error.Visibility = Visibility.Collapsed; modeOptions.Reset(); }
             foreach (var (key, entry) in entries)
             {
@@ -88,10 +89,11 @@ internal sealed class PresentationSettingsPanel : StackPanel
         try
         {
             displayMode.SelectedValue = styles.All(style => style == styles[0]) ? styles[0] : null;
-            bool allRecording = styles.All(style => style != PresentationDisplayStyle.Keyboard);
+            bool allRecording = styles.All(style => style is PresentationDisplayStyle.Log or PresentationDisplayStyle.Keycaps);
             recordOptions.Visibility = allRecording ? Visibility.Visible : Visibility.Collapsed;
             keyboardOptions.Visibility = styles.All(style => style == PresentationDisplayStyle.Keyboard) ? Visibility.Visible : Visibility.Collapsed;
-            rows["KeyPanelAlignment"].Visibility = recordOptions.Visibility;
+            bool allUseAlignment = styles.All(style => style is not PresentationDisplayStyle.Keyboard);
+            rows["KeyPanelAlignment"].Visibility = allUseAlignment ? Visibility.Visible : Visibility.Collapsed;
         }
         finally { refreshing = previous; }
     }
@@ -113,7 +115,7 @@ internal sealed class PresentationSettingsPanel : StackPanel
     {
         if (!IsEnabled || CanBeginGesture?.Invoke() == false) return;
         var expectedContext = context;
-        var window = new KeyboardLayoutEditorWindow(sample.KeyboardLayout, Window.GetWindow(this));
+        var window = new KeyboardLayoutEditorWindow(sample.KeyboardLayout, Window.GetWindow(this), keyboardAppearance);
         if (SessionWindowCoordinator.ShowModal(window) != true || !IsEnabled || !Equals(context, expectedContext)) return;
         Commit("KeyboardLayout", window.ResultLayout); GestureCompleted?.Invoke(true);
     }

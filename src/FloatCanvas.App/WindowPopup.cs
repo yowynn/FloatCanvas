@@ -67,54 +67,68 @@ internal sealed class WindowPopup(UIElement child, UIElement target, string titl
         // caption controls; sharing it reparents the owner's Pin/Help actions into this window.
         AppTheme.EnsureDialogPalette(shown);
         window = shown;
-        AppWindowChrome.Apply(shown);
-        if (compact)
+        try
         {
-            shown.ApplyTemplate();
-            var caption = (Grid)shown.Template.FindName("TitleBar", shown);
-            caption.Visibility = Visibility.Collapsed;
-            ((Grid)caption.Parent).RowDefinitions[0].Height = new GridLength(0);
-            System.Windows.Shell.WindowChrome.GetWindowChrome(shown).CaptionHeight = 0;
+            AppWindowChrome.Apply(shown);
+            if (compact)
+            {
+                shown.ApplyTemplate();
+                var caption = (Grid)shown.Template.FindName("TitleBar", shown);
+                caption.Visibility = Visibility.Collapsed;
+                ((Grid)caption.Parent).RowDefinitions[0].Height = new GridLength(0);
+                System.Windows.Shell.WindowChrome.GetWindowChrome(shown).CaptionHeight = 0;
+            }
+            child.Measure(new Size(SystemParameters.PrimaryScreenWidth, SystemParameters.PrimaryScreenHeight));
+            var point = target.PointToScreen(new Point(0, target.RenderSize.Height));
+            double scale = VisualTreeHelper.GetDpi(target).DpiScaleY;
+            point.Y += VerticalOffset * scale;
+            var work = System.Windows.Forms.Screen.FromPoint(new((int)point.X, (int)point.Y)).WorkingArea;
+            shown.MaxHeight = System.Math.Max(120, work.Height / scale - 16);
+            point.X = System.Math.Clamp(point.X, work.Left, System.Math.Max(work.Left, work.Right - child.DesiredSize.Width * scale - 2));
+            double popupHeight = (child.DesiredSize.Height + (compact ? 2 : 34)) * scale;
+            if (compact && point.Y + popupHeight > work.Bottom)
+            {
+                double above = target.PointToScreen(new Point()).Y - VerticalOffset * scale - popupHeight;
+                if (above >= work.Top) point.Y = above;
+            }
+            point.Y = System.Math.Clamp(point.Y, work.Top, System.Math.Max(work.Top, work.Bottom - popupHeight));
+            shown.SourceInitialized += (_, _) => OverlayCoordinates.PositionToolWindow(new WindowInteropHelper(shown).Handle, new(point.X, point.Y));
+            shown.Closed += OnClosed;
+            // Bubble after content cancellation, including when focus is on the caption or window root.
+            shown.KeyDown += (_, e) =>
+            {
+                if (e.Handled || e.Key != Key.Escape) return;
+                EscapePressed?.Invoke(this, e);
+                if (!e.Handled) { e.Handled = true; IsOpen = false; }
+            };
+            shown.Deactivated += (_, _) => shown.Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
+            {
+                if (ReferenceEquals(window, shown) && suspensionDepth == 0 && !StaysOpen && !shown.IsActive && !shown.IsKeyboardFocusWithin &&
+                    !SessionWindowCoordinator.HasModalChild(shown) &&
+                    !Application.Current.Windows.Cast<Window>().Any(candidate => candidate.IsActive && IsOwnedBy(candidate, shown)))
+                    CloseOutside();
+            });
+            owner.IsVisibleChanged += OwnerVisibilityChanged;
+            InputManager.Current.PreProcessInput += BeforeInput;
+            // Finish initial session placement before the source-button anchor runs. Creating the
+            // HWND inside Show's placement pass would let that outer pass overwrite this anchor.
+            _ = new WindowInteropHelper(shown).EnsureHandle();
+            SessionWindowCoordinator.Show(shown, activate: owner.IsActive || SessionWindowCoordinator.Find(owner) is not null);
+            shown.UpdateLayout();
+            AppWindowChrome.EnsureVisibleBounds(shown);
+            Opened?.Invoke(this, EventArgs.Empty);
         }
-        child.Measure(new Size(SystemParameters.PrimaryScreenWidth, SystemParameters.PrimaryScreenHeight));
-        var point = target.PointToScreen(new Point(0, target.RenderSize.Height));
-        double scale = VisualTreeHelper.GetDpi(target).DpiScaleY;
-        point.Y += VerticalOffset * scale;
-        var work = System.Windows.Forms.Screen.FromPoint(new((int)point.X, (int)point.Y)).WorkingArea;
-        shown.MaxHeight = System.Math.Max(120, work.Height / scale - 16);
-        point.X = System.Math.Clamp(point.X, work.Left, System.Math.Max(work.Left, work.Right - child.DesiredSize.Width * scale - 2));
-        double popupHeight = (child.DesiredSize.Height + (compact ? 2 : 34)) * scale;
-        if (compact && point.Y + popupHeight > work.Bottom)
+        catch
         {
-            double above = target.PointToScreen(new Point()).Y - VerticalOffset * scale - popupHeight;
-            if (above >= work.Top) point.Y = above;
+            if (ReferenceEquals(window, shown)) window = null;
+            InputManager.Current.PreProcessInput -= BeforeInput;
+            if (owner is not null) owner.IsVisibleChanged -= OwnerVisibilityChanged;
+            owner = null;
+            shown.Content = null;
+            try { shown.Close(); }
+            catch { }
+            throw;
         }
-        point.Y = System.Math.Clamp(point.Y, work.Top, System.Math.Max(work.Top, work.Bottom - popupHeight));
-        shown.SourceInitialized += (_, _) => OverlayCoordinates.PositionToolWindow(new WindowInteropHelper(shown).Handle, new(point.X, point.Y));
-        shown.Closed += OnClosed;
-        // Bubble after content cancellation, including when focus is on the caption or window root.
-        shown.KeyDown += (_, e) =>
-        {
-            if (e.Handled || e.Key != Key.Escape) return;
-            EscapePressed?.Invoke(this, e);
-            if (!e.Handled) { e.Handled = true; IsOpen = false; }
-        };
-        shown.Deactivated += (_, _) => shown.Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
-        {
-            if (ReferenceEquals(window, shown) && suspensionDepth == 0 && !StaysOpen && !shown.IsActive && !shown.IsKeyboardFocusWithin &&
-                !SessionWindowCoordinator.HasModalChild(shown) &&
-                !Application.Current.Windows.Cast<Window>().Any(candidate => candidate.IsActive && IsOwnedBy(candidate, shown)))
-                CloseOutside();
-        });
-        owner.IsVisibleChanged += OwnerVisibilityChanged;
-        InputManager.Current.PreProcessInput += BeforeInput;
-        // Finish initial session placement before the source-button anchor runs. Creating the
-        // HWND inside Show's placement pass would let that outer pass overwrite this anchor.
-        _ = new WindowInteropHelper(shown).EnsureHandle();
-        SessionWindowCoordinator.Show(shown, activate: owner.IsActive || SessionWindowCoordinator.Find(owner) is not null);
-        shown.UpdateLayout();
-        AppWindowChrome.EnsureVisibleBounds(shown);
-        Opened?.Invoke(this, EventArgs.Empty);
     }
 
     private void OnClosed(object? sender, EventArgs args)

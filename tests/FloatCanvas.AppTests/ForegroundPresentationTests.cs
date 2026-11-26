@@ -50,6 +50,9 @@ internal static class ForegroundPresentationTests
             check("ordinary foreground changes never submit a transparent artwork frame", alpha == 255 && red == 255);
             PublishCurrent(); host.Render();
         }
+        runtime.SuppressKeyboard(false); host.Render();
+        check("clearing a focus quarantine retains input-free artwork", alpha == 255 && red == 255);
+        PublishCurrent(); host.Render();
         foreach (var (name, refresh) in new (string, Action)[]
         {
             ("unchanged foreground metadata", gate.Observe),
@@ -63,6 +66,13 @@ internal static class ForegroundPresentationTests
             refresh(); host.Render();
             check(name + " preserves already submitted artwork", alpha == 255 && red == 255);
         }
+        runtime.SuppressKeyboard(true); host.Render();
+        check("starting a focus quarantine retains artwork when no keys have been published", alpha == 255 && red == 255);
+        runtime.SuppressKeyboard(false);
+        runtime.ObserveHookInput(new(runtime.InputEpoch,
+            [new(PresentationObservedKind.KeyDown, Environment.TickCount64, VirtualKey: 0xA2, ScanCode: 0x1D, KeyLabel: "Ctrl")], null, false));
+        check("a retained presentation can carry a physical key", runtime.Frame.PressedKeys.Count == 1);
+        PublishCurrent(); host.Render();
         runtime.SuppressKeyboard(true); host.Render();
         check("confirmed password protection still rejects the old presentation frame immediately", alpha == 0);
 

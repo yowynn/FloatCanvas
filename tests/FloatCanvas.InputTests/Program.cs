@@ -150,6 +150,7 @@ internal static partial class Program
             await ActivateInput();
             await WaitForCreationPresentation(editor, tool);
             var creationEvents = new List<object>();
+            PointD? gestureStart = null, gestureEnd = null;
             void ObserveCreation(OverlayPointerEvent e) => creationEvents.Add(new { At = Stopwatch.GetTimestamp(), e.Kind, e.Button, e.Modifiers, e.Position,
                 Count = editor.Document.Elements.Count, editor.IsTransactionActive, Host!.IsEditing, Capture = Native.GetCapture().ToInt64(),
                 ActualTool = Field<object>("_editor").GetType().GetProperty("Tool")!.GetValue(Field<object>("_editor"))!.ToString() });
@@ -164,6 +165,8 @@ internal static partial class Program
                     await Drag(path);
                 }
                 await WaitForRenderToSettle();
+                await WaitUntil(() => !editor.IsTransactionActive,
+                    tool + ": physical creation transaction did not commit before the next gesture");
             }
             finally { Host.Pointer -= ObserveCreation; }
             if (editor.Document.Elements.Count != 1 || NativeToolProbe is not null)
@@ -174,6 +177,20 @@ internal static partial class Program
                     Capture = Native.GetCapture().ToInt64(), DoubleClickMilliseconds = Native.GetDoubleClickTime(), Events = creationEvents }));
             Check(editor.Document.Elements.Count == 1, tool + ": real WM pointer input created exactly one object");
             var element = editor.Document.Elements.Single(); Guid id = element.Id;
+            for (int index = 0; index + 1 < creationEvents.Count; index++)
+            {
+                var current = JsonSerializer.SerializeToElement(creationEvents[index]);
+                if (current.GetProperty("Kind").GetInt32() != (int)OverlayPointerKind.Down) continue;
+                gestureStart = JsonSerializer.Deserialize<PointD>(current.GetProperty("Position").GetRawText());
+                break;
+            }
+            var lastMove = creationEvents
+                .Select(item => JsonSerializer.SerializeToElement(item))
+                .LastOrDefault(item => item.GetProperty("Kind").GetInt32() is (int)OverlayPointerKind.Move or (int)OverlayPointerKind.Up);
+            if (lastMove.ValueKind != JsonValueKind.Undefined)
+                gestureEnd = JsonSerializer.Deserialize<PointD>(lastMove.GetProperty("Position").GetRawText());
+            gestureStart ??= new(first.X, first.Y);
+            gestureEnd ??= gestureStart;
             Check(MatchesTool(element, tool), tool + ": actual controller tool retains the requested geometry and endpoint styles");
             Check(tool is "Freehand" or "Highlighter" or "Line" or "Arrow" or "DoubleArrow" ? editor.Selection.Count == 0 : editor.Selection.SetEquals([id]),
                 tool + ": real creation preserves its tool-specific selection policy");
@@ -182,18 +199,35 @@ internal static partial class Program
                 ToolEvidence.Add(new { Tool = tool, Round = toolRound, Phase = "DrawingGeometryFailure", Bounds = bounds,
                     ExpectedFirst = new { first.X, first.Y }, ExpectedLast = new { last.X, last.Y },
                     element.Transform, element.Points, Host.IsEditing, Selection = editor.Selection.ToArray() });
-            if (tool == "Number") Check(Math.Abs(bounds.Center.X - (first.X + 70)) <= 2 && Math.Abs(bounds.Center.Y - (first.Y + 40)) <= 2, tool + ": actual click position retained in physical pixels");
-            else Check(Math.Abs(bounds.Left - first.X) <= 2 && Math.Abs(bounds.Right - last.X) <= 2 && bounds.Height >= 40, tool + ": real drag geometry matches physical desktop coordinates");
-            int visiblePixels = CountBlueScreenPixels(element);
+            if (tool == "Number")
+                Check(bounds.Center.DistanceTo(gestureStart.Value) <= 2, tool + ": actual click position retained in physical pixels");
+            else if (tool == "Triangle")
+            {
+                var ink = SymbolGeometry.Shape(SymbolKind.Triangle).InkBounds;
+                Check(Math.Abs(bounds.Width / bounds.Height - ink.Width / ink.Height) < .01,
+                    tool + ": real drag preserves the symbol's intended natural aspect");
+            }
+            else
+                Check(Math.Abs(bounds.Left - Math.Min(gestureStart.Value.X, gestureEnd.Value.X)) <= 2 &&
+                    Math.Abs(bounds.Right - Math.Max(gestureStart.Value.X, gestureEnd.Value.X)) <= 2 && bounds.Height >= 40,
+                    tool + ": real drag geometry matches physical desktop coordinates");
+            CanvasElement readbackElement = element.Clone();
+            int visiblePixels = await Task.Run(() => CountBlueScreenPixels(readbackElement));
             Check(visiblePixels > 8, tool + ": ink is visible on the actual desktop over our client");
             var exported = editor.Document.Clone(); exported.Viewport = ElementGeometry.Bounds(element).Inflate(5);
-            using (var renderer = new SceneRenderer())
-            using (var alpha = SKBitmap.Decode(renderer.ExportPng(exported, Field<AssetLibrary>("_assets"), true)))
+            var assetsForReadback = Field<AssetLibrary>("_assets");
+            var alphaResult = await Task.Run(() =>
             {
+                using var renderer = new SceneRenderer();
+                using var alpha = SKBitmap.Decode(renderer.ExportPng(exported, assetsForReadback, true));
                 bool zero = false, ink = false;
-                for (int y = 0; y < alpha.Height; y++) for (int x = 0; x < alpha.Width; x++) { byte a = alpha.GetPixel(x, y).Alpha; zero |= a == 0; ink |= a > 0; }
-                Check(zero && ink, tool + ": production transparent export contains both true zero alpha and ink");
-            }
+                for (int y = 0; y < alpha.Height; y++)
+                for (int x = 0; x < alpha.Width; x++)
+                { byte a = alpha.GetPixel(x, y).Alpha; zero |= a == 0; ink |= a > 0; }
+                return zero && ink;
+            });
+            Check(alphaResult, tool + ": production transparent export contains both true zero alpha and ink");
+            Host.NotifyInputProgress();
             SelectTool("Select"); await ActivateInput(); await Task.Delay(25);
             if (tool == "Number") await Task.Delay(checked((int)Native.GetDoubleClickTime()) + 30);
             var baseline = element.Transform;
@@ -291,6 +325,11 @@ internal static partial class Program
     private static PointD HitPoint(CanvasElement element)
     {
         PointD local = ElementGeometry.UsesPoints(element.Kind) ? element.Points.Count > 2 ? element.Points[element.Points.Count / 2] : (element.Points[0] + element.Points[^1]) * .5
+            : element.Kind == ElementKind.Symbol ? new(
+                (SymbolGeometry.Shape(element.Symbol, element.CustomSymbol).InkBounds.Left +
+                 SymbolGeometry.Shape(element.Symbol, element.CustomSymbol).InkBounds.Right) * element.Width / 2,
+                (SymbolGeometry.Shape(element.Symbol, element.CustomSymbol).InkBounds.Top +
+                 SymbolGeometry.Shape(element.Symbol, element.CustomSymbol).InkBounds.Bottom) * element.Height / 2)
             : element.Kind == ElementKind.Number ? new(element.Width / 2, element.Height / 2) : new(element.Width / 2, 0);
         return element.Transform.TransformPoint(local);
     }

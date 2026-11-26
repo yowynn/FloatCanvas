@@ -18,6 +18,7 @@ internal sealed class EmojiPickerPanel : StackPanel
     public static readonly DependencyProperty CurrentFontIdProperty = DependencyProperty.Register(
         nameof(CurrentFontId), typeof(string), typeof(EmojiPickerPanel), new PropertyMetadata(EmojiFontIds.Default));
     private static IReadOnlyList<EmojiEntry> Recent => EmojiHistoryStore.Shared.Entries;
+    private static EmojiGroup? lastCategory;
     private readonly TextBox search = new();
     private readonly TextBlock searchHint = new() { IsHitTestVisible = false, TextTrimming = TextTrimming.CharacterEllipsis };
     private readonly ComboBox tones = new OverlayComboBox { MinWidth = 0, Width = 134 };
@@ -178,7 +179,7 @@ internal sealed class EmojiPickerPanel : StackPanel
         string name = L.Get(group is null ? "Emoji.Recent" : "Emoji.Group." + group);
         var button = ActionIconButton.Create(LayersWindow.IconPath(icon),name,() =>
         {
-            resetting=true; category=group; search.Clear(); renderedView=null; resetting=false; Refresh(true);
+            resetting=true; category=group; lastCategory=group; search.Clear(); renderedView=null; resetting=false; Refresh(true);
         });
         button.Width=double.NaN; button.Height=30; button.Margin=new(1); button.Tag=group;
         categories.Add(button);navigation.Children.Add(button);
@@ -186,7 +187,7 @@ internal sealed class EmojiPickerPanel : StackPanel
     internal void Begin(string? value, string? emojiFontId = null)
     {
         SetFont(emojiFontId);
-        resetting=true; search.Clear(); category=null; renderedView=null; resetting=false;
+        resetting=true; search.Clear(); category=lastCategory; renderedView=null; resetting=false;
         pointerOverGrid=false;
         SetCurrent(value);
         Refresh(true);
@@ -208,6 +209,13 @@ internal sealed class EmojiPickerPanel : StackPanel
     private void Choose(EmojiEntry entry)
     {
         bool recentVisible=category is null&&string.IsNullOrWhiteSpace(search.Text);
+        bool searchMovedToAnotherCategory=category is not null && category!=entry.Group &&
+            !string.IsNullOrWhiteSpace(search.Text);
+        if(searchMovedToAnotherCategory)
+        {
+            category=entry.Group;
+            lastCategory=category;
+        }
         current=entry;
         Remember(entry);
         if(recentVisible&&grid.ItemsSource is ObservableCollection<EmojiEntry> recent)

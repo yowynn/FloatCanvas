@@ -62,6 +62,7 @@ internal sealed class PassThroughLauncherWindow : Window
 
     internal void ShowAt(OverlayPoint origin, bool canvasVisible)
     {
+        OverlayWindowScope.Prepare(this);
         SetCanvasVisible(canvasVisible);
         var handle = new WindowInteropHelper(this).EnsureHandle();
         var dpi = VisualTreeHelper.GetDpi(this);
@@ -83,6 +84,16 @@ internal sealed class PassThroughLauncherWindow : Window
     {
         Launcher.CancelPendingGestures();
         if (!WindowRevealGate.Conceal(this)) Hide();
+    }
+
+    /// <summary>
+    /// Removes the passive window from activation and hit testing while editing owns input.
+    /// DWM cloaking alone leaves a queued launcher activation able to interrupt the handoff.
+    /// </summary>
+    internal void HideForEditing()
+    {
+        Launcher.CancelPendingGestures();
+        Hide();
     }
 
     internal void SetEntryHint(string? message)

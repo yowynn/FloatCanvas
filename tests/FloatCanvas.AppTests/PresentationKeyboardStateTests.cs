@@ -59,7 +59,8 @@ internal static class PresentationKeyboardStateTests
             h.Now += 1000; h.Tick();
             check("released chord expires without sampling keyboard state", h.Broker.Frame.RecentChords.Count == 0);
             h.Send(0x5B, 0x5B, 1);
-            h.Input.Queue([new(PresentationObservedKind.DeviceRemoved, h.Now, Device: 9876)]); h.Drain();
+            h.Input.Queue([new(PresentationObservedKind.DeviceRemoved, h.Now, Device: 9876,
+                DeviceKind: PresentationDeviceKind.Keyboard)]); h.Drain();
             check("device removal cancels anonymous hook state without adding a release record",
                 h.Broker.Frame.PressedKeys.Count == 0 && h.Broker.Frame.RecentChords.Count == 0);
             h.Send(0x5B, 0x5B, 1); h.Now += 10000; h.Tick();
@@ -94,7 +95,10 @@ internal sealed class PresentationHookTestHarness : IDisposable
         Broker.SetArmed(true); Broker.ConfigureEditingInput(editing);
         privacy = new(Dispatcher.CurrentDispatcher, Broker,
             completed => new PresentationKeyboardPrivacyProbe(completed, () => false, () => Foreground),
-            () => Foreground, () => Now);
+            () => Foreground, () => Now, externalEvents: false,
+            // Trace foreground IDs represent command surfaces, not real HWNDs
+            // or text editors. PrivacyGateTests exercise unclassified focus.
+            isCanvasInput: _ => true);
         Broker.BeforeInput += _ => privacy.Observe();
         tap = Activator.CreateInstance(tapType, true)!;
         tapType.GetMethod("Configure", Hidden)!.Invoke(tap, [true, true, Broker.InputEpoch]);

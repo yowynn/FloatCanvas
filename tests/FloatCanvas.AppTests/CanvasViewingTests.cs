@@ -236,7 +236,8 @@ internal static class CanvasViewingTests
             if (zoom != 1) Invoke("ChangeCanvasViewing", new CanvasViewTransform(zoom, new(-1800, -550)), false);
             editor.ResumePresentedPicking();
             var initialCamera = Field<CanvasViewTransform>("_canvasView");
-            var localGrab = new PointD(12, 12);
+            // Keep the move fixture away from the rectangle's corner-radius handle.
+            var localGrab = new PointD(25, 20);
             var grabbed = editor.CurrentCanvasMapping.ElementToScreen(element).TransformPoint(localGrab);
             string beforeMove = JsonSerializer.Serialize(editor.Session.Document); int history = editor.Session.UndoCount;
             ObjectPointer(OverlayPointerKind.Down, grabbed);

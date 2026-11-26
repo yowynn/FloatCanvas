@@ -454,6 +454,15 @@ internal sealed partial class ToolOptionsPanel : UserControl
             ["HighlighterTip"], ["HighlighterAngleRegion"], ["HighlighterInkContrast"], ["Colors"], ["CaptureBorderWidth"], ["StrokeWidth"], ["CornerRadius"], ["Opacity"],
             ["FontFamily"], ["FontSize"], ["NumberFormat"], ["TextAlignment"], ["NumberStart"], ["NumberStep"], ["NextNumber"], ["StartArrowHead"], ["EndArrowHead"],
             ["StrokePattern"], ["ArrowHeadSize"], ["EffectStrength"], ["SymbolSize"], ["Symbols"], ["Size"], ["EmojiFont"], ["Emoji"], ["EmojiLibrary"], ["PresentationSettings"], ["PointerPresentationSettings"] ];
+        if (controller.Tool is EditorTool.Freehand or EditorTool.Highlighter or
+            EditorTool.Line or EditorTool.Arrow or EditorTool.DoubleArrow)
+        {
+            var ordered = groups.ToList();
+            var strokeWidth = ordered.Single(group => group[0] == "StrokeWidth");
+            ordered.Remove(strokeWidth);
+            ordered.Insert(ordered.FindIndex(group => group[0] == "Colors"), strokeWidth);
+            groups = ordered.ToArray();
+        }
         if (controller.Tool == EditorTool.Presentation)
             groups = [["PresentationSettings"], ["Colors"], ["Opacity"], ["FontFamily"], ["FontSize"], ["Size"]];
         foreach (var group in groups)

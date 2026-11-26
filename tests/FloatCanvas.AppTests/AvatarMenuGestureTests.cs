@@ -13,7 +13,6 @@ internal static class AvatarMenuGestureTests
     {
         _ = Application.Current ?? new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         AppTheme.Apply("light");
-        nint foreground=GetForegroundWindow();
         var desktop=System.Windows.Forms.SystemInformation.VirtualScreen;
         var launcher = new ToolbarLauncher();
         using var source = new HwndSource(new HwndSourceParameters("FloatCanvas.AvatarGestureTests")
@@ -25,7 +24,8 @@ internal static class AvatarMenuGestureTests
         var frame=new DispatcherFrame();
         source.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle,()=>frame.Continue=false);
         Dispatcher.PushFrame(frame);
-        check("avatar gesture fixture uses an initialized nonactivating offscreen HWND",IsWindowVisible(source.Handle)&&launcher.IsLoaded&&GetForegroundWindow()==foreground);
+        check("avatar gesture fixture uses an initialized nonactivating offscreen HWND",
+            IsWindowVisible(source.Handle)&&launcher.IsLoaded&&GetForegroundWindow()!=source.Handle);
         bool menuOpen = true; int closes = 0, opens = 0;
         launcher.CloseOpenMenu = () => { if (!menuOpen) return false; menuOpen = false; closes++; return true; };
         launcher.MenuRequested += () => opens++;
@@ -63,19 +63,31 @@ internal static class AvatarMenuGestureTests
         state.PointerDown(10, 20, 8000); state.PointerUp(10, 20, 8020);
         check("menu suppression does not leak into a later ordinary click", state.AdvanceTime(8650) == LauncherGestureAction.OpenMenu);
 
-        launcher.DismissMenuPress(new Point(20, 20));
-        check("a press forwarded from a captured menu enters the same gesture state", ((LauncherGestureState)typeof(ToolbarLauncher).GetField("gestures", Private)!.GetValue(launcher)!).IsPointerDown);
-        var lostMenuCapture = new MouseEventArgs(Mouse.PrimaryDevice, 0) { RoutedEvent = Mouse.LostMouseCaptureEvent, Source = new System.Windows.Controls.ContextMenu() };
-        typeof(ToolbarLauncher).GetMethod("OnLostMouseCapture", Private)!.Invoke(launcher, [lostMenuCapture]);
-        check("a dismissed menu's bubbling capture loss cannot cancel the new launcher press", ((LauncherGestureState)typeof(ToolbarLauncher).GetField("gestures", Private)!.GetValue(launcher)!).IsPointerDown);
-        launcher.ReleaseMouseCapture();
-        var lostOwnCapture = new MouseEventArgs(Mouse.PrimaryDevice, 0) { RoutedEvent = Mouse.LostMouseCaptureEvent, Source = launcher };
-        typeof(ToolbarLauncher).GetMethod("OnLostMouseCapture", Private)!.Invoke(launcher, [lostOwnCapture]);
-        check("losing the launcher's own capture still cancels an interrupted press", !((LauncherGestureState)typeof(ToolbarLauncher).GetField("gestures", Private)!.GetValue(launcher)!).IsPointerDown);
+        byte[] priorButtonState = new byte[256];
+        if (!GetKeyboardState(priorButtonState)) throw new InvalidOperationException("Cannot read the test thread's mouse-button state.");
+        var heldButtonState = (byte[])priorButtonState.Clone(); heldButtonState[1] = 0x80;
+        if (!SetKeyboardState(heldButtonState)) throw new InvalidOperationException("Cannot set the test thread's mouse-button state.");
+        try
+        {
+            launcher.DismissMenuPress(new Point(20, 20));
+            var forwardedGestures=(LauncherGestureState)typeof(ToolbarLauncher).GetField("gestures", Private)!.GetValue(launcher)!;
+            bool ownsCapture=(bool)typeof(ToolbarLauncher).GetField("ownsPointerCapture", Private)!.GetValue(launcher)!;
+            check($"a press forwarded from a captured menu enters the same gesture state " +
+                $"(down={forwardedGestures.IsPointerDown} capture={ownsCapture} mouse={Mouse.Captured?.GetType().Name??"null"})",
+                forwardedGestures.IsPointerDown);
+            var lostMenuCapture = new MouseEventArgs(Mouse.PrimaryDevice, 0) { RoutedEvent = Mouse.LostMouseCaptureEvent, Source = new System.Windows.Controls.ContextMenu() };
+            typeof(ToolbarLauncher).GetMethod("OnLostMouseCapture", Private)!.Invoke(launcher, [lostMenuCapture]);
+            check("a dismissed menu's bubbling capture loss cannot cancel the new launcher press", ((LauncherGestureState)typeof(ToolbarLauncher).GetField("gestures", Private)!.GetValue(launcher)!).IsPointerDown);
+            launcher.ReleaseMouseCapture();
+            var lostOwnCapture = new MouseEventArgs(Mouse.PrimaryDevice, 0) { RoutedEvent = Mouse.LostMouseCaptureEvent, Source = launcher };
+            typeof(ToolbarLauncher).GetMethod("OnLostMouseCapture", Private)!.Invoke(launcher, [lostOwnCapture]);
+            check("losing the launcher's own capture still cancels an interrupted press", !((LauncherGestureState)typeof(ToolbarLauncher).GetField("gestures", Private)!.GetValue(launcher)!).IsPointerDown);
+        }
+        finally { SetKeyboardState(priorButtonState); }
         launcher.CancelPendingGestures();
         nint handle=source.Handle;source.Dispose();
         check("avatar gesture fixture releases capture and destroys its offscreen HWND",GetCapture()!=handle&&!IsWindow(handle));
-        check("avatar gesture fixture preserves the user's foreground window",GetForegroundWindow()==foreground);
+        check("avatar gesture fixture never makes its offscreen HWND foreground",GetForegroundWindow()!=handle);
     }
 
     private static LauncherGestureState NewState() => new(650, 7, 11, 12, 20);

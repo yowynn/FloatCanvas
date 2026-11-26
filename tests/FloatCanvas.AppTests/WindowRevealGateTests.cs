@@ -167,6 +167,104 @@ internal static class WindowRevealGateTests
         }
     }
 
+    internal static void RunPopupOpenFailure(Action<string, bool> check)
+    {
+        var owner = Fixture(new Border { Background = Brushes.White });
+        var target = new Button { Content = "Open", Width = 120, Height = 36 };
+        owner.Width = 360;
+        owner.Height = 180;
+        owner.Content = target;
+        var popup = new WindowPopup(new TextBlock { Text = "Popup content" }, target, "Popup failure regression", 8);
+        var previousCloak = WindowRevealGate.Cloak;
+        try
+        {
+            owner.Show();
+            Pump(100);
+            WindowRevealGate.Cloak = (_, cloak) => cloak
+                ? throw new InvalidOperationException("Injected DWM cloak failure.")
+                : true;
+            bool failed = false;
+            try { popup.IsOpen = true; }
+            catch (InvalidOperationException) { failed = true; }
+            check("a failed popup show rolls back its logical open state", failed && !popup.IsOpen);
+
+            WindowRevealGate.Cloak = previousCloak;
+            popup.IsOpen = true;
+            Pump(300);
+            check("the same popup can reopen after a failed show without a stale half-open window", popup.IsOpen);
+            popup.IsOpen = false;
+            Pump(100);
+            check("a popup reopened after failure still closes normally", !popup.IsOpen);
+        }
+        finally
+        {
+            WindowRevealGate.Cloak = previousCloak;
+            if (popup.IsOpen) popup.IsOpen = false;
+            owner.Close();
+        }
+    }
+
+    internal static void RunOverlayPopupConstructionFailure(Action<string, bool> check)
+    {
+        var owner = Fixture(new Border { Background = Brushes.White });
+        var target = new Button { Content = "Anchor", Width = 120, Height = 36 };
+        owner.Width = 360;
+        owner.Height = 180;
+        owner.Content = target;
+        var previousPolicy = OverlayWindowScope.NativeToolPolicyForTesting;
+        OverlayWindowScope? scope = null;
+        OverlayPopupWindow? popup = null;
+        try
+        {
+            owner.Show();
+            Pump(100);
+            scope = new OverlayWindowScope(new WindowInteropHelper(owner).Handle, () => true, 16);
+            int before = OverlayPopupWindow.OpenWindowCount;
+            OverlayWindowScope.NativeToolPolicyForTesting = _ =>
+                throw new System.ComponentModel.Win32Exception(5, "Injected tool-band failure.");
+            bool failed = false;
+            try
+            {
+                _ = new OverlayPopupWindow(new TextBlock { Text = "Content" }, target,
+                    System.Windows.Controls.Primitives.PlacementMode.Bottom, 0, 0, () => { });
+            }
+            catch (System.ComponentModel.Win32Exception) { failed = true; }
+            OverlayWindowScope.NativeToolPolicyForTesting = previousPolicy;
+            check("failed overlay-popup construction releases its native window registration",
+                failed && OverlayPopupWindow.OpenWindowCount == before);
+
+            var wrapper = new OverlayPopup { Child = new TextBlock { Text = "Wrapper content" }, PlacementTarget = target };
+            OverlayWindowScope.NativeToolPolicyForTesting = _ =>
+                throw new System.ComponentModel.Win32Exception(5, "Injected tool-band failure.");
+            bool wrapperFailed = false;
+            try { wrapper.IsOpen = true; }
+            catch (System.ComponentModel.Win32Exception) { wrapperFailed = true; }
+            check("a failed overlay popup clears its logical open state",
+                wrapperFailed && !wrapper.IsOpen && OverlayPopupWindow.OpenWindowCount == before);
+
+            OverlayWindowScope.NativeToolPolicyForTesting = _ => { };
+            popup = new OverlayPopupWindow(new TextBlock { Text = "Reusable content" }, target,
+                System.Windows.Controls.Primitives.PlacementMode.Bottom, 0, 0, () => { });
+            check("overlay popup construction can retry after a native-policy failure",
+                OverlayPopupWindow.OpenWindowCount == before + 1);
+            wrapper.IsOpen = true; Pump(100);
+            check("the same overlay popup can reopen after a tool-band failure",
+                wrapper.IsOpen && OverlayPopupWindow.OpenWindowCount == before + 2);
+            wrapper.IsOpen = false; Pump(100);
+            popup.Dispose();
+            popup = null;
+            OverlayWindowScope.NativeToolPolicyForTesting = previousPolicy;
+            check("a retried overlay popup releases its registration", OverlayPopupWindow.OpenWindowCount == before);
+        }
+        finally
+        {
+            OverlayWindowScope.NativeToolPolicyForTesting = previousPolicy;
+            popup?.Dispose();
+            scope?.Dispose();
+            owner.Close();
+        }
+    }
+
     private static Window Fixture(Border border) => new()
     {
         WindowStyle = WindowStyle.None, AllowsTransparency = true, Background = Brushes.Transparent, Topmost = true,

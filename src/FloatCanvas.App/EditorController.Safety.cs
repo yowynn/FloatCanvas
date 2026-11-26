@@ -25,8 +25,13 @@ internal sealed partial class EditorController
         if (message) Message?.Invoke(L.Get("Perspective.InputOutsidePlane"));
     }
 
-    private bool IsDrawingSafe() => screenBillboardDrawing || drawing is null ||
-        CurrentCanvasMapping.IsElementSafe(drawing);
+    private bool IsDrawingSafe()
+    {
+        if (drawing is { } shape && ElementGeometry.IsBoxShape(shape.Kind) &&
+            (!double.IsFinite(shape.Width) || shape.Width <= 0 ||
+             !double.IsFinite(shape.Height) || shape.Height <= 0)) return false;
+        return screenBillboardDrawing || drawing is null || CurrentCanvasMapping.IsElementSafe(drawing);
+    }
 
     // A billboard's upper half can be above the ground horizon. Ground inversion
     // is therefore optional for selecting and operating its screen-facing content.
@@ -59,11 +64,17 @@ internal sealed partial class EditorController
             ? Session.Document.Elements.Where(e => e.Id == drawing?.Id || transforms.ContainsKey(e.Id)).Select(e =>
                 (Item: e, State: new GeometrySnapshot(e, gesture == "draw", gesture == "endpoint" && e == drawing ? endpoint : -1))).ToArray()
             : [];
-        Move(point, modifiers, finishStroke);
+        geometryNotificationPending = false;
+        suppressGeometryNotifications = true;
+        try { Move(point, modifiers, finishStroke); }
+        finally { suppressGeometryNotifications = false; }
         var mapping = CurrentCanvasMapping;
         var graph = new SceneGraph(Session.Document);
-        if (!IsPointerBlocked && changed.All(pair => mapping.IsElementSafe(graph.ToWorld(graph.FindElement(pair.Item.Id) ?? pair.Item))))
+        var drawingSafe = drawing is null || screenBillboardDrawing || mapping.IsElementSafe(drawing);
+        if (!IsPointerBlocked && drawingSafe &&
+            changed.All(pair => mapping.IsElementSafe(graph.ToWorld(graph.FindElement(pair.Item.Id) ?? pair.Item))))
         {
+            if (geometryNotificationPending) NotifyGeometryChanged();
             creationArcFit?.Accept(point - start, pointerScreen - startScreen);
             return;
         }
@@ -71,7 +82,7 @@ internal sealed partial class EditorController
         if (drawing is not null && drawingParents.ContainsKey(drawing.Id) && new SceneGraph(Session.Document).FindElement(drawing.Id) is { } restored)
             drawing = new SceneGraph(Session.Document).ToWorld(restored);
         freehandCorrection?.Reset();
-        if (changed.Length > 0) NotifyGeometryChanged();
+        if (changed.Length > 0 || geometryNotificationPending) NotifyGeometryChanged();
         RejectPointer();
     }
 

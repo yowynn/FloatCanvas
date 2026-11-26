@@ -58,6 +58,8 @@ internal sealed class SystemOverlayInput : IDisposable
     internal void End(){if(native==0)return;Check(FcSystemEnd(native));Target=0;}
     internal void SetReceiver(nint receiver)=>Check(FcSystemReceiver(native,receiver));
     internal void FocusCanvas(nint canvas)=>Check(FcSystemFocusCanvas(native,canvas));
+    internal void SetEntryKeyProbeForTesting(bool forceUntrusted)=>
+        Check(FcSystemSetEntryKeyProbeForTesting(native,forceUntrusted));
     internal bool IsCurrentChange(nuint generation)=>Status.Generation==unchecked((uint)generation);
     internal bool OwnsInput
     {
@@ -66,10 +68,23 @@ internal sealed class SystemOverlayInput : IDisposable
             var status=Status;
             var foreground=GetForegroundWindow();
             return status.Requested!=0 && Target!=0 &&
-                (foreground==Target || status.Pid==Environment.ProcessId) &&
-                GetWindowThreadProcessId(foreground,out uint pid)!=0 && pid==status.Pid;
+                GetWindowThreadProcessId(foreground,out uint pid)!=0 &&
+                IsOwnedForeground(foreground,Target,status.Pid,pid,checked((uint)Environment.ProcessId));
         }
     }
+    internal string DescribeOwnership()
+    {
+        var status=Status;
+        var foreground=GetForegroundWindow();
+        GetWindowThreadProcessId(foreground,out uint foregroundProcess);
+        return $"Requested={status.Requested};Acknowledged={status.Acknowledged};Waiting={status.Waiting};"+
+            $"HResult=0x{status.HResult:X8};Target=0x{Target.ToInt64():X};TargetPid={status.Pid};"+
+            $"Foreground=0x{foreground.ToInt64():X};ForegroundPid={foregroundProcess};OwnPid={Environment.ProcessId}";
+    }
+    internal static bool IsOwnedForeground(nint foreground,nint target,uint targetProcess,
+        uint foregroundProcess,uint ownProcess) =>
+        foreground!=0 && target!=0 && targetProcess!=0 && foregroundProcess!=0 &&
+        (foreground==target && foregroundProcess==targetProcess || foregroundProcess==ownProcess);
     internal static nint CreateWindow(uint extended,string name,string title,uint style,int x,int y,int width,int height,nint parameter)
     {
         nint result=FcSystemCreateHostedWindow(extended,name,title,style,x,y,width,height,parameter);
@@ -88,6 +103,8 @@ internal sealed class SystemOverlayInput : IDisposable
     [DllImport("FloatCanvas.SystemOverlay.dll",ExactSpelling=true)] private static extern int FcSystemGetStatus(nint host,out InputStatus status);
     [DllImport("FloatCanvas.SystemOverlay.dll",ExactSpelling=true)] private static extern int FcSystemGetEntryBlockers(nint host,[Out] byte[] blockers,uint length);
     [DllImport("FloatCanvas.SystemOverlay.dll",ExactSpelling=true)] private static extern int FcSystemGetEntryTrace(nint host,[Out] byte[] buffer,uint capacity);
+    [DllImport("FloatCanvas.SystemOverlay.dll",ExactSpelling=true)] private static extern int FcSystemSetEntryKeyProbeForTesting(
+        nint host,[MarshalAs(UnmanagedType.Bool)] bool forceUntrusted);
     [DllImport("FloatCanvas.SystemOverlay.dll",ExactSpelling=true)] private static extern void FcSystemDestroy(nint host);
     [DllImport("FloatCanvas.SystemOverlay.dll",ExactSpelling=true,CharSet=CharSet.Unicode,SetLastError=true)]
     private static extern nint FcSystemCreateHostedWindow(uint extended,string name,string title,uint style,int x,int y,int width,int height,nint parameter);

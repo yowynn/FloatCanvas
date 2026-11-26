@@ -123,19 +123,26 @@ internal static class ShellIntegrationTests
         Task Complete() => (Task)typeof(DesktopSession).GetMethod("CompleteStartupAsync", flags)!.Invoke(session, null)!;
         Directory.CreateDirectory(ApplicationPaths.ProfileDirectory);
         using var lifetime = new CancellationTokenSource();
+        var app = System.Windows.Application.Current ?? new System.Windows.Application { ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown };
+        Set("_app", app);
+        Set("_diagnostics", new ApplicationDiagnostics(ApplicationPaths.ProfileDirectory));
         Set("_documentLifetime", lifetime); Set("_projectOpenRequests", new Queue<DesktopSession.ProjectOpenRequest>());
         Set("_quietStartup", true); Set("_documentBusyValue", true);
         session.QueueProjectOpen(path);
         check("project handoff stays queued while startup waits for hotkey recovery", Get<Queue<DesktopSession.ProjectOpenRequest>>("_projectOpenRequests").Count == 1 && !Get<bool>("_openingShellProject"));
         Set("_startupPending", true);
         Task completing = Complete();
-        check("successful hotkey recovery enables and starts draining the pending project", Get<bool>("_shellReady") && !Get<bool>("_startupPending") && Get<bool>("_openingShellProject") && !completing.IsCompleted);
+        bool shellReady = Get<bool>("_shellReady"), startupPending = Get<bool>("_startupPending");
+        bool openingShellProject = Get<bool>("_openingShellProject"), completionPending = !completing.IsCompleted;
+        check($"successful hotkey recovery enables and starts draining the pending project: ready={shellReady}, startup={startupPending}, opening={openingShellProject}, pending={completionPending}",
+            shellReady && !startupPending && openingShellProject && completionPending);
         check("repeated startup completion cannot launch a duplicate drain", Complete().IsCompletedSuccessfully && Get<Queue<DesktopSession.ProjectOpenRequest>>("_projectOpenRequests").Count == 1 && Get<bool>("_openingShellProject"));
         Set("_documentExitRequestedValue", true);
         check("an exiting desktop session rejects new queued projects", !session.QueueProjectOpen(path) && Get<Queue<DesktopSession.ProjectOpenRequest>>("_projectOpenRequests").Count == 1);
         lifetime.Cancel();
         completing.GetAwaiter().GetResult();
         check("shutdown unwinds a startup drain without losing its busy request", !Get<bool>("_openingShellProject") && Get<Queue<DesktopSession.ProjectOpenRequest>>("_projectOpenRequests").Count == 1);
+        Set("_disposed", true); // Stop callbacks from the intentionally uninitialized shell fixture.
     }
 
     private static async Task ActivationAsync(Action<string, bool> check, string path)

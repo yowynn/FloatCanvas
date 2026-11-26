@@ -198,5 +198,6 @@ ArrowHeadTests.CommittedSnapshots(Check);
 EditablePresetTests.Run(Check);
 SceneRevisionTests.Run(Check);
 ExternalHistoryTests.Run(Check);
+EditorEventIsolationTests.Run(Check);
 CanvasProjectionTests.Run(Check);
 Console.WriteLine($"PASS {checks} core checks");

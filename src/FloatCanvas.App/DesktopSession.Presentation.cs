@@ -42,7 +42,11 @@ internal sealed partial class DesktopSession
         {
             if (_presentationRuntime is not null) return _presentationRuntime;
             _presentationRuntime = new(_app.Dispatcher, OnPresentationRuntimeChanged, isInternalInput: IsPresentationInputInternal, keyboardAvailable: () => _host.IsPresentationKeyboardAvailable);
-            _presentationRuntime.BeforeInput += batch => { UpdatePresentationRuntime(); ObservePresentationKeyboardPrivacy(batch); };
+            _presentationRuntime.BeforeInput += batch =>
+            {
+                UpdatePresentationRuntime(); ObservePresentationKeyboardPrivacy(batch);
+                _host.ObserveOrdinaryRawPresentationKeys(batch);
+            };
             return _presentationRuntime;
         }
     }
@@ -140,6 +144,7 @@ internal sealed partial class DesktopSession
         CompletePresentationCapturePause(capture, runtime);
         RefreshPresentationRuntimeUi();
     }
+    private bool _keyboardLayoutBudgetExceeded;
     private void RecordPresentedPresentation(CanvasPreviewFrame? frame, CanvasPreviewContext context)
     {
         if (frame is null) return;
@@ -148,6 +153,9 @@ internal sealed partial class DesktopSession
         _presentedPresentationRevision = frame.ContentRevision;
         _presentedPresentationPlan = frame.PresentationPlanIdentity;
         if (frame.PresentationBudgetExceeded) _presentationRuntime?.BlockForBudget();
+        if (frame.KeyboardLayoutBudgetExceeded && !_keyboardLayoutBudgetExceeded)
+            UpdateStatus(L.Get("Presentation.Layout.BudgetSkipped"));
+        _keyboardLayoutBudgetExceeded = frame.KeyboardLayoutBudgetExceeded;
     }
     private bool PauseSnapshotIsCurrent(PresentationPauseSnapshot paused, bool checkLifetime = true) =>
         ReferenceEquals(paused.Owner, Active) && ReferenceEquals(paused.Document, Active.Document) &&
@@ -212,17 +220,24 @@ internal sealed partial class DesktopSession
             _presentationPlanBuilt = true;
             rebuilt = true;
         }
-        bool keyboard = false, all = false, scoped = false;
+        bool keyboard = false, all = false, scoped = false, mouseButtons = false, gamepadButtons = false;
         double hold = 100;
         if (_host.IsVisible && display.LayerOpacity > 0)
             foreach (var leaf in _presentationLeaves)
             {
                 var settings = leaf.RenderElement.Presentation!;
+                if (!PresentationKeyboardActive(settings)) continue;
                 // A visible keyboard layer records for its lifetime. Obsolete
                 // module/enable wire values remain readable but cannot pause it.
                 keyboard = true;
                 scoped |= settings.KeyboardScope != PresentationKeyboardScope.AllApplications;
-                all |= settings.DisplayStyle == PresentationDisplayStyle.Keyboard || settings.KeyDisplay == PresentationKeyDisplayMode.AllPhysicalKeys;
+                all |= settings.DisplayStyle == PresentationDisplayStyle.Keyboard ||
+                    settings.KeyDisplay == PresentationKeyDisplayMode.AllPhysicalKeys;
+                if (settings.DisplayStyle == PresentationDisplayStyle.Keyboard && settings.KeyboardLayout is { } layout)
+                {
+                    mouseButtons |= layout.Keys.Any(key => key.Enabled && key.DeviceType == PresentationKeyDevice.Mouse);
+                    gamepadButtons |= layout.Keys.Any(key => key.Enabled && key.DeviceType == PresentationKeyDevice.Gamepad);
+                }
                 hold = Math.Max(hold, settings.KeyHoldMilliseconds);
             }
         var global = _settings.PresentationGlobal;
@@ -235,11 +250,15 @@ internal sealed partial class DesktopSession
         bool allowed = (_host.IsVisible || pointerAllowed) && !DocumentOperationBusy && _cleanCaptureDepth == 0 &&
             (_presentationDesktopAvailable?.Invoke() ?? PresentationDesktopAvailability.IsCurrentInputDesktop());
         string paused = !_host.IsVisible ? "Presentation.Status.PausedHidden" : "Presentation.Status.Unavailable";
-        _presentationRuntime.Configure(new(keyboard, pointerAllowed, clicks, trail, all, hold, ripple, pointer.TrailMilliseconds) { ScopedKeyboard = scoped },
+        _presentationRuntime.Configure(new(keyboard, pointerAllowed, clicks, trail, all, hold, ripple, pointer.TrailMilliseconds)
+            { ScopedKeyboard = scoped, MouseButtons = mouseButtons, GamepadButtons = gamepadButtons },
             allowed, _presentationInputContext ??= new(), paused);
         if (rebuilt) _presentationRuntime.RetryIfFaulted();
         UpdatePresentationInputRoute();
     }
+    internal static bool PresentationKeyboardActive(PresentationSettings settings) =>
+        settings.DisplayStyle != PresentationDisplayStyle.Keyboard ||
+        (settings.KeyboardLayout ?? PresentationKeyboardLayout.CreateDefault()).Keys.Any(key => key.Enabled && !key.IsPlaceholder);
     private void UpdatePresentationInputRoute()
     {
         if (_presentationRuntime is not { } runtime || _disposed) return;

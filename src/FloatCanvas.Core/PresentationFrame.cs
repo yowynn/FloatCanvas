@@ -3,7 +3,10 @@ using System.Text;
 
 namespace FloatCanvas.Core;
 
-public sealed record PresentationKeyCap(int VirtualKey, string Label, bool IsModifier = false, int ScanCode = 0, bool IsExtended = false);
+public sealed record PresentationKeyCap(int VirtualKey, string Label, bool IsModifier = false, int ScanCode = 0,
+    bool IsExtended = false, PresentationKeyDevice DeviceType = PresentationKeyDevice.Keyboard);
+[Flags]
+public enum PresentationLockState { None = 0, CapsLock = 1, NumLock = 2, ScrollLock = 4 }
 public enum PresentationMouseButton { Left = 0, Right = 1, Middle = 2, X1 = 3, X2 = 4 }
 public readonly record struct PresentationClick(PointD ScreenPoint, PresentationMouseButton Button, TimeSpan Timestamp);
 public readonly record struct PresentationTrailSample(PointD ScreenPoint, TimeSpan Timestamp, bool StartsSegment = false);
@@ -27,18 +30,22 @@ public sealed class PresentationFrame
     public static PresentationFrame Empty { get; } = new(0, 0, TimeSpan.Zero);
     public PresentationFrame(long epoch, long sequence, TimeSpan time, IEnumerable<PresentationKeyCap>? pressedKeys = null,
         IEnumerable<PresentationChord>? recentChords = null, PointD? cursorScreen = null, IEnumerable<PresentationClick>? clicks = null,
-        IEnumerable<PresentationTrailSample>? trail = null, bool keyboardSuppressed = false)
+        IEnumerable<PresentationTrailSample>? trail = null, bool keyboardSuppressed = false,
+        PresentationLockState lockState = PresentationLockState.None)
     {
         if (epoch < 0 || sequence < 0 || time < TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(time));
+        if ((lockState & ~(PresentationLockState.CapsLock | PresentationLockState.NumLock | PresentationLockState.ScrollLock)) != 0)
+            throw new ArgumentOutOfRangeException(nameof(lockState));
         var keys = Freeze(pressedKeys, PresentationLimits.MaximumHeldKeys); var chords = Freeze(recentChords, PresentationLimits.MaximumChords);
         var clickValues = Freeze(clicks, PresentationLimits.MaximumClicks); var trailValues = Freeze(trail, PresentationLimits.MaximumTrailPoints);
         if (keys.Any(key => !ValidKey(key)) || chords.Any(chord => chord is null || chord.Timestamp > time) || cursorScreen is { } cursor && !ValidPoint(cursor) ||
             clickValues.Any(click => !ValidPoint(click.ScreenPoint) || !Enum.IsDefined(click.Button) || click.Timestamp < TimeSpan.Zero || click.Timestamp > time) ||
             trailValues.Any(point => !ValidPoint(point.ScreenPoint) || point.Timestamp < TimeSpan.Zero || point.Timestamp > time))
             throw new ArgumentException("Invalid presentation input snapshot.");
-        long payload = 128L + keys.Sum(KeyBytes) + chords.Sum(chord => 32L + chord.Keys.Sum(KeyBytes)) + clickValues.Length * 40L + trailValues.Length * 40L;
+        long payload = 132L + keys.Sum(KeyBytes) + chords.Sum(chord => 32L + chord.Keys.Sum(KeyBytes)) + clickValues.Length * 40L + trailValues.Length * 40L;
         if (payload > PresentationLimits.MaximumFramePayloadBytes) throw new ArgumentException("Presentation frame capacity exceeded.");
         Epoch = epoch; Sequence = sequence; Time = time; CursorScreen = cursorScreen; KeyboardSuppressed = keyboardSuppressed;
+        LockState = keyboardSuppressed ? PresentationLockState.None : lockState;
         PressedKeys = Array.AsReadOnly(keys); RecentChords = Array.AsReadOnly(chords); Clicks = Array.AsReadOnly(clickValues); Trail = Array.AsReadOnly(trailValues);
         PayloadBytes = payload;
     }
@@ -51,6 +58,7 @@ public sealed class PresentationFrame
     public IReadOnlyList<PresentationClick> Clicks { get; }
     public IReadOnlyList<PresentationTrailSample> Trail { get; }
     public bool KeyboardSuppressed { get; }
+    public PresentationLockState LockState { get; }
     public long PayloadBytes { get; }
     private readonly PresentationFrame? outsideFloatCanvas, floatCanvasOnly;
 
@@ -61,7 +69,8 @@ public sealed class PresentationFrame
         ArgumentNullException.ThrowIfNull(allApplications); ArgumentNullException.ThrowIfNull(outsideFloatCanvas); ArgumentNullException.ThrowIfNull(floatCanvasOnly);
         if (new[] { allApplications, outsideFloatCanvas, floatCanvasOnly }.Any(frame => frame.outsideFloatCanvas is not null ||
             frame.Epoch != allApplications.Epoch || frame.Sequence != allApplications.Sequence || frame.Time != allApplications.Time ||
-            frame.KeyboardSuppressed != allApplications.KeyboardSuppressed)) throw new ArgumentException("Inconsistent presentation keyboard snapshots.");
+            frame.KeyboardSuppressed != allApplications.KeyboardSuppressed || frame.LockState != allApplications.LockState))
+            throw new ArgumentException("Inconsistent presentation keyboard snapshots.");
         return new(allApplications, outsideFloatCanvas, floatCanvasOnly);
     }
 
@@ -69,7 +78,8 @@ public sealed class PresentationFrame
     {
         Epoch = all.Epoch; Sequence = all.Sequence; Time = all.Time; CursorScreen = all.CursorScreen;
         KeyboardSuppressed = all.KeyboardSuppressed; PressedKeys = all.PressedKeys; RecentChords = all.RecentChords;
-        Clicks = all.Clicks; Trail = all.Trail; outsideFloatCanvas = outside; floatCanvasOnly = inside;
+        Clicks = all.Clicks; Trail = all.Trail; LockState = all.LockState;
+        outsideFloatCanvas = outside; floatCanvasOnly = inside;
         PayloadBytes = all.PayloadBytes + outside.PayloadBytes + inside.PayloadBytes;
         if (PayloadBytes > PresentationLimits.MaximumScopedFramePayloadBytes) throw new ArgumentException("Presentation scoped frame capacity exceeded.");
     }
@@ -88,7 +98,8 @@ public sealed class PresentationFrame
         if (result.Length > maximum) throw new ArgumentException("Presentation input capacity exceeded.");
         return result;
     }
-    internal static bool ValidKey(PresentationKeyCap? key) => key is not null && key.VirtualKey is > 0 and < 256 &&
+    internal static bool ValidKey(PresentationKeyCap? key) => key is not null && PresentationKeyboardKey.IsValidInput(key.DeviceType, key.VirtualKey) &&
+        (key.DeviceType == PresentationKeyDevice.Keyboard || key.ScanCode == 0 && !key.IsExtended && !key.IsModifier) &&
         key.ScanCode is >= 0 and <= ushort.MaxValue &&
         key.Label is { Length: > 0 and <= PresentationLimits.MaximumKeyLabelLength } && !key.Label.Any(char.IsControl);
     private static long KeyBytes(PresentationKeyCap key) => 32L + Encoding.UTF8.GetByteCount(key.Label);

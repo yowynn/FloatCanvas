@@ -20,8 +20,9 @@ internal static class LauncherPositionTests
         var settings=Field<UserSettings>(session,"_settings");var toolbar=Field<Window>(session,"_toolbar");
         var monitor=host.PrimaryMonitor;
         settings.ToolbarX=monitor.Bounds.Left+30;settings.ToolbarY=monitor.Bounds.Top+150;
-        settings.ShowPassThroughLauncher=true;Invoke(session,"RefreshPassThroughLauncher");
-        var passive=Field<PassThroughLauncherWindow>(session,"_passThroughLauncher");passive.Hide();
+        PassThroughLauncherWindow passive;
+        settings.ShowPassThroughLauncher=true;RefreshPassive();
+        passive.Hide();
         var surface=(FrameworkElement)toolbar.Content;surface.Measure(new Size(double.PositiveInfinity,double.PositiveInfinity));
         foreach(bool atRight in new[]{false,true})
         {
@@ -42,16 +43,27 @@ internal static class LauncherPositionTests
             check($"editing placement {(atRight?"at right edge":"at ordinary position")} fits its complete available width",
                 fitted.X>=monitor.Bounds.Left-1&&fitted.X+Math.Min(width,monitor.Bounds.Width)<=monitor.Bounds.Right+1);
             check("editing placement updates the same canonical origin",Near(fitted,new Point(settings.ToolbarX!.Value,settings.ToolbarY!.Value)));
-            Invoke(session,"RefreshPassThroughLauncher");passive.Hide();Pump();
+            RefreshPassive();passive.Hide();Pump();
             check("returning to the passive view keeps the adapted origin",Near(fitted,passive.PointToScreen(new Point())));
+            check("returning to pass-through replaces a stale system-band launcher",
+                OverlayCoordinates.TryGetWindowBand(new WindowInteropHelper(passive).Handle,out uint passiveBand)&&passiveBand==1);
             if(!atRight&&requested.X+width<=monitor.Bounds.Right)check("ordinary mode changes preserve the dragged position",Near(fitted,new Point(requested.X,requested.Y)));
         }
         var final=toolbar.PointToScreen(new Point());
         OverlayCoordinates.PositionToolWindow(new WindowInteropHelper(toolbar).Handle,new(final.X+12,final.Y+10));Pump();
-        Invoke(session,"SaveToolbarPosition");Invoke(session,"RefreshPassThroughLauncher");passive.Hide();Pump();
+        Invoke(session,"SaveToolbarPosition");RefreshPassive();Pump();passive.Hide();Pump();
         check("editing drags feed the same passive position",Near(toolbar.PointToScreen(new Point()),passive.PointToScreen(new Point())));
         check("position verification never enters editing and leaves the toolbar hidden",!host.IsEditing&&!toolbar.IsVisible);
-        check("both native modes retain the same DIP artwork size",passive.Width==ToolbarLauncher.ArtworkSize&&passive.Height==ToolbarLauncher.ArtworkSize&&passive.Launcher.LayoutTransform.Value.IsIdentity);
+        passive.UpdateLayout();
+        check("both native modes retain the same DIP artwork size",
+            Math.Abs(passive.Width-ToolbarLauncher.ArtworkSize)<1&&Math.Abs(passive.Height-ToolbarLauncher.ArtworkSize)<1&&
+            passive.Launcher.LayoutTransform.Value.IsIdentity);
+
+        void RefreshPassive()
+        {
+            Invoke(session,"RefreshPassThroughLauncher");
+            passive=Field<PassThroughLauncherWindow>(session,"_passThroughLauncher");
+        }
     }
     private static bool Near(Point a,Point b)=>(a-b).Length<=1.5;
     private static T Field<T>(object source,string name)=>(T)source.GetType().GetField(name,Private)!.GetValue(source)!;

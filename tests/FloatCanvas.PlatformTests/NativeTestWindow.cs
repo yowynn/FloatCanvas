@@ -32,6 +32,9 @@ internal sealed class NativeTestWindow : IDisposable
         Handle = Native.CreateWindowEx(0, _className, "浮绘 · 自建输入验证窗口", 0x10CF0000,
             40, 40, width, height, 0, 0, wc.Instance, 0);
         if (Handle == 0) throw new Win32Exception();
+        // This fixture counts physical commands, not composed text. Keep the
+        // probe independent of the user's currently selected input method.
+        ImmAssociateContext(Handle, 0);
         Native.ShowWindow(Handle, 5);
         Native.UpdateWindow(Handle);
     }
@@ -110,6 +113,8 @@ internal sealed class NativeTestWindow : IDisposable
 
     private static Native.Point PointFromLParam(nint value) =>
         new(unchecked((short)((long)value & 0xffff)), unchecked((short)(((long)value >> 16) & 0xffff)));
+
+    [DllImport("imm32.dll")] private static extern nint ImmAssociateContext(nint window, nint context);
 
     public void Dispose()
     {

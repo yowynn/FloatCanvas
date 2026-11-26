@@ -15,6 +15,10 @@ internal static class PresentationEditingInputRouteTests
         h.Input.Queue([Click()], new(70, 80, h.Now)); h.Drain();
         check("pass-through mouse and cursor still use the passive source", b.Frame.Clicks.Count == 1 && b.Frame.CursorScreen == new PointD(70, 80));
         h.Now += 10; b.ConfigureEditingInput(true);
+        h.Input.Queue([new(PresentationObservedKind.DeviceRemoved, h.Now, Device: 77,
+            DeviceKind: PresentationDeviceKind.Mouse)]); h.Drain();
+        check("editing-mode mouse removal preserves held keyboard and chord state",
+            b.Frame.PressedKeys.Count == 2 && b.Frame.RecentChords is [{ IsHeld: true, Keys.Count: 2 }]);
         h.Send(0x43, 46, 0x80, true); h.Send(0x11, 29, 0x80, true);
         check("entering editing retains the matching releases of an existing chord", b.Frame.PressedKeys.Count == 0 && b.Frame.RecentChords is [{ IsHeld: false }]);
         b.ObserveHookInput(new(token, [Click()], null, false));

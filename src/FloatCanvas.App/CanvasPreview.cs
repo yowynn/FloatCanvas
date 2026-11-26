@@ -105,6 +105,7 @@ internal sealed record CanvasPreviewFrame(CanvasPreviewContext Context, PreviewR
     internal AssetResource[]? PickingResources { get; init; }
     internal int PresentationPrimitiveCount { get; init; }
     internal bool PresentationBudgetExceeded { get; init; }
+    internal bool KeyboardLayoutBudgetExceeded { get; init; }
     internal PresentationFrame? PresentationFrameSnapshot { get; init; }
     internal object? PresentationPlanIdentity { get; init; }
     internal WindowFrameSet? PickingWindowFrames { get; init; }
@@ -229,6 +230,7 @@ internal sealed class CanvasPreviewRenderer : IDisposable
                 PickingSourceDocument = snapshot.SourceDocument, PickingEvaluation = editing ?? snapshot.Evaluation,
                 PickingImages = renderer.CaptureImageSnapshot(), PickingResources = snapshot.Resources,
                 PresentationPrimitiveCount = presentation.PrimitiveCount, PresentationBudgetExceeded = presentation.BudgetExceeded,
+                KeyboardLayoutBudgetExceeded = presentation.KeyboardLayoutBudgetExceeded,
                 PresentationFrameSnapshot = presentation.BudgetExceeded ? null : snapshot.PresentationFrame,
                 PresentationPlanIdentity = snapshot.PresentationPlanIdentity,
                 PickingWindowFrames = windowFrames?.Retain(), WindowOwnerContext = windowFrames?.OwnerContext, WindowInfo = windows

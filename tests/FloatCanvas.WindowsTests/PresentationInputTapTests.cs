@@ -33,6 +33,21 @@ internal static class PresentationInputTapTests
         tap.Keyboard(0x5B, 0x5B, 0x11, false, 24, true);
         tap.Keyboard(0x5B, 0x5B, 0x91, true, 25, true);
         check(!tap.TryDrain(generation, out _), "Injected modifier replay does not create physical presentation edges");
+        tap.Keyboard(0x10, 0x36, 0x10, false, 26, true);
+        tap.Keyboard(0x10, 0x36, 0x90, true, 27, true);
+        check(tap.TryDrain(generation, out var injectedRightShift) &&
+            injectedRightShift!.Changes.Select(key => key.VirtualKey).SequenceEqual(new[] { 0xA1, 0xA1 }) &&
+            injectedRightShift.Changes.All(key => key.ScanCode == 0x36 &&
+                key.KeyFlags == PresentationInputTap.InjectedKeyFlag),
+            "injected right Shift retains its side-specific physical identity");
+        tap.Keyboard(0xAF, 0x30, 0x11, false, 26, true);
+        tap.Keyboard(0xAF, 0x30, 0x91, true, 27, true);
+        check(tap.TryDrain(generation, out var media) &&
+            media!.Changes.Select(key => key.VirtualKey).SequenceEqual(new[] { 0xAF, 0xAF }) &&
+            media.Changes.Select(key => key.Kind).SequenceEqual(new[] { PresentationObservedKind.KeyDown, PresentationObservedKind.KeyUp }) &&
+            media.Changes.All(key => key.ScanCode == 0x30 &&
+                key.KeyFlags == (PresentationInputTap.InjectedKeyFlag | 2)),
+            "injected volume keys retain their physical scan and extended identity for presentation");
         tap.Keyboard(0x5B, 0x5B, 1, false, 24, true); tap.Keyboard(0x5B, 0x5B, 0x81, true, 25, true);
         tap.Keyboard(0x5C, 0x5C, 1, false, 26, true); tap.Keyboard(0x5C, 0x5C, 0x81, true, 27, true);
         tap.TryDrain(generation, out var windowsKeys);

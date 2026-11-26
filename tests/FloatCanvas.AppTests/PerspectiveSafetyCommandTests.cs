@@ -122,6 +122,7 @@ internal static class PerspectiveSafetyCommandTests
 
     private static void KeyboardCommands(Action<string, bool> check)
     {
+        ResetCoordinatorModalState();
         var originalKeys = new byte[256]; bool saved = GetKeyboardState(originalKeys);
         check("safety shortcut fixture can preserve its thread keyboard state", saved);
         if (!saved) return;
@@ -134,8 +135,11 @@ internal static class PerspectiveSafetyCommandTests
                 var desktop = Desktop(state); string before = JsonSerializer.Serialize(state.Document);
                 SetModifiers(shift: shift);
                 bool leaked = false;
-                try { Invoke(desktop, "OnKey", 0x28); } catch (TargetInvocationException) { leaked = true; }
-                check($"{(shift ? "Shift+Down" : "Down")} rejects a complete unsafe candidate without leaking from OnKey", !leaked &&
+                Exception? leakedFailure = null;
+                try { Invoke(desktop, "OnKey", 0x28); }
+                catch (TargetInvocationException error) { leaked = true; leakedFailure = error.InnerException ?? error; }
+                check($"{(shift ? "Shift+Down" : "Down")} rejects a complete unsafe candidate without leaking from OnKey " +
+                    $"(failure={leakedFailure?.GetType().Name}:{leakedFailure?.Message} status={Field<TextBlock>(desktop, "_status").Text})", !leaked &&
                     JsonSerializer.Serialize(state.Document) == before && state.UndoCount == 0 && !state.IsTransactionActive &&
                     Field<TextBlock>(desktop, "_status").Text == L.Get("Perspective.InputOutsidePlane"));
                 Invoke(desktop, "OnKey", 0x26);
@@ -156,6 +160,17 @@ internal static class PerspectiveSafetyCommandTests
             check("Ctrl+D still inserts one safe editable duplicate after rejection", duplicateState.Document.Elements.Count == 2 && duplicateState.UndoCount == 1);
         }
         finally { check("safety shortcut fixture restores its thread keyboard state", SetKeyboardState(originalKeys)); }
+    }
+    private static void ResetCoordinatorModalState()
+    {
+        const BindingFlags staticPrivate = BindingFlags.Static | BindingFlags.NonPublic;
+        var coordinator = typeof(SessionWindowCoordinator).GetField("current", staticPrivate)?.GetValue(null);
+        if (coordinator is null) return;
+        var modalWindows = coordinator.GetType().GetField("modalWindows", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(coordinator) as System.Collections.IList;
+        modalWindows?.Clear();
+        coordinator.GetType().GetField("nativeModalDepth", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .SetValue(coordinator, 0);
     }
 
     private static DesktopSession Desktop(EditorSession state)

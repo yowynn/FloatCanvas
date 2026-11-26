@@ -20,13 +20,89 @@ internal static class PresentationRuntimeTests
         try
         {
             Timeline(check);
+            DeviceButtons(check);
+            DeviceButtonRoutes(dispatcher, check);
             BrokerLifecycle(dispatcher,check);
+            RegistrationRoles(dispatcher,check);
             LateStarts(dispatcher,check);
             NotificationsAndSourceIsolation(dispatcher,check);
             BeforeInputPause(dispatcher,check);
             NoAmbientContext(dispatcher,check);
         }
         finally { SynchronizationContext.SetSynchronizationContext(previous); }
+    }
+
+    private static void DeviceButtons(Action<string, bool> check)
+    {
+        var timeline = new PresentationTimeline();
+        var demand = All with { MouseButtons = true, GamepadButtons = true };
+        var mouse = new PresentationObservedInput(PresentationObservedKind.ButtonDown, 10, Device: 11, Button: 3,
+            DeviceKind: PresentationDeviceKind.Mouse);
+        var gamepad = new PresentationObservedInput(PresentationObservedKind.ButtonDown, 10,
+            Device: 0, Button: (int)PresentationGamepadButton.A - 1, DeviceKind: PresentationDeviceKind.Gamepad);
+        timeline.Apply(Batch(Key(0x41), mouse, mouse with { Device = 12 }, gamepad), demand, Ms(10));
+        var frame = timeline.Capture(1, 1, Ms(10));
+        check("keyboard and controller A stay distinct, and two mice share one held binding",
+            frame.PressedKeys.Select(cap => cap.DeviceType).ToHashSet().SetEquals(Enum.GetValues<PresentationKeyDevice>()) &&
+            frame.PressedKeys.Count == 3 && frame.RecentChords.Single().Keys.Single().DeviceType == PresentationKeyDevice.Keyboard);
+        timeline.Apply(Batch(mouse with { Kind = PresentationObservedKind.ButtonUp },
+            gamepad with { Kind = PresentationObservedKind.ButtonUp }), demand, Ms(20));
+        check("controller release clears its key while another mouse still owns the shared button",
+            timeline.Capture(1, 2, Ms(20)).PressedKeys.Select(cap => cap.DeviceType).ToHashSet()
+                .SetEquals([PresentationKeyDevice.Keyboard, PresentationKeyDevice.Mouse]));
+        timeline.Apply(Batch(mouse with { Kind = PresentationObservedKind.DeviceRemoved, Device = 12 }), demand, Ms(20));
+        check("removing the remaining mouse clears its held key without releasing keyboard A",
+            timeline.Capture(1, 3, Ms(20)).PressedKeys.Single().DeviceType == PresentationKeyDevice.Keyboard);
+        timeline.Apply(Batch(mouse, gamepad), demand, Ms(30));
+        timeline.SetKeyboardSuppressed(true);
+        check("privacy suppression clears all live keycaps", timeline.Capture(1, 4, Ms(30)).PressedKeys.Count == 0);
+    }
+
+    private static void DeviceButtonRoutes(Dispatcher dispatcher, Action<string, bool> check)
+    {
+        var factory = new FakeFactory();
+        ushort gamepad = 0;
+        using var broker = new PresentationRuntimeBroker(dispatcher, () => { }, factory.Start,
+            readGamepad: slot => slot == 0 ? gamepad : (ushort)0);
+        var demand = new PresentationRuntimeDemand(true, false, false, false, true, 900, 450, 800)
+            { MouseButtons = true, GamepadButtons = true, ScopedKeyboard = true };
+        broker.Configure(demand, true, new object(), "paused");
+        broker.Toggle();
+        check("a mouse keycap subscribes to raw buttons with mouse effects disabled",
+            factory.Requests.Single() is { Keyboard: true, Pointer: true } && broker.PointerFrame is null);
+        broker.ConfigureEditingInput(true);
+        long now = Environment.TickCount64;
+        var mouse = new PresentationObservedInput(PresentationObservedKind.ButtonDown, now, Device: 17, Button: 4,
+            HasPosition: true, X: 50, Y: 50, DeviceKind: PresentationDeviceKind.Mouse);
+        factory.Requests[0].Source.Queue([mouse]); Pump(dispatcher);
+        check("a mouse side button reaches both live and appropriate scoped keycaps in editing mode",
+            broker.Frame.PressedKeys is [{ DeviceType: PresentationKeyDevice.Mouse, VirtualKey: 5 }] &&
+            broker.Frame.ForKeyboardScope(PresentationKeyboardScope.OutsideFloatCanvas).PressedKeys.Count == 1 &&
+            broker.Frame.Clicks.Count == 0);
+        gamepad = 1 << ((int)PresentationGamepadButton.A - 1);
+        PumpUntil(dispatcher, () => broker.Frame.PressedKeys.Any(cap => cap.DeviceType == PresentationKeyDevice.Gamepad));
+        gamepad = 0;
+        PumpUntil(dispatcher, () => broker.Frame.PressedKeys.All(cap => cap.DeviceType != PresentationKeyDevice.Gamepad));
+        factory.Requests[0].Source.Queue([mouse with { Kind = PresentationObservedKind.ButtonUp }]); Pump(dispatcher);
+        check("native mouse and polled controller releases clear their live keycaps", broker.Frame.PressedKeys.Count == 0);
+        factory.Requests[0].Source.Queue([mouse with { Kind = PresentationObservedKind.Wheel, Milliseconds = Environment.TickCount64, Button = 5 }]);
+        Pump(dispatcher);
+        check("wheel up lights its own key in ordinary input without showing click effects",
+            broker.Frame.PressedKeys is [{ DeviceType: PresentationKeyDevice.Mouse, VirtualKey: 6 }] &&
+            broker.Frame.ForKeyboardScope(PresentationKeyboardScope.OutsideFloatCanvas).PressedKeys.Count == 1 &&
+            broker.Frame.Clicks.Count == 0);
+        PumpUntil(dispatcher, () => broker.Frame.PressedKeys.Count == 0);
+        factory.Requests[0].Source.Queue([mouse]); Pump(dispatcher);
+        check("a side button can be held again after release", broker.Frame.PressedKeys.Count == 1);
+        factory.Requests[0].Source.Queue(overflow: true); Pump(dispatcher);
+        check("losing a raw mouse transition cannot leave an editing keycap stuck", broker.Frame.PressedKeys.Count == 0);
+
+        factory.Requests[0].Source.Queue([mouse]); Pump(dispatcher);
+        check("a live mouse keycap is held before leaving edit mode", broker.Frame.PressedKeys.Count == 1);
+        factory.Requests[0].Source.Queue([mouse with { Kind = PresentationObservedKind.ButtonUp }]);
+        broker.ConfigureEditingInput(false); Pump(dispatcher);
+        check("an earlier physical mouse release delivered after edit exit clears all of its keycaps", broker.Frame.PressedKeys.Count == 0 &&
+            broker.Frame.ForKeyboardScope(PresentationKeyboardScope.OutsideFloatCanvas).PressedKeys.Count == 0);
     }
 
     private static void Timeline(Action<string,bool> check)
@@ -58,6 +134,25 @@ internal static class PresentationRuntimeTests
         check("default shortcut mode ignores unmodified and Shift-only letter input",timeline.Capture(1,10,Ms(100)).PressedKeys.All(key=>key.IsModifier)&&timeline.Capture(1,11,Ms(100)).RecentChords is [{ IsHeld: true }]);
         timeline.Apply(Batch(Key(0xA2),Key(0x43),Key(13)),shortcuts,Ms(100));
         check("shortcut mode retains Ctrl combinations and named controls",timeline.Capture(1,12,Ms(100)).RecentChords.Count==2);
+        timeline.Clear();
+        int[] namedControls = [0x60, 0x69, 0x6A, 0x6F, 0xA6, 0xAC, 0xAD, 0xAF, 0xB0, 0xB3, 0xB7];
+        timeline.Apply(Batch(namedControls.Select(vk => Key(vk)).ToArray()), shortcuts, Ms(100));
+        check("shortcut mode retains numpad media and browser command keys",
+            namedControls.All(vk => timeline.Capture(1, 121, Ms(100)).PressedKeys.Any(key => key.VirtualKey == vk)));
+        timeline.Clear();
+        timeline.Apply(Batch(Key(0x11, device: 0)), All, Ms(100));
+        timeline.Apply(Batch(new PresentationObservedInput(PresentationObservedKind.DeviceRemoved, 100, Device: 7,
+            DeviceKind: PresentationDeviceKind.Mouse)), All, Ms(100));
+        check("removing a mouse never clears an anonymous held keyboard key",
+            timeline.Capture(1, 13, Ms(100)).PressedKeys.Single().VirtualKey == 0x11);
+        timeline.Apply(Batch(new PresentationObservedInput(PresentationObservedKind.DeviceRemoved, 100, Device: 9,
+            DeviceKind: PresentationDeviceKind.Unknown)), All, Ms(100));
+        check("an unidentified removed device never clears an anonymous held keyboard key",
+            timeline.Capture(1, 14, Ms(100)).PressedKeys.Single().VirtualKey == 0x11);
+        timeline.Apply(Batch(new PresentationObservedInput(PresentationObservedKind.DeviceRemoved, 100, Device: 8,
+            DeviceKind: PresentationDeviceKind.Keyboard)), All, Ms(100));
+        check("removing a keyboard retires anonymous held hook state",
+            timeline.Capture(1, 15, Ms(100)).PressedKeys.Count == 0);
         timeline.Clear();timeline.Apply(new(1,Enumerable.Range(1,PresentationLimits.MaximumHeldKeys).Select(vk=>Key(vk)),null,false),All,Ms(100));
         check("held-key capacity accepts the complete bounded physical state",timeline.Capture(1,13,Ms(100)).PressedKeys.Count==PresentationLimits.MaximumHeldKeys);
         timeline.Apply(Batch(Key(PresentationLimits.MaximumHeldKeys+1)),All,Ms(100));
@@ -116,6 +211,34 @@ internal static class PresentationRuntimeTests
         check("pointer-only demand never accepts key packets from its source",broker.Frame.PressedKeys.Count==0&&broker.Frame.CursorScreen==new PointD(80,90));
         broker.Configure(PresentationRuntimeDemand.Empty,true,context,"paused");
         check("last subscriber removal closes the sole source and clears pause state",!broker.Observing&&broker.PausedTrail is null&&factory.Requests[2].Source.StopCount>0);
+    }
+
+    private static void RegistrationRoles(Dispatcher dispatcher,Action<string,bool> check)
+    {
+        var factory=new FakeFactory();var clock=new FakeClock();var context=new object();
+        var keyboardOnly=new PresentationRuntimeDemand(true,false,false,false,false,900,450,800);
+        var both=keyboardOnly with { Pointer=true, Clicks=true, Trail=true };
+        using var broker=new PresentationRuntimeBroker(dispatcher,()=>{},factory.Start,()=>clock.Time);
+        broker.Configure(keyboardOnly,true,context,"paused");broker.Toggle();
+        check("a pure keyboard demand starts only the keyboard role",
+            factory.Requests.Single() is { Keyboard:true, Pointer:false });
+        var animation=(DispatcherTimer)typeof(PresentationRuntimeBroker)
+            .GetField("animation",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(broker)!;
+        factory.Requests[0].Source.Queue([Key(0x70,time:0)]);Pump(dispatcher);
+        check("a steadily held key does not keep a 30 FPS visual timer awake",!animation.IsEnabled);
+        factory.Requests[0].Source.Queue([Key(0x70,false,10)]);clock.Time=Ms(10);Pump(dispatcher);
+        check("releasing a held key starts its bounded release animation",animation.IsEnabled);
+        clock.Time=Ms(1000);PumpUntil(dispatcher,()=>!animation.IsEnabled);
+        check("the visual timer stops after release animation expiry",!animation.IsEnabled);
+        broker.Configure(both,true,context,"paused");
+        check("enabling pointer demand restarts registration with both roles",
+            factory.Requests.Count==2&&factory.Requests[1] is { Keyboard:true, Pointer:true }&&
+            factory.Requests[0].Source.StopCount>0);
+        broker.Configure(both with { Keyboard=false },true,context,"paused");
+        check("disabling keyboard demand leaves one pointer-only role",
+            factory.Requests.Count==3&&factory.Requests[2] is { Keyboard:false, Pointer:true }&&
+            factory.Requests[1].Source.StopCount>0);
     }
 
     private static void LateStarts(Dispatcher dispatcher,Action<string,bool> check)

@@ -272,7 +272,8 @@ internal static class SystemOverlayProof
         var text=new TextBox { Text="popup gate",Width=200,Height=40 };
         var root=new StackPanel { Background=Brushes.White }; root.Children.Add(text);
         using var host=HiddenHost();
-        using var windows=new OverlayWindowScope(host.SystemWindowOwner);
+        bool active=true;
+        using var windows=new OverlayWindowScope(host.SystemWindowOwner,()=>active,16);
         AppTheme.Apply("light");
         var owner=new Window {Content=root,Left=-20000,Top=-20000,Width=500,Height=180};
         OverlayWindowScope.Prepare(owner);owner.Show();Pump();
@@ -358,21 +359,24 @@ internal static class SystemOverlayProof
             if(InputMethod.GetIsInputMethodEnabled(owner) || !InputMethod.GetIsInputMethodEnabled(text))throw new InvalidOperationException("IME is not limited to actual text editors");
         }
         finally{create.CancelConfirmation();}
+        active=false;OverlayWindowScope.Prepare(owner);Pump();
+        uint inactiveBand=Band(owner);
+        Console.WriteLine($"TOOL_BAND_INACTIVE requested=1 actual={inactiveBand}");
         owner.Close();
     }
-    private static OverlayHost HiddenHost()
+    private static OverlayHost HiddenHost(bool enhanced = true)
     {
         var host=(OverlayHost)Activator.CreateInstance(typeof(OverlayHost),Private,null,
             [OverlayMonitorScope.PrimaryScreen,false],null)!;
-        try{host.EnableSystemInput();return host;}catch{host.Dispose();throw;}
+        try{if (enhanced) host.EnableSystemInput();return host;}catch{host.Dispose();throw;}
     }
-    internal static void ImeFocusGate()
+    internal static void ImeFocusGate(bool desktop = false)
     {
         _=new Application {ShutdownMode=ShutdownMode.OnExplicitShutdown};
-        using var host=HiddenHost();
+        using var host=HiddenHost(enhanced: !desktop);
         var focusErrors=new List<Exception>();
         host.Error+=error=>{focusErrors.Add(error);Console.WriteLine($"IME_NATIVE_ERROR {error}");};
-        using var scope=new OverlayWindowScope(host.SystemWindowOwner);
+        using var scope=desktop ? null : new OverlayWindowScope(host.SystemWindowOwner);
         AppTheme.Apply("light");
         var input=new TextBox {Text="text focus lifecycle"};
         var window=new Window {Content=input,Left=-20000,Top=-20000,Width=400,Height=120};
@@ -453,17 +457,17 @@ internal static class SystemOverlayProof
         window.Close();
         if(numericIme || retained || !routes || focusedIme || !finalViewer || !textEnabled || staleDocument)throw new InvalidOperationException("Tool-options blank press retains a text/IME shortcut target");
     }
-    internal static void WindowContract()
+    internal static void WindowContract(bool desktop = false)
     {
         _=new Application { ShutdownMode=ShutdownMode.OnExplicitShutdown };
-        using var host=HiddenHost();
+        using var host=HiddenHost(enhanced: !desktop);
         using var session=new DesktopSession(Application.Current,host);
         var toolbar=(Window)typeof(DesktopSession).GetField("_toolbar",Private)!.GetValue(session)!;
         nint handle=new WindowInteropHelper(toolbar).EnsureHandle();
         uint toolbarBand=GetWindowBand(handle,out uint band)?band:uint.MaxValue;
         bool hidden=!toolbar.IsVisible && host.Diagnostics.All(pair=>!pair.InputVisible);
-        Console.WriteLine($"WINDOW_CONTRACT band={toolbarBand} editing={host.IsEditing} inputReady={host.HasEditingInput} hidden={hidden} legacyHook={host.IsKeyboardIsolationEnabled}");
-        if(toolbarBand!=16 || host.IsEditing || host.HasEditingInput || !hidden || host.IsKeyboardIsolationEnabled)
+        Console.WriteLine($"WINDOW_CONTRACT band={toolbarBand} editing={host.IsEditing} inputReady={host.HasEditingInput} hidden={hidden} keyboardHook={host.IsKeyboardIsolationEnabled}");
+        if(toolbarBand!=(desktop ? 1u : 16u) || host.IsEditing || host.HasEditingInput || !hidden)
             throw new InvalidOperationException("Production window/input creation contract failed");
         foreach(var input in host.Diagnostics)
         {
@@ -472,6 +476,18 @@ internal static class SystemOverlayProof
             Console.WriteLine($"CANVAS_IME contextDisabled={context==0} expected=true");
             if(context!=0)throw new InvalidOperationException("Drawing canvas still accepts IME composition instead of tool shortcuts");
         }
+        if (InputMethod.GetIsInputMethodEnabled(toolbar))
+            throw new InvalidOperationException("The toolbar root still enables text composition.");
+        var button = new Button();
+        var text = new TextBox();
+        FocusTarget(button);
+        FocusTarget(text);
+        if (InputMethod.GetIsInputMethodEnabled(button) || !InputMethod.GetIsInputMethodEnabled(text))
+            throw new InvalidOperationException("IME must be enabled for real editors and disabled for command controls.");
+        Console.WriteLine("WINDOW_IME toolbar=false command=false text=true");
+
+        void FocusTarget(IInputElement target) => toolbar.RaiseEvent(new KeyboardFocusChangedEventArgs(
+            Keyboard.PrimaryDevice, Environment.TickCount, null, target) { RoutedEvent = Keyboard.PreviewGotKeyboardFocusEvent });
     }
     private static void Pump()
     {

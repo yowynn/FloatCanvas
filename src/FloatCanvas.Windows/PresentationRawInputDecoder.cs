@@ -21,13 +21,14 @@ internal static class PresentationRawInputDecoder
         else if (vk == 0x12) vk = (flags & 2) != 0 ? 0xA5 : 0xA4;
         key = new(Device(bytes, pointerSize), vk, scan, flags & 6, (flags & 1) != 0); return true;
     }
-    internal static bool TryMouse(ReadOnlySpan<byte> bytes, int pointerSize, out long device, out ushort buttons)
+    internal static bool TryMouse(ReadOnlySpan<byte> bytes, int pointerSize, out long device, out ushort buttons, out short wheel)
     {
-        device = 0; buttons = 0;
+        device = 0; buttons = 0; wheel = 0;
         int header = pointerSize == 8 ? 24 : pointerSize == 4 ? 16 : 0;
         if (header == 0 || bytes.Length < header + 24 || BinaryPrimitives.ReadUInt32LittleEndian(bytes) != 0 ||
             BinaryPrimitives.ReadUInt32LittleEndian(bytes[4..]) != bytes.Length) return false;
         device = Device(bytes, pointerSize); buttons = BinaryPrimitives.ReadUInt16LittleEndian(bytes[(header + 4)..]);
+        if ((buttons & 0x0400) != 0) wheel = BinaryPrimitives.ReadInt16LittleEndian(bytes[(header + 6)..]);
         return true;
     }
     private static long Device(ReadOnlySpan<byte> bytes, int pointerSize) => pointerSize == 8

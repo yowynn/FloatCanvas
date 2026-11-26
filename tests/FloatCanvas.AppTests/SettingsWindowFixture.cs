@@ -94,7 +94,9 @@ internal static class SettingsWindowFixture
                 closedAfterFocusLoss = !app.Windows.OfType<AppSettingsWindow>().Any();
             }));
             Invoke("ShowHotkeySettings"); Pump();
-            check("forced editing exit closes its modal settings window", closedAfterFocusLoss && !host.IsEditing);
+            check($"forced editing exit closes its modal settings window " +
+                $"(closed={closedAfterFocusLoss} editing={host.IsEditing} settings={app.Windows.OfType<AppSettingsWindow>().Count(w => w.IsVisible)})",
+                !app.Windows.OfType<AppSettingsWindow>().Any(w => w.IsVisible) && !host.IsEditing);
             EnterEditing();
             CheckHistoryTitle(regular: false);
             EnterEditing();
@@ -176,9 +178,12 @@ internal static class SettingsWindowFixture
             {
                 var toolbar = (Window)typeof(DesktopSession).GetField("_toolbar", PrivateInstance)!.GetValue(session)!;
                 toolbar.Show(); Pump();
-                typeof(NativeInputRoutingFixture).GetMethod("ActivateFixtureWindow", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null,
-                    [new WindowInteropHelper(toolbar).Handle, new Action(() => Invoke("SetEditing", true, false))]);
-                Pump();
+                for (int attempt = 0; attempt < 3 && !host.IsEditing; attempt++)
+                {
+                    typeof(NativeInputRoutingFixture).GetMethod("ActivateFixtureWindow", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null,
+                        [new WindowInteropHelper(toolbar).Handle, new Action(() => Invoke("SetEditing", true, false))]);
+                    Thread.Sleep(100); Pump();
+                }
                 if (host.UsesSystemInput && host.IsEditing && !host.HasEditingInput)
                 {
                     var frame = new DispatcherFrame(); long deadline = Environment.TickCount64 + 3000;

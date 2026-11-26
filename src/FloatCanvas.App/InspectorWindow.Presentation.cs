@@ -61,7 +61,8 @@ internal sealed partial class InspectorWindow
         var graph = new SceneGraph(session.Document);
         presentationSettingsSession = session; presentationSettingsDocument = session.Document; presentationSettingsScopeVersion = session.EditScopeVersion;
         presentationSettings.Refresh(selected.Select(element => element.Presentation ?? new PresentationSettings()),
-            (session, session.EditScopeVersion, string.Join(",", session.Selection.Order())), canMutate() && selected.All(element => !graph.IsLocked(element.Id)));
+            (session, session.EditScopeVersion, string.Join(",", session.Selection.Order())),
+            canMutate() && selected.All(element => !graph.IsLocked(element.Id)), selected[0].Style);
     }
     private void RefreshPresentationRuntime()
     {

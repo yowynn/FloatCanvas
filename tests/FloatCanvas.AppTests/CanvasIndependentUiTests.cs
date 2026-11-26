@@ -110,7 +110,7 @@ internal static class CanvasIndependentUiTests
             var numeric = Descendants(calibrationBody).OfType<NumericValueField>().ToArray();
             check(prefix + "grid calibration shares window insets numeric row sizes and column-row icons", calibrationBody.Margin.Left == WindowLayout.ContentInset + PropertyChangeRegion.HighlightInset &&
                 numeric.All(field => field.Height == PropertyPanelLayout.ControlHeight) && numeric.Take(2).Select(field => ((NumericPropertyIcon)field.DragAnchor.Child).Kind).SequenceEqual(new[] { NumericPropertyKind.Columns, NumericPropertyKind.Rows }));
-            check(prefix + "grid calibration exposes consistent default and cancel actions", Descendants(calibrationBody).OfType<Button>().Count(button => button.IsDefault) == 1 &&
+            check(prefix + "grid calibration exposes explicit application and a cancel action", !Descendants(calibrationBody).OfType<Button>().Any(button => button.IsDefault) &&
                 Descendants(calibrationBody).OfType<Button>().Count(button => button.IsCancel) == 1 && Descendants(calibrationBody).OfType<Button>().All(button =>
                     button.MinHeight == PropertyPanelLayout.ControlHeight || button.Height == PropertyPanelLayout.ControlHeight ||
                     numeric.Any(field => field.IsAncestorOf(button)) && button.ActualHeight <= PropertyPanelLayout.ControlHeight / 2));

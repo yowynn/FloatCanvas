@@ -94,7 +94,7 @@ internal static class CanvasOptionsRefinementTests
             var boundary = Descendants(dialog).OfType<CheckBox>().Single();
             var region = Descendants(dialog).OfType<PropertyChangeRegion>().Single();
             var candidate = (StackPanel)((StackPanel)region.Child).Children[0];
-            var apply = Descendants(dialog).OfType<Button>().Single(button => button.IsDefault);
+            var apply = Descendants(dialog).OfType<Button>().Single(button => Equals(button.Content, L.Get("Canvas.ApplyPlane")));
             var help = (Button)dialog.Template.FindName("Help", dialog);
             check(prefix + " calibration opens with a valid preview and common help", preview is not null && apply.IsEnabled && help.Visibility == Visibility.Visible);
             check(prefix + " calibration removes persistent explanatory paragraphs", !Descendants(dialog).OfType<TextBlock>().Any(text => text.Text == L.Get("Canvas.GridCalibrationSpans") || text.Text == L.Get("Canvas.GridCandidateHelp") || text.Text == L.Get("Canvas.GridCalibrationEffect")));

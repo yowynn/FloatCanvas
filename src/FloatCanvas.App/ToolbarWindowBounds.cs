@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
+using System.Windows.Media;
 using FloatCanvas.Windows;
 
 namespace FloatCanvas.App;
@@ -76,6 +77,20 @@ internal static class ToolbarWindowBounds
 
         private PixelBounds Constrain(PixelBounds requested)
         {
+            // A hidden WPF window can still carry a provisional native size before its
+            // SizeToContent layout has been applied. Every tool-window position request
+            // preserves size, so constrain against the measured content instead of that
+            // stale frame size while the first show is still pending.
+            if (!window.IsVisible && window.Content is FrameworkElement content &&
+                content.DesiredSize.Width > 0 && content.DesiredSize.Height > 0)
+            {
+                var dpi = VisualTreeHelper.GetDpi(window);
+                requested = requested with
+                {
+                    Width = Math.Max(1, (int)Math.Ceiling(content.DesiredSize.Width * dpi.DpiScaleX)),
+                    Height = Math.Max(1, (int)Math.Ceiling(content.DesiredSize.Height * dpi.DpiScaleY))
+                };
+            }
             var screens = monitors().Select(monitor => monitor.Bounds).ToArray();
             if (ToolbarScreenBounds.TryConstrain(requested, screens, out var constrained)) return constrained;
             // A toolbar larger than every usable region cannot fit. Retain its

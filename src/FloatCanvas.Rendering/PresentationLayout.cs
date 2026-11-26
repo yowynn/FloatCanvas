@@ -5,6 +5,21 @@ namespace FloatCanvas.Rendering;
 /// <summary>Natural keyboard presentation dimensions before optional horizontal stretching.</summary>
 public static class PresentationLayout
 {
+    internal const double KeyboardGap = .09;
+    internal const double KeyboardLabelRatio = .36;
+    internal const double KeySecondaryRatio = .78;
+    internal static double KeyFontSize(PresentationKeyboardKey key, double unitFont) =>
+        (key.ActiveStyle?.ScaleFont(unitFont) ?? unitFont) * Math.Min(key.Width, key.Height);
+    internal static int KeyPrimitiveCost(PresentationKeyboardKey key, TextMetrics primary, TextMetrics? secondary) =>
+        Math.Max(key.Label.Length, primary.GlyphCount) + 3 +
+        (secondary is { } sub ? Math.Max(key.SecondaryLabel?.Length ?? 0, sub.GlyphCount) + 2 : 0);
+
+    internal static (double Radius, double Inset, double Stroke, double Indicator) KeyEdges(RectD bounds, double unit)
+    {
+        // Keep the edge geometry constant within a layout, with a smaller profile for miniature keys.
+        double edgeUnit = Math.Min(unit, Math.Min(bounds.Width, bounds.Height) / (1 - KeyboardGap));
+        return (edgeUnit * .1183, edgeUnit * .0637, edgeUnit * .02275, edgeUnit * .06825);
+    }
     public const double LogWidthPerFontSize = 24;
     private static readonly Dictionary<int, double> KeyWidths = PresentationKeyboardLayout.CreateDefault().Keys
         .GroupBy(key => key.VirtualKey).ToDictionary(group => group.Key, group => Math.Max(1, group.First().Width));
@@ -25,8 +40,9 @@ public static class PresentationLayout
             var keys = (settings.KeyboardLayout ?? PresentationKeyboardLayout.CreateDefault()).Keys.Where(key => key.Enabled).ToArray();
             if (keys.Length == 0) return new(Math.Max(1, font * 3), Math.Max(1, font));
             double unit = font / .36;
-            return new((keys.Max(key => key.X + key.Width) - keys.Min(key => key.X)) * unit + 2 * pad,
-                (keys.Max(key => key.Y + key.Height) - keys.Min(key => key.Y)) * unit + 2 * pad);
+            double width = (keys.Max(key => key.X + key.Width) - keys.Min(key => key.X)) * unit + 2 * pad;
+            double keyboardHeight = (keys.Max(key => key.Y + key.Height) - keys.Min(key => key.Y)) * unit + 2 * pad;
+            return new(width, keyboardHeight);
         }
         var referenceStyle = style.Clone(); referenceStyle.FontSize = 22;
         double line = renderer.MeasureText("Ag", referenceStyle, 1_000_000).Height * font / 22 + 2 * pad;
@@ -35,4 +51,5 @@ public static class PresentationLayout
         double height = 2 * pad + settings.RecentChordLimit * line + (settings.RecentChordLimit - 1) * gap;
         return new(font * LogWidthPerFontSize, height);
     }
+
 }

@@ -135,7 +135,7 @@ internal static class CustomSymbolTests
                             else
                             {
                                 var button=action=="close" ? (Button)preview.Template.FindName("Close",preview) :
-                                    SettingsWindowFixture.Descendants(preview).OfType<Button>().Single(b=>action=="confirm" ? b.IsDefault : b.IsCancel);
+                                    SettingsWindowFixture.Descendants(preview).OfType<Button>().Single(b=>action=="confirm" ? Equals(b.Content, FloatCanvas.Localization.AppText.Get("Dialog.OK")) : b.IsCancel);
                                 typeof(Button).GetMethod("OnClick",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(button,null);
                             }
                         }

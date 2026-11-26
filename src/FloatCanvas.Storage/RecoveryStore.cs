@@ -1,5 +1,6 @@
 using L = FloatCanvas.Localization.AppText;
 using FloatCanvas.Core;
+using System.Collections.Concurrent;
 using System.Text.Json.Serialization;
 
 namespace FloatCanvas.Storage;
@@ -18,12 +19,16 @@ public sealed record RecoveredWorkspace(WorkspaceState State, AssetLibrary Asset
 
 public sealed class RecoveryStore
 {
-    private readonly SemaphoreSlim gate = new(1, 1);
+    private const string LeaseFileName = ".recovery.lock";
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> DirectoryGates =
+        new(StringComparer.OrdinalIgnoreCase);
+    private readonly SemaphoreSlim gate;
     private readonly string applicationVersion;
     public RecoveryStore(string? directory = null, string? applicationVersion = null)
     {
         this.applicationVersion = PackageProvenance.ApplicationVersion(applicationVersion);
         DirectoryPath = Path.GetFullPath(directory ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "FloatCanvas", "recovery"));
+        gate = DirectoryGates.GetOrAdd(Path.TrimEndingDirectorySeparator(DirectoryPath), _ => new(1, 1));
     }
     public string DirectoryPath { get; }
     public string CurrentPath => Path.Combine(DirectoryPath, "workspace.floatcanvas");
@@ -55,6 +60,8 @@ public sealed class RecoveryStore
         if (state.CaptureDocument is { } capture) PrefabClosure.RequireSourceGraphs(capture);
         var drafts = PrefabDraftState.Enumerate(state.PendingPrefabEdit);
         foreach (var draft in drafts) PrefabClosure.RequireSourceGraphs(draft.DraftDocument);
+        // Validate the candidate before rotating today's current file into backup.
+        SceneValidation.Validate(state);
         ct.ThrowIfCancellationRequested();
         var references = state.LiveDocument.ReferencedAssets.Concat(state.CaptureDocument?.ReferencedAssets ?? [])
             .Concat(drafts.SelectMany(draft => draft.DraftDocument.ReferencedAssets));
@@ -81,6 +88,14 @@ public sealed class RecoveryStore
     /// <summary>Reads a bounded thumbnail only when the requested generation is recoverable; it never substitutes a different generation's preview.</summary>
     public Task<byte[]?> LoadPreviewAsync(bool fromBackup = false, CancellationToken ct = default) =>
         InOrderAsync(() => PackageCodec.LoadRecoveryPreviewAsync(fromBackup ? BackupPath : CurrentPath, ct), ct);
+    public Task<RecoveredWorkspace?> LoadGenerationAsync(bool fromBackup, CancellationToken ct = default) =>
+        InOrderAsync<RecoveredWorkspace?>(async () =>
+        {
+            string path = fromBackup ? BackupPath : CurrentPath;
+            if (!File.Exists(path)) return null;
+            var result = await PackageCodec.LoadAsync<WorkspaceState>(path, "recovery", ct).ConfigureAwait(false);
+            return new RecoveredWorkspace(result.Value, result.Assets, fromBackup);
+        }, ct);
     public Task<RecoveredWorkspace?> LoadAsync(CancellationToken ct = default) => InOrderAsync<RecoveredWorkspace?>(async () =>
     {
             if (!File.Exists(CurrentPath) && !File.Exists(BackupPath)) return null;
@@ -112,8 +127,17 @@ public sealed class RecoveryStore
     {
         // Acquire before dispatching CPU work so a late thread-pool start cannot overwrite a newer snapshot.
         await gate.WaitAsync(ct).ConfigureAwait(false);
-        try { return await Task.Run(operation, ct).ConfigureAwait(false); }
-        finally { gate.Release(); }
+        FileStream? lease = null;
+        try
+        {
+            lease = await FileLease.AcquireAsync(Path.Combine(DirectoryPath, LeaseFileName), ct).ConfigureAwait(false);
+            return await Task.Run(operation, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            lease?.Dispose();
+            gate.Release();
+        }
     }
     private static async Task CopyAtomicallyAsync(string source, string destination, CancellationToken ct)
     {

@@ -58,7 +58,7 @@ internal sealed class ColorField : UserControl
     internal event Action? GestureStarted;
     internal event Action<bool>? GestureCompleted;
 
-    public ColorField(ColorRole role, ColorLibrary? library = null)
+    public ColorField(ColorRole role, ColorLibrary? library = null, bool showEyedropper = true)
     {
         if (!Enum.IsDefined(role)) throw new ArgumentOutOfRangeException(nameof(role));
         Role = role; this.library = library ?? ColorLibrary.Shared;
@@ -96,7 +96,7 @@ internal sealed class ColorField : UserControl
         palette.Children.Add(switchPalette);
         RefreshQuickColors();
         Content = row;
-        picker = new ColorPickerPanel(role, this.library);
+        picker = new ColorPickerPanel(role, this.library, showEyedropper);
         clipboard = new ColorClipboardMenu(button, () => Value, SetUserValue, message =>
         {
             button.ToolTip = message; AutomationProperties.SetHelpText(this, message);

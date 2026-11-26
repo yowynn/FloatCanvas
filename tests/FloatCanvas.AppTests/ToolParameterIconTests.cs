@@ -60,8 +60,11 @@ internal static class ToolParameterIconTests
         check("keyboard icon distinguishes one through four rows and uses a stable ellipsis above four", new[] { one,two,three,four,more }.Distinct().Count() == 5 && Icon() == more);
         keys.Presentation.RecentChordLimit = 2; keys.Presentation.KeyPanelAlignment = PresentationPanelAlignment.TopLeft; var top = Icon(); keys.Presentation.KeyPanelAlignment = PresentationPanelAlignment.BottomLeft; var bottom = Icon(); keys.Presentation.KeyPanelAlignment = PresentationPanelAlignment.BottomRight;
         check("keyboard icon changes with vertical and horizontal alignment", top != bottom && bottom != Icon());
-        keys.Presentation.DisplayStyle = PresentationDisplayStyle.Keycaps; var caps = Icon(); keys.Presentation.DisplayStyle = PresentationDisplayStyle.Log; var log = Icon(); keys.Presentation.DisplayStyle = PresentationDisplayStyle.Keyboard; var live = Icon();
-        check("keyboard icon distinguishes all three presentation styles", new[] { caps,log,live }.Distinct().Count() == 3);
+        keys.Presentation.DisplayStyle = PresentationDisplayStyle.Keycaps; var caps = Icon();
+        keys.Presentation.DisplayStyle = PresentationDisplayStyle.Log; var log = Icon();
+        keys.Presentation.DisplayStyle = PresentationDisplayStyle.Keyboard; var live = Icon();
+        check("keyboard icon distinguishes all three presentation styles",
+            new[] { caps, log, live }.Distinct().Count() == 3);
         keys.Style.Background = 0; var transparent = Icon(); keys.Style.Foreground = 0; var empty = Icon();
         check("keyboard icon respects foreground and background alpha", transparent != live && transparent != empty);
 

@@ -12,6 +12,7 @@ using System.Windows.Markup;
 using System.Windows.Media;
 using System.Windows.Threading;
 using FloatCanvas.Windows;
+using L = FloatCanvas.Localization.AppText;
 
 namespace FloatCanvas.App;
 
@@ -58,7 +59,15 @@ public sealed class OverlayPopup : FrameworkElement
                 window=new OverlayPopupWindow(child,target,Placement,HorizontalOffset,VerticalOffset,()=>SetCurrentValue(IsOpenProperty,false),CustomPopupPlacementCallback,()=>!PopupChildDialog.StaysOpenForOutsidePress(this,StaysOpen),IsHitTestVisible,TargetPressToggles);
                 window.Show(); Opened?.Invoke(this,EventArgs.Empty);
             }
-            catch { window?.Dispose(); window=null; hintLease?.Dispose(); hintLease=null; throw; }
+            catch
+            {
+                var failed = window;
+                window = null;
+                failed?.Dispose();
+                hintLease?.Dispose(); hintLease = null;
+                SetCurrentValue(IsOpenProperty, false);
+                throw;
+            }
         }
         else if(!IsOpen && window is { } old)
         { window=null; old.Dispose(); hintLease?.Dispose(); hintLease=null; Closed?.Invoke(this,EventArgs.Empty); }
@@ -74,18 +83,22 @@ internal sealed class OverlayWindowScope : IDisposable
         window.SetValue(RegularWindowProperty, true);
         if(window.Owner is { } owner && !IsRegularWindow(owner) && SessionWindowCoordinator.Find(owner) is not null) window.Owner=null;
         window.Topmost=false; window.ShowActivated=true; WindowTitles.Apply(window); AppTheme.UseRegularControls(window);
+        nint handle=new WindowInteropHelper(window).Handle;
+        if(handle!=0)OverlayCoordinates.TrySetWindowBand(handle,1);
     }
     internal static bool IsRegularWindow(Window window) => (bool)window.GetValue(RegularWindowProperty);
+    internal static Action<nint>? NativeToolPolicyForTesting { get; set; }
     private static readonly DependencyProperty PreparedProperty=DependencyProperty.RegisterAttached("Prepared",typeof(bool),typeof(OverlayWindowScope),new PropertyMetadata(false));
     [ThreadStatic] internal static OverlayWindowScope? Current;
     internal nint Owner { get; }
+    private readonly uint? toolBand;
     private readonly Func<bool> inputActive;
     internal bool IsInputActive=>inputActive();
     private readonly List<OverlayPopupWindow> windows=[];
-    internal OverlayWindowScope(nint owner,Func<bool>? inputActive=null,bool installAsCurrent=true)
+    internal OverlayWindowScope(nint owner,Func<bool>? inputActive=null,uint? toolBand=null,bool installAsCurrent=true)
     {
         if(installAsCurrent && Current is not null) throw new InvalidOperationException("An overlay session already owns this thread.");
-        Owner=owner;this.inputActive=inputActive??(()=>true);
+        Owner=owner;this.toolBand=toolBand;this.inputActive=inputActive??(()=>true);
         if(installAsCurrent){Current=this;OverlayTransientControls.Initialize();}
     }
     internal static void Prepare(Window window)
@@ -94,17 +107,20 @@ internal sealed class OverlayWindowScope : IDisposable
         AppInputPolicy.AttachKeyboardSource(window);
         if (window.Owner is { } owner && IsRegularWindow(owner)) UseRegularWindow(window);
         if (IsRegularWindow(window)) { UseRegularWindow(window); return; }
-        if(Current is not { } scope) return;
-        window.ShowActivated=!scope.IsInputActive;
+        var scope = Current;
         var interop=new WindowInteropHelper(window);
-        if(interop.Handle!=0)SetNativePolicy(interop.Handle,scope.IsInputActive);
+        if (scope is not null)
+        {
+            window.ShowActivated = !scope.IsInputActive;
+            if (interop.Handle != 0) scope.ApplyNativeToolPolicy(interop.Handle);
+        }
         if((bool)window.GetValue(PreparedProperty)) return;
         window.SetValue(PreparedProperty,true);
         InputMethod.SetIsInputMethodEnabled(window,false);
         window.AddHandler(Keyboard.PreviewGotKeyboardFocusEvent,new KeyboardFocusChangedEventHandler(ConfigureInputMethod),true);
         window.PreviewMouseDown+=(_,e)=>
         {
-            if(!scope.IsInputActive || e.OriginalSource is not DependencyObject source || EditorShortcutPolicy.OwnsLocalEditingKeys(source))return;
+            if(scope?.IsInputActive == false || e.OriginalSource is not DependencyObject source || EditorShortcutPolicy.OwnsLocalEditingKeys(source))return;
             for(DependencyObject? current=source;current is not null && !ReferenceEquals(current,window);
                 current=current is Visual?VisualTreeHelper.GetParent(current)??LogicalTreeHelper.GetParent(current):LogicalTreeHelper.GetParent(current))
                 if(current is ButtonBase or MenuBase or MenuItem || current is Control {Focusable:true} and not ScrollViewer)return;
@@ -112,7 +128,7 @@ internal sealed class OverlayWindowScope : IDisposable
             // keyboard focus alone would leave TSF's previous text document active.
             FocusSurface(window);
         };
-        if(interop.Handle!=0) return;
+        if (scope is null || interop.Handle != 0) return;
         // Use the same per-pixel WPF presentation as the toolbar and menus. An
         // opaque redirected top-level surface can displace a DXGI exclusive owner.
         window.WindowStyle=WindowStyle.None;
@@ -122,7 +138,7 @@ internal sealed class OverlayWindowScope : IDisposable
         {
             // WM_MOUSEACTIVATE only covers clicks. The native style also prevents
             // implicit activation while WPF shows or focuses an auxiliary window.
-            SetNativePolicy(interop.Handle,scope.IsInputActive);
+            scope.ApplyNativeToolPolicy(interop.Handle);
             HwndSource.FromHwnd(interop.Handle)?.AddHook(
             (nint hwnd,int message,nint wparam,nint lparam,ref bool handled)=>
             {
@@ -153,6 +169,18 @@ internal sealed class OverlayWindowScope : IDisposable
     }
     internal void Add(OverlayPopupWindow window)=>windows.Add(window);
     internal void Remove(OverlayPopupWindow window)=>windows.Remove(window);
+    internal void ApplyNativeToolPolicy(nint window)
+    {
+        if (NativeToolPolicyForTesting is { } test) { test(window); return; }
+        SetNativePolicy(window,IsInputActive);
+        if(toolBand is not { } band)return;
+        if(IsInputActive)
+        {
+            if(!OverlayCoordinates.EnsureWindowBand(window,band))
+                throw new System.ComponentModel.Win32Exception(5,L.Get("Overlay.EnhancedToolBandFailed"));
+        }
+        else OverlayCoordinates.TrySetWindowBand(window,1);
+    }
     internal bool IsTopmost(OverlayPopupWindow window)=>windows.LastOrDefault(candidate=>candidate.IsInteractive)==window;
     internal void ClosePopups(){foreach(var window in windows.ToArray()) window.Close();}
     public void Dispose()
@@ -171,6 +199,7 @@ internal sealed class OverlayWindowScope : IDisposable
 internal sealed class OverlayPopupWindow : IDisposable
 {
     [ThreadStatic] private static List<OverlayPopupWindow>? openWindows;
+    internal static int OpenWindowCount => openWindows?.Count ?? 0;
     internal static Size MeasurementLimit => new(SystemParameters.PrimaryScreenWidth*.75,SystemParameters.PrimaryScreenHeight*.75);
     /// <summary>Physical cursor and held-button state; replaceable for input-free tests.</summary>
     internal static Func<Point> Cursor { get; set; } = SystemCursor;
@@ -259,19 +288,34 @@ internal sealed class OverlayPopupWindow : IDisposable
             UsesPerPixelOpacity=true,PositionX=(int)Math.Round(position.X),PositionY=(int)Math.Round(position.Y),
             Width=width,Height=height
         });
-        source.CompositionTarget.BackgroundColor=Colors.Transparent;
-        source.RootVisual=child;
-        child.AddHandler(Keyboard.PreviewGotKeyboardFocusEvent,new KeyboardFocusChangedEventHandler(OverlayWindowScope.ConfigureInputMethod),true);
-        // Content is measured before its items have templates, so the measurement may be
-        // smaller than the realized menu; the window must keep growing to fit its content.
-        source.SizeToContent=SizeToContent.WidthAndHeight;
-        source.AddHook(NoActivate);
-        AppInputPolicy.AttachKeyboardSource(source);
-        if(!hitTestVisible)source.AddHook((nint hwnd,int message,nint wparam,nint lparam,ref bool handled)=>
-            {if(message==0x84){handled=true;return -1;}return 0;});
-        scope.Add(this);
-        (openWindows??=[]).Add(this);
-        InputManager.Current.PreProcessInput+=BeforeInput;
+        try
+        {
+            scope.ApplyNativeToolPolicy(source.Handle);
+            source.CompositionTarget.BackgroundColor=Colors.Transparent;
+            source.RootVisual=child;
+            child.AddHandler(Keyboard.PreviewGotKeyboardFocusEvent,new KeyboardFocusChangedEventHandler(OverlayWindowScope.ConfigureInputMethod),true);
+            // Content is measured before its items have templates, so the measurement may be
+            // smaller than the realized menu; the window must keep growing to fit its content.
+            source.SizeToContent=SizeToContent.WidthAndHeight;
+            source.AddHook(NoActivate);
+            AppInputPolicy.AttachKeyboardSource(source);
+            if(!hitTestVisible)source.AddHook((nint hwnd,int message,nint wparam,nint lparam,ref bool handled)=>
+                {if(message==0x84){handled=true;return -1;}return 0;});
+            scope.Add(this);
+            (openWindows??=[]).Add(this);
+            InputManager.Current.PreProcessInput+=BeforeInput;
+        }
+        catch
+        {
+            disposed=true;
+            openWindows?.Remove(this);
+            InputManager.Current.PreProcessInput-=BeforeInput;
+            scope.Remove(this);
+            child.RemoveHandler(Keyboard.PreviewGotKeyboardFocusEvent,new KeyboardFocusChangedEventHandler(OverlayWindowScope.ConfigureInputMethod));
+            try { source.RootVisual=null; if(!source.IsDisposed) source.Dispose(); }
+            catch { }
+            throw;
+        }
     }
     internal void Show(){ShowWindow(source.Handle,4);RaiseOpenPopups();}
     internal static void RaiseOpenPopups()
@@ -402,7 +446,14 @@ internal sealed class OverlayContextMenu : ContextMenu
     [ThreadStatic] private static HashSet<OverlayContextMenu>? openMenus;
     internal static bool OwnsKeyboardFocus=>openMenus?.Any(menu=>menu.IsKeyboardFocusWithin)==true;
     internal static bool HasOpenMenu => openMenus?.Any(menu => menu.IsOpen) == true;
-    internal static void CloseAll(){foreach(var menu in openMenus?.ToArray()??[])menu.window?.Close(returnFocus:false);}
+    internal static void CloseAll()
+    {
+        foreach (var menu in openMenus?.ToArray() ?? [])
+        {
+            menu.window?.Close(returnFocus: false);
+            if (menu.IsOpen) menu.IsOpen = false;
+        }
+    }
     internal bool TargetPressToggles { get; set; }
     private OverlayPopupWindow? window;
     private OverlayWindowScope? ordinaryScope;

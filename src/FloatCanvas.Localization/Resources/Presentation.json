@@ -308,8 +308,12 @@
     "en": "Y"
   },
   "Presentation.Layout.Invalid": {
-    "zh": "请填写有效标签或键位范围。位置与大小必须位于 64×64 个键宽内。",
-    "en": "Enter a valid label and bounds. Position and size must fit within 64 units on each axis."
+    "zh": "请检查标签或键位范围。键位坐标须在 −64 到 64 之间，单键宽高须在 0.25 到 16 之间。",
+    "en": "Check the labels and bounds. Coordinates must fit between −64 and 64, and each key must be between 0.25 and 16 units wide and tall."
+  },
+  "Presentation.Layout.NoEnabledKeys": {
+    "zh": "至少需要启用一个键位。键盘图层不能保存为空布局。",
+    "en": "Enable at least one key. A keyboard layer cannot save an empty layout."
   },
   "Presentation.Layout.KeyLabel": {
     "zh": "标签",
@@ -336,8 +340,8 @@
     "en": "Mouse demonstration"
   },
   "Presentation.Layout.Hint": {
-    "zh": "Ctrl/Shift 点击增减选择，拖动可一起移动。在键位区按 Ctrl+A 全选、空格启用或禁用所选键；双击切换单个键。混合状态按空格统一启用。标签与尺寸需单选编辑，只有“应用”会保存草稿。",
-    "en": "Ctrl/Shift-click to add or remove keys; drag to move the selection together. In the key area, Ctrl+A selects all and Space enables or disables the selection (mixed becomes enabled). Double-click toggles one key. Select a single key to edit its label or size. Only Apply saves the draft."
+    "zh": "拖动键位移动。Ctrl/Shift 点击增减选择，Ctrl+A 全选，双击切换单个键。多选时可编辑共同属性。",
+    "en": "Drag keys to move them. Ctrl/Shift-click to adjust the selection, Ctrl+A selects all, and double-click toggles one key. Select multiple keys to edit shared properties."
   },
   "Presentation.DisplayStyle.Log": {
     "zh": "简洁记录",
@@ -423,6 +427,174 @@
   "Presentation.Layout.Unit": {
     "zh": "键宽",
     "en": "key"
+  },
+  "Presentation.Layout.SnapGrid": {
+    "zh": "吸附 ¼ 键网格",
+    "en": "Snap to ¼-key grid"
+  },
+  "Presentation.Layout.SnapGap": {
+    "zh": "吸附相邻键距",
+    "en": "Snap to neighboring keys"
+  },
+  "Presentation.Layout.Preview": {
+    "zh": "键盘预览",
+    "en": "Keyboard preview"
+  },
+  "Presentation.Layout.ZoomOut": {
+    "zh": "缩小预览",
+    "en": "Zoom out"
+  },
+  "Presentation.Layout.ZoomIn": {
+    "zh": "放大预览",
+    "en": "Zoom in"
+  },
+  "Presentation.Layout.Fit": {
+    "zh": "适合窗口",
+    "en": "Fit keyboard"
+  },
+  "Presentation.Layout.TextSection": {
+    "zh": "显示文字",
+    "en": "Labels"
+  },
+  "Presentation.Layout.MatchingSection": {
+    "zh": "按键匹配",
+    "en": "Key matching"
+  },
+  "Presentation.Layout.MatchRelatedKeys": {
+    "zh": "匹配同类键位",
+    "en": "Match related keys"
+  },
+  "Presentation.Layout.MatchRelatedKeysHint": {
+    "zh": "主键区与小键盘的同类数字、Enter，以及减号、加号、句号和除号可互相匹配。",
+    "en": "Match equivalent main-row and numpad numbers, Enter, and punctuation keys"
+  },
+  "Presentation.Layout.LockIndicatorSection": {
+    "zh": "锁定状态",
+    "en": "Lock indicator"
+  },
+  "Presentation.Layout.ShowLockIndicator": {
+    "zh": "显示锁定圆点",
+    "en": "Show lock indicator"
+  },
+  "Presentation.Layout.ShowLockIndicatorHint": {
+    "zh": "此锁定键生效时，在键帽角落显示圆点。",
+    "en": "Show a dot in the key corner while this lock is active"
+  },
+  "Presentation.Layout.GeometrySection": {
+    "zh": "位置与尺寸",
+    "en": "Position and size"
+  },
+  "Presentation.Layout.KeyAppearance": {
+    "zh": "样式覆盖",
+    "en": "Style overrides"
+  },
+  "Presentation.Layout.OverrideField": {
+    "zh": "覆盖{0}",
+    "en": "Override {0}"
+  },
+  "Presentation.Layout.RelativeSize": {
+    "zh": "字号比例",
+    "en": "Font scale"
+  },
+  "Presentation.Layout.BudgetExceeded": {
+    "zh": "启用的键位及标签超出绘制上限。请缩短标签或减少启用的键位。",
+    "en": "Enabled keys and labels exceed the rendering limit. Shorten labels or enable fewer keys."
+  },
+  "Presentation.Layout.BudgetSkipped": {
+    "zh": "部分实时键盘超出绘制上限，已暂时跳过。请缩短标签或减少启用的键位。",
+    "en": "Some live keyboards exceeded the rendering limit and were skipped. Shorten labels or enable fewer keys."
+  },
+  "Presentation.Layout.Unsaved": {
+    "zh": "有未应用的修改",
+    "en": "Unsaved changes"
+  },
+  "Presentation.Layout.SecondaryLabel": {
+    "zh": "副标签",
+    "en": "Secondary label"
+  },
+  "Presentation.Layout.CaptureKey": {
+    "zh": "捕获按键",
+    "en": "Capture key"
+  },
+  "Presentation.Layout.AddPlaceholder": {
+    "zh": "添加占位键",
+    "en": "Add placeholder"
+  },
+  "Presentation.Layout.CopyKeys": {
+    "zh": "复制",
+    "en": "Copy"
+  },
+  "Presentation.Layout.PasteKeys": {
+    "zh": "粘贴",
+    "en": "Paste"
+  },
+  "Presentation.Layout.DeleteKeys": {
+    "zh": "删除",
+    "en": "Delete"
+  },
+  "Presentation.Layout.KeySelected": {
+    "zh": "已选中",
+    "en": "Selected"
+  },
+  "Presentation.Layout.KeyEnabled": {
+    "zh": "已启用",
+    "en": "Enabled"
+  },
+  "Presentation.Layout.KeyDisabled": {
+    "zh": "已禁用",
+    "en": "Disabled"
+  },
+  "Presentation.Layout.AlignLeft": {
+    "zh": "左对齐",
+    "en": "Align left"
+  },
+  "Presentation.Layout.AlignCenter": {
+    "zh": "水平居中",
+    "en": "Align center"
+  },
+  "Presentation.Layout.AlignRight": {
+    "zh": "右对齐",
+    "en": "Align right"
+  },
+  "Presentation.Layout.AlignTop": {
+    "zh": "顶对齐",
+    "en": "Align top"
+  },
+  "Presentation.Layout.AlignMiddle": {
+    "zh": "垂直居中",
+    "en": "Align middle"
+  },
+  "Presentation.Layout.AlignBottom": {
+    "zh": "底对齐",
+    "en": "Align bottom"
+  },
+  "Presentation.Layout.SpaceHorizontal": {
+    "zh": "水平等距",
+    "en": "Space horizontally"
+  },
+  "Presentation.Layout.SpaceVertical": {
+    "zh": "垂直等距",
+    "en": "Space vertically"
+  },
+  "Presentation.Layout.ResetKey": {
+    "zh": "恢复所选键",
+    "en": "Reset selected keys"
+  },
+  "Presentation.Layout.CaptureHint": {
+    "zh": "按下键盘键、鼠标键或手柄键。已有键会直接选中。再次点击「捕获按键」可取消。",
+    "en": "Press a keyboard, mouse, or controller button. An existing button will be selected. Click Capture key again to cancel."
+  },
+  "Presentation.Layout.GamepadButton": {
+    "zh": "手柄 {0}",
+    "en": "Controller {0}"
+  },
+  "Presentation.Layout.WheelUp": {
+    "zh": "鼠标滚轮向上",
+    "en": "Mouse wheel up"
+  },
+  "Presentation.Layout.WheelDown": {
+    "zh": "鼠标滚轮向下",
+    "en": "Mouse wheel down"
   },
   "Presentation.LogStyle.Log": {
     "zh": "简洁",

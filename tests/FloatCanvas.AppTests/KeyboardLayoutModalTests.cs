@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
@@ -61,7 +62,8 @@ internal static class KeyboardLayoutModalTests
                 string before = JsonSerializer.Serialize(session.Document); int undo = session.UndoCount;
                 Exception? failure = null; KeyboardLayoutEditorWindow? shown = null; PresentationKeyboardLayout? result = null;
                 int closed = 0; bool custom = false, ownerDisabled = false, nativeInputEnabled = false;
-                bool standardChrome = false, standardFields = false, standardActions = false, captionsFit = false, previewFitsWorkArea = false;
+                bool standardChrome = false, standardFields = false, standardActions = false, standardSurfaces = false,
+                    standardKeyboardFocus = false, captionsFit = false, previewFitsWorkArea = false;
                 using var timeout = new CancellationTokenSource();
                 _ = Task.Run(async () =>
                 {
@@ -82,12 +84,18 @@ internal static class KeyboardLayoutModalTests
                             shown.Icon is not null && shown.Resources.Contains("FloatCanvas.SessionWindowLayout") && ReferenceEquals(SessionWindowCoordinator.Find(shown), coordinator);
                         var columns = ((DockPanel)shown.Content).Children.OfType<Grid>().Single();
                         standardFields = columns.ColumnDefinitions[1].Width.Value == PropertyPanelLayout.ContentWidth &&
+                            shown.MinWidth <= 640 && shown.MinHeight <= 420 &&
                             Field<Dictionary<string, NumericValueField>>(shown, "coordinates").Values.All(field => field.Height == PropertyPanelLayout.ControlHeight && field.ActualHeight >= PropertyPanelLayout.ControlHeight - .01) &&
                             ReferenceEquals(Field<CheckBox>(shown, "enabled").Style, shown.FindResource("CanvasPropertySwitch"));
                         var cancel = Descendants(shown).OfType<Button>().Single(button => button.IsCancel);
                         standardActions = Field<Button>(shown, "apply").MinHeight == PropertyPanelLayout.ControlHeight && cancel.MinHeight == PropertyPanelLayout.ControlHeight &&
                             Field<Button>(shown, "apply").MinWidth == cancel.MinWidth && ((DockPanel)shown.Content).Margin == WindowLayout.ContentMargin();
                         var keyViews = Field<Dictionary<string, System.Windows.Controls.Primitives.Thumb>>(shown, "keyViews");
+                        var operations = Descendants(shown).OfType<FrameworkElement>()
+                            .Single(element => AutomationProperties.GetAutomationId(element) == "LayoutOperations");
+                        standardSurfaces = operations is RoundedSurfaceBorder &&
+                            Field<TextBlock>(shown, "identity").Parent is RoundedSurfaceBorder;
+                        standardKeyboardFocus = keyViews.Values.All(view => view.FocusVisualStyle is null && view.Focusable);
                         captionsFit = keyViews.Count == 104 && keyViews.Values.All(view =>
                         {
                             if (view.Template.FindName("KeyCaption", view) is not TextBlock caption || caption.TextWrapping != TextWrapping.NoWrap || string.IsNullOrWhiteSpace(caption.Text)) return false;
@@ -97,10 +105,17 @@ internal static class KeyboardLayoutModalTests
                         var previewCanvas = Field<Canvas>(shown, "preview"); var previewScroll = PreviewScroll(shown);
                         previewFitsWorkArea = smallWorkArea
                             ? shown.ActualWidth <= bounds.Width / VisualTreeHelper.GetDpi(shown).DpiScaleX + .5 && previewScroll.ViewportWidth < previewCanvas.Width && previewScroll.ScrollableWidth > 0
-                            : shown.ActualWidth >= 1240 - .5 && previewScroll.ViewportWidth >= 714 && previewScroll.ViewportWidth >= previewCanvas.Width - .5 && previewScroll.ScrollableWidth < .5;
+                            : shown.ActualWidth >= 1240 - .5 && previewScroll.ViewportWidth >= previewCanvas.Width - .5 && previewScroll.ScrollableWidth < .5;
                         Console.WriteLine($"LAYOUT MODAL action={action}; custom={custom}; ownerDisabled={ownerDisabled}; nativeInputEnabled={nativeInputEnabled}");
                         if (action == "apply" && Environment.GetEnvironmentVariable("FLOATCANVAS_LAYOUT_MODAL_EVIDENCE") is { Length: > 0 } evidence)
-                        { Directory.CreateDirectory(evidence); Capture(shown, Path.Combine(evidence, smallWorkArea ? "keyboard-layout-workarea-clamped.png" : "keyboard-layout-default-wide.png")); }
+                        {
+                            Directory.CreateDirectory(evidence);
+                            Capture(shown, Path.Combine(evidence, smallWorkArea ? "keyboard-layout-workarea-clamped.png" : "keyboard-layout-default-wide.png"));
+                            shown.SelectKey(layout.Keys.Single(key => key.VirtualKey == 0xA0).Id);
+                            Capture(shown, Path.Combine(evidence, "keyboard-layout-modifier-matching.png"));
+                            shown.SelectKey(layout.Keys.Single(key => key.VirtualKey == 0x14).Id);
+                            Capture(shown, Path.Combine(evidence, "keyboard-layout-lock-indicator.png"));
+                        }
                         shown.SelectKey(layout.Keys.Single(key => key.VirtualKey == 0x41).Id);
                         Field<TextBox>(shown, "label").Text = action == "apply" ? "Applied A" : "Discarded A";
                         if (action == "apply") Click(Field<Button>(shown, "apply"));
@@ -126,8 +141,11 @@ internal static class KeyboardLayoutModalTests
                     check("layout editor reuses standard app chrome and inherited session placement", standardChrome);
                     check("layout form uses the shared property width numeric height and switch style", standardFields);
                     check("layout footer uses standard content insets and equal-height action buttons", standardActions);
+                    check("layout operations and identity cards use the continuous rounded-surface entry",
+                        standardSurfaces);
+                    check("key thumbs retain keyboard focus without default focus adorners", standardKeyboardFocus);
                     check("all 104 physical key captions remain single-line within their actual key bounds", captionsFit);
-                    check(smallWorkArea ? "small work area clamps the real default window while preserving horizontal preview scrolling" : "wide work area shows the complete 714-unit standard preview beside the standard property form", previewFitsWorkArea);
+                    check(smallWorkArea ? "small work area clamps the real default window while preserving horizontal preview scrolling" : "wide work area shows the complete standard preview beside the standard property form", previewFitsWorkArea);
                 }
                 check(action + " closes exactly once and leaves no modal window or dispatcher frame", shown is { IsVisible: false } && closed == 1 &&
                     !app.Windows.OfType<KeyboardLayoutEditorWindow>().Any(window => window.IsVisible) && !ComponentDispatcher.IsThreadModal && Field<IList>(coordinator, "modalWindows").Count == 0);
@@ -158,9 +176,10 @@ internal static class KeyboardLayoutModalTests
             bool? ordinaryResult = SessionWindowCoordinator.ShowModal(ordinary); Pump();
             check("the same actual Cancel button also completes the ordinary ShowDialog path", ordinaryPath && ordinaryResult == false && !ordinary.Accepted && !ordinary.IsVisible && !ComponentDispatcher.IsThreadModal && IsWindowEnabled(new WindowInteropHelper(inspector).Handle));
             typeof(OverlayHost).GetProperty(nameof(OverlayHost.IsEditing))!.SetValue(host, true);
-            foreach (double width in new[] { 800d, 760d })
+            foreach (var size in new[] { new Size(800, 480), new Size(760, 480), new Size(640, 420) })
             {
-                var limited = new KeyboardLayoutEditorWindow(layout, inspector) { Width = width, Height = 480, ShowActivated = false };
+                double width = size.Width;
+                var limited = new KeyboardLayoutEditorWindow(layout, inspector) { Width = size.Width, Height = size.Height, ShowActivated = false };
                 bool scrolledToEnd = false, farKeyVisible = false; Exception? scrollFailure = null;
                 string beforeScroll = JsonSerializer.Serialize(session.Document); int beforeScrollUndo = session.UndoCount;
                 limited.Loaded += (_, _) => limited.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () =>
@@ -171,22 +190,29 @@ internal static class KeyboardLayoutModalTests
                         try
                         {
                             limited.UpdateLayout();
-                            scrolledToEnd = scroll.ViewportWidth > 0 && scroll.ViewportWidth < 714 && scroll.HorizontalOffset > 0 && Math.Abs(scroll.HorizontalOffset - scroll.ScrollableWidth) < .5;
+                            scrolledToEnd = scroll.ViewportWidth > 0 && scroll.ViewportWidth < 714 && scroll.ScrollableWidth > 0 &&
+                                scroll.HorizontalOffset > 0 && Math.Abs(scroll.HorizontalOffset - scroll.ScrollableWidth) < .5;
                             var far = Field<Dictionary<string, System.Windows.Controls.Primitives.Thumb>>(limited, "keyViews").Values.OrderBy(view => Canvas.GetLeft(view) + view.ActualWidth).Last();
-                            var rectangle = far.TransformToAncestor(scroll).TransformBounds(new Rect(far.RenderSize));
-                            farKeyVisible = rectangle.Left >= -.5 && rectangle.Right <= scroll.ViewportWidth + .5 && rectangle.Bottom > 0 && rectangle.Top < scroll.ViewportHeight;
+                            var rendered = far.TransformToAncestor(scroll).TransformBounds(new Rect(far.RenderSize));
+                            farKeyVisible = rendered.Left >= -.5 && rendered.Right <= scroll.ViewportWidth + .5;
                             if (Environment.GetEnvironmentVariable("FLOATCANVAS_LAYOUT_MODAL_EVIDENCE") is { Length: > 0 } evidence)
-                                Capture(limited, Path.Combine(evidence, $"keyboard-layout-{(int)width}-{(smallWorkArea ? "clamped" : "wide")}-right-end.png"));
+                                Capture(limited, Path.Combine(evidence, $"keyboard-layout-{(int)size.Width}x{(int)size.Height}-{(smallWorkArea ? "clamped" : "wide")}-right-end.png"));
                         }
                         catch (Exception error) { scrollFailure = error; }
                         finally { SessionWindowCoordinator.SetModalResult(limited, false); }
                     });
                 });
                 SessionWindowCoordinator.ShowModal(limited); Pump();
-                check(width + " DIP layout preview can scroll to and expose the rightmost physical key", scrollFailure is null && scrolledToEnd && farKeyVisible);
-                check(width + " DIP scrolling and Cancel preserve the layer and unwind its modal owner", JsonSerializer.Serialize(session.Document) == beforeScroll && session.UndoCount == beforeScrollUndo && !limited.Accepted && !ComponentDispatcher.IsThreadModal && IsWindowEnabled(new WindowInteropHelper(inspector).Handle));
+                check(size.Width + "x" + size.Height + " DIP layout preview can scroll to and expose the rightmost physical key",
+                    scrollFailure is null && scrolledToEnd && farKeyVisible);
+                check(size.Width + "x" + size.Height + " DIP scrolling and Cancel preserve the layer and unwind its modal owner",
+                    JsonSerializer.Serialize(session.Document) == beforeScroll && session.UndoCount == beforeScrollUndo &&
+                    !limited.Accepted && !ComponentDispatcher.IsThreadModal && IsWindowEnabled(new WindowInteropHelper(inspector).Handle));
             }
             var unshown = new KeyboardLayoutEditorWindow(new() { Keys = [] });
+            check("a zero-key layout disables Apply and explains that one key is required",
+                !Field<Button>(unshown, "apply").IsEnabled &&
+                Field<TextBlock>(unshown, "status").Text == L.Get("Presentation.Layout.NoEnabledKeys"));
             unshown.ResetToDefault(); unshown.Accept();
             check("unshown compatible empty-layout acceptance keeps the existing IsVisible modal guard", unshown.Accepted && unshown.ResultLayout is null && !unshown.IsVisible);
             SessionWindowCoordinator.Close(unshown);

@@ -9,6 +9,7 @@ public sealed partial class OverlayHost
     private const nuint SystemInputTimer=0x4648;
     private readonly SystemInputEntryTiming _systemInputTiming=new();
     private bool _systemInputReady;
+    public string? InputOwnershipTrace { get; private set; }
     public bool UsesSystemInput=>_systemInput is not null;
     public nint SystemWindowOwner=>_systemInput?.Owner??0;
     public event Action? SystemInputUnavailable;
@@ -42,8 +43,19 @@ public sealed partial class OverlayHost
         }
     }
     /// <summary>Actual input ownership, independent of which process owns global foreground.</summary>
-    public bool HasEditingInput=>IsEditing && (_systemInput is { } system?system.OwnsInput&&system.Acknowledged:IsForegroundFromThisProcess());
-    private bool OwnsEditingInput()=>_systemInput?.OwnsInput??IsForegroundFromThisProcess();
+    public bool HasEditingInput=>IsEditing && SystemOwnsEditingInput(requireAcknowledgement:true);
+    private bool OwnsEditingInput()
+    {
+        if(_systemInput is not { } system)return IsForegroundFromThisProcess();
+        return SystemOwnsEditingInput(requireAcknowledgement:false);
+    }
+    private bool SystemOwnsEditingInput(bool requireAcknowledgement)
+    {
+        if(_systemInput is null)return IsForegroundFromThisProcess();
+        bool owns=_systemInput.OwnsInput&&(!requireAcknowledgement||_systemInput.Acknowledged);
+        if(!owns)InputOwnershipTrace=_systemInput.DescribeOwnership();
+        return owns;
+    }
     public bool TryFocusEditingWindow(nint handle)
     {
         CheckThread();
@@ -86,7 +98,7 @@ public sealed partial class OverlayHost
         GetCursorPos(out var cursor);
         var active=_windows.FirstOrDefault(pair=>pair.Monitor.Bounds.Contains(new(cursor.X,cursor.Y)))??_windows.First();
         _systemInputReady=false;
-        _systemInputTiming.Begin();
+        _systemInputTiming.Acknowledged();
         _systemInput!.Begin(foreground,active.Input.Handle);
         if(_disposed || !IsEditing || _systemInputReady)return;
         if(SetTimer(ControlHandle,SystemInputTimer,100,0)==0)throw new System.ComponentModel.Win32Exception();
@@ -114,6 +126,9 @@ public sealed partial class OverlayHost
         if(_nativeDialogDepth!=0)return;
         KillTimer(ControlHandle,SystemInputTimer);
         if(!HasEditingInput){EndEditingAfterFocusLoss();return;}
+        // Every observed ACK recovery starts a fresh grace window, including a recovery
+        // from a transient ACK withdrawal after the initial entry completed.
+        _systemInputTiming.Acknowledged();
         if(_systemInputReady)return;
         try { BeginKeyboardIsolation(); }
         catch (Exception error)
@@ -131,7 +146,4 @@ public sealed partial class OverlayHost
         InputActivated?.Invoke();
     }
     [DllImport("user32.dll")] private static extern nint SetActiveWindow(nint window);
-    // Canvas HWNDs dispatch tool shortcuts. Actual text uses its separate WPF editor.
-    private static void DisableCanvasInputMethod(nint window)=>ImmAssociateContext(window,0);
-    [DllImport("imm32.dll")]private static extern nint ImmAssociateContext(nint window,nint context);
 }

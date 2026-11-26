@@ -166,7 +166,9 @@ internal sealed partial class DesktopSession
         return CanvasPresetLibrary.Apply(CanvasPresetLibrary.OfficialOnly().Official.First().Parameters, new(), reference, viewport);
     }
 
-    private async Task ReplaceCanvasAsync()
+    private Task ReplaceCanvasAsync() => RunOnUiThreadAsync(ReplaceCanvasCoreAsync);
+
+    private async Task ReplaceCanvasCoreAsync()
     {
         if (DocumentOperationBusy) return;
         if (!await CompletePrefabEditingBeforeDocumentChangeAsync()) return;

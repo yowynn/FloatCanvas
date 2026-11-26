@@ -27,6 +27,7 @@ internal sealed class SessionWindowCoordinator : IDisposable
     private readonly Dictionary<object, Action> popups = [];
     private readonly HashSet<Window> suspendedWindows = [];
     private readonly List<Window> modalWindows = [];
+    private readonly List<Action> deferredOwnerRestores = [];
     private int nativeModalDepth;
     internal static bool HasModalInput => current is { disposed: false } value && (value.nativeModalDepth > 0 || value.modalWindows.Count > 0);
     internal static bool HasModalChild(Window owner)
@@ -72,6 +73,13 @@ internal sealed class SessionWindowCoordinator : IDisposable
     internal static void TrackOwned(Window window) => Find(window)?.Register(window);
     internal static bool IsEditingWindow(Window? window) => Find(window)?.host.IsEditing ?? OverlayWindowScope.Current?.IsInputActive == true;
 
+    internal IDisposable SuspendHotkeysForRecording()
+    {
+        bool previous = host.ApplicationHotkeysSuspended;
+        host.SuspendApplicationHotkeys(true);
+        return new Scope(() => { if (!disposed) host.SuspendApplicationHotkeys(previous); });
+    }
+
     // Native caption movement runs a Win32 modal loop rather than WPF input staging.
     // Renew only when this UI thread actually handles a move/size message.
     internal void NotifyNativeInputProgress()
@@ -108,6 +116,13 @@ internal sealed class SessionWindowCoordinator : IDisposable
         using var transfer = coordinator?.BeginTransition();
         if (window.WindowState == WindowState.Minimized) window.WindowState = WindowState.Normal;
         SessionWindowLayout.PrepareForShow(window);
+        nint handle = new WindowInteropHelper(window).EnsureHandle();
+        // Modal ownership can leave the native HWND disabled after WPF has already
+        // restored Window.IsEnabled. Repair that stale state only outside an active
+        // modal, where the disabled HWND is intentional.
+        bool modalActive = coordinator is not null && (coordinator.nativeModalDepth > 0 || coordinator.modalWindows.Count > 0);
+        if (!modalActive && window.IsEnabled && handle != 0 && IsWindow(handle) && !IsWindowEnabled(handle))
+            EnableWindow(handle, true);
         // A reused window may have changed while hidden; never expose its retained frame.
         // Activation must follow the actual reveal. A cloaked HWND cannot become the
         // editing input destination, and an early focus request is lost on handoff.
@@ -200,7 +215,21 @@ internal sealed class SessionWindowCoordinator : IDisposable
     {
         ModalEntering?.Invoke();
         modalWindows.Add(window);
-        return new Scope(() => modalWindows.Remove(window));
+        return new Scope(() =>
+        {
+            modalWindows.Remove(window);
+            FlushDeferredOwnerRestores();
+        });
+    }
+
+    private void FlushDeferredOwnerRestores()
+    {
+        if (disposed || modalWindows.Count > 0 || nativeModalDepth > 0) return;
+        foreach (var restore in deferredOwnerRestores.ToArray())
+        {
+            deferredOwnerRestores.Remove(restore);
+            restore();
+        }
     }
 
     internal void CloseEditingModals(WindowDismissReason reason = WindowDismissReason.ModeExit)
@@ -246,10 +275,44 @@ internal sealed class SessionWindowCoordinator : IDisposable
         void RestoreOwners()
         {
             // Nested dialogs restore only the windows they disabled themselves.
-            foreach (var source in disabled)
-                if (!source.IsDisposed && IsWindow(source.Handle) && source.RootVisual is not UIElement { IsEnabled: false })
-                    EnableWindow(source.Handle, true);
-            disabled.Clear();
+            void RestoreEnabledOwners()
+            {
+                foreach (var source in disabled.ToArray())
+                    if (!source.IsDisposed && IsWindow(source.Handle))
+                    {
+                        EnableWindow(source.Handle, true);
+                        disabled.Remove(source);
+                    }
+            }
+            void RestoreWhenNoOtherModal()
+            {
+                if (disposed || disabled.Count == 0) return;
+                bool anotherModal = modalWindows.Any(other => !ReferenceEquals(other, window)) || nativeModalDepth > 0;
+                if (anotherModal)
+                {
+                    // Closing a nested child returns control to its direct owner while
+                    // ancestors and sibling modals remain disabled.
+                    foreach (var source in disabled.ToArray())
+                        if (owner is not null && ReferenceEquals(source.RootVisual, owner) &&
+                            !source.IsDisposed && IsWindow(source.Handle))
+                        {
+                            EnableWindow(source.Handle, true);
+                            disabled.Remove(source);
+                        }
+                    if (disabled.Count == 0) return;
+                    if (!deferredOwnerRestores.Contains(RestoreWhenNoOtherModal))
+                        deferredOwnerRestores.Add(RestoreWhenNoOtherModal);
+                    return;
+                }
+                deferredOwnerRestores.Remove(RestoreWhenNoOtherModal);
+                RestoreEnabledOwners();
+            }
+            RestoreWhenNoOtherModal();
+            // WPF may publish IsEnabled=true after the modal's finally block. Recheck
+            // once the current dispatch turn has completed so no native owner stays
+            // permanently disabled while its WPF surface looks interactive.
+            if (disabled.Count > 0 && !window.Dispatcher.HasShutdownStarted)
+                window.Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(RestoreWhenNoOtherModal));
         }
         nint BeforeHide(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
         {
@@ -339,6 +402,7 @@ internal sealed class SessionWindowCoordinator : IDisposable
         finally
         {
             if (coordinator is not null) coordinator.nativeModalDepth--;
+            coordinator?.FlushDeferredOwnerRestores();
             if (coordinator is not null && coordinator.host.EditingSessionVersion == version)
             {
                 using var returning = coordinator.BeginTransition();
@@ -418,6 +482,20 @@ internal sealed class SessionWindowCoordinator : IDisposable
         foreach (var window in suspendedWindows.ToArray())
             if (windows.ContainsKey(window)) Show(window);
         suspendedWindows.Clear();
+    }
+
+    internal void ReconcileInteractionSurface()
+    {
+        if (disposed || !host.IsEditing || IsDirectTransfer || HasModalInput ||
+            ComponentDispatcher.IsThreadModal) return;
+        foreach (var window in windows.Keys.Append(toolbar).Distinct())
+        {
+            if (!window.IsVisible || !window.IsEnabled) continue;
+            nint handle = new WindowInteropHelper(window).Handle;
+            if (handle != 0 && IsWindow(handle) && IsWindowVisible(handle) && !IsWindowEnabled(handle))
+                EnableWindow(handle, true);
+        }
+        RestoreKeyboardDestination();
     }
 
     internal IEnumerable<Window> OrderForRaise(IEnumerable<Window> candidates) => candidates
@@ -602,6 +680,7 @@ internal sealed class SessionWindowCoordinator : IDisposable
             window.Resources.Remove(ResourceKey);
         }
         windows.Clear(); popups.Clear(); suspendedWindows.Clear(); modalWindows.Clear(); toolbar.Resources.Remove(ResourceKey);
+        deferredOwnerRestores.Clear();
         if (ReferenceEquals(current, this)) current = previous;
     }
 

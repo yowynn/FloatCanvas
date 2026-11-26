@@ -1,7 +1,12 @@
 using System;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Automation.Peers;
+using System.Windows.Automation.Provider;
+using System.Windows.Automation;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 
@@ -14,6 +19,10 @@ internal static class AppInputPolicy
     [ThreadStatic] private static ConditionalWeakTable<InputEventArgs, NativeMessage>? inputMessages;
     private sealed record NativeMessage(MSG Value, int ProviderTime, HwndSource? Source);
     private static readonly NativeMessage absentMessage = new(default, 0, null);
+    private static readonly ConditionalWeakTable<Window, FormSubmit> formSubmits = new();
+    private sealed record FormSubmit(Button Button, Func<bool>? CanFinishField);
+    private static readonly DependencyProperty SubmitFromTextProperty = DependencyProperty.RegisterAttached(
+        "SubmitFromText", typeof(bool), typeof(AppInputPolicy), new PropertyMetadata(false));
 
     internal static bool IsRepeat(KeyEventArgs args)
     {
@@ -93,7 +102,13 @@ internal static class AppInputPolicy
     {
         source.Dispatcher.VerifyAccess();
         InitializeThread();
+        if (source.RootVisual is UIElement root)
+        {
+            root.KeyDown -= HandlePopupEnter;
+            root.KeyDown += HandlePopupEnter;
+        }
     }
+    private static void HandlePopupEnter(object sender, KeyEventArgs args) => HandleFieldEnter(args);
     [DllImport("user32.dll")] private static extern int GetMessageTime();
 
     internal static void AttachToolbarToggle(Window window, Action toggle, Func<bool>? canRoute = null)
@@ -114,6 +129,8 @@ internal static class AppInputPolicy
         threadInitialized = true;
         WindowFocusLifecycle.Initialize();
         TooltipLifecycle.Initialize();
+        EventManager.RegisterClassHandler(typeof(Window), Keyboard.KeyDownEvent,
+            new KeyEventHandler((sender, args) => HandleWindowEnter((Window)sender, args)));
         EventManager.RegisterClassHandler(typeof(UIElement), Keyboard.KeyDownEvent, new KeyEventHandler((_, e) =>
         {
             if (e.Handled || e.Key != Key.Tab || SessionKeyboardRouter.IsModal) return;
@@ -123,6 +140,67 @@ internal static class AppInputPolicy
             e.Handled = true;
         }));
         InputManager.Current.PreProcessInput += CaptureNativeMessage;
+    }
+
+    internal static void AttachFormSubmit(Window window, Button submit, Func<bool>? canFinishField = null)
+    {
+        AttachKeyboardSource(window);
+        submit.IsDefault = false;
+        KeyboardNavigation.SetAcceptsReturn(submit, true);
+        AutomationProperties.SetAcceleratorKey(submit, "Ctrl+Enter");
+        formSubmits.Add(window, new(submit, canFinishField));
+    }
+
+    internal static void AllowPromptSubmit(TextBox input) => input.SetValue(SubmitFromTextProperty, true);
+
+    internal static void AttachSearchEnter(TextBox input, Action search)
+    {
+        input.KeyDown += (_, args) =>
+        {
+            if (args.Key != Key.Enter || Keyboard.Modifiers != ModifierKeys.None) return;
+            args.Handled = true;
+            if (!IsRepeat(args)) search();
+        };
+    }
+
+    private static void HandleWindowEnter(Window window, KeyEventArgs args)
+    {
+        if (args.Handled || args.Key != Key.Enter || EditorShortcutPolicy.RecordingWindows.Contains(window)) return;
+        if (IsRepeat(args)) { args.Handled = true; return; }
+        if (Keyboard.Modifiers == ModifierKeys.Control && formSubmits.TryGetValue(window, out var form))
+        {
+            args.Handled = true;
+            if (form.Button is { IsEnabled: true, IsVisible: true } button)
+                ((IInvokeProvider)new ButtonAutomationPeer(button)).Invoke();
+            return;
+        }
+        HandleFieldEnter(args);
+    }
+
+    internal static void HandleFieldEnter(KeyEventArgs args, Func<bool>? confirm = null)
+    {
+        if (args.Handled || args.Key != Key.Enter || Keyboard.Modifiers != ModifierKeys.None ||
+            args.OriginalSource is not TextBox { AcceptsReturn: false, IsReadOnly: false } input ||
+            (bool)input.GetValue(SubmitFromTextProperty)) return;
+        if (EditorShortcutPolicy.Ancestors(input).Any(ancestor => ancestor is ComboBox)) return;
+        var window = Window.GetWindow(input);
+        if (window is not null && EditorShortcutPolicy.RecordingWindows.Contains(window)) return;
+        args.Handled = true;
+        if (IsRepeat(args) || confirm?.Invoke() == false ||
+            window is not null && formSubmits.TryGetValue(window, out var form) && form.CanFinishField?.Invoke() == false)
+            return;
+        if (!input.IsKeyboardFocused) return;
+        var scope = FocusManager.GetFocusScope(input);
+        if (ReferenceEquals(FocusManager.GetFocusedElement(scope), input)) FocusManager.SetFocusedElement(scope, null);
+        var source = PresentationSource.FromVisual(input);
+        if (window is not null && ReferenceEquals(PresentationSource.FromVisual(window), source))
+        {
+            FocusManager.SetFocusedElement(window, window);
+            Keyboard.Focus(window);
+        }
+        else if (source?.RootVisual is UIElement { Focusable: true } root && root != input)
+            Keyboard.Focus(root);
+        if (input.IsKeyboardFocused) Keyboard.ClearFocus();
     }
     internal static void Initialize()
     {

@@ -28,7 +28,8 @@ internal sealed partial class LayersWindow
         System.Windows.Automation.AutomationProperties.SetName(search, L.Get("Layers.SearchTarget"));
         var targets = model.CreateList();
         var notice = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new(0, 8, 0, 8) };
-        var apply = new Button { Content = L.Get("Layers.MoveTo"), IsEnabled = false, MinHeight = 30, IsDefault = true };
+        var apply = new Button { Content = L.Get("Layers.MoveTo"), IsEnabled = false, MinHeight = 30 };
+        AppInputPolicy.AttachFormSubmit(dialog, apply);
         var body = new DockPanel { Margin = new(12) };
         var searchLabel = new TextBlock { Text = L.Get("Layers.SearchTarget"), Margin = new(0,0,0,4) };
         DockPanel.SetDock(searchLabel, Dock.Top); body.Children.Add(searchLabel);
@@ -64,7 +65,9 @@ internal sealed partial class LayersWindow
             UpdateTarget();
         }
         var searchTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
-        searchTimer.Tick += (_, _) => { searchTimer.Stop(); searching = false; Populate(); };
+        void CompleteSearch() { searchTimer.Stop(); searching = false; Populate(); }
+        searchTimer.Tick += (_, _) => CompleteSearch();
+        AppInputPolicy.AttachSearchEnter(search, CompleteSearch);
         search.TextChanged += (_, _) => { searching = true; apply.IsEnabled = false; searchTimer.Stop(); searchTimer.Start(); };
         dialog.Closed += (_, _) => searchTimer.Stop();
         targets.SelectionChanged += (_, _) => UpdateTarget();

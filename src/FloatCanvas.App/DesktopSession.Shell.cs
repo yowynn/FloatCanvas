@@ -31,6 +31,7 @@ internal sealed partial class DesktopSession
         {
             while (_projectOpenRequests.Count != 0 && !_disposed && !_documentExitRequested)
             {
+                if (_overlaySwitchPending) return;
                 if (DocumentOperationBusy || System.Windows.Interop.ComponentDispatcher.IsThreadModal)
                 {
                     await Task.Delay(100, _documentLifetime.Token);
@@ -66,10 +67,14 @@ internal sealed partial class DesktopSession
     {
         if (!_startupPending || _disposed) return;
         _startupPending = false;
+        LogStartupStage("ShellReadyBegin");
         RegisterShellIntegration();
         _shellReady = true;
         if (_projectOpenRequests.Count != 0) await DrainProjectOpenRequestsAsync();
         else if (!_quietStartup) ShowWelcome();
+        if (_disposed || _documentLifetime.IsCancellationRequested || _app.Dispatcher.HasShutdownStarted) return;
+        LogStartupStage("InitialSurfaceReady", new { _quietStartup, OpeningProject = _openingShellProject });
+        _ = _app.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.ContextIdle, new Action(() => EnsureTrayMenu()));
         AppUpdateInstaller.AcknowledgeStartup();
         if (_shellIntegrationAllowed)
             InstallerRegistration.Refresh(AppContext.BaseDirectory, error => _diagnostics.Write("Installer.RegistrationFailed", exception: error));

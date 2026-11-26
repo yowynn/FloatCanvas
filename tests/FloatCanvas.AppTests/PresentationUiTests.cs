@@ -36,6 +36,10 @@ internal static class PresentationUiTests
         check("keyboard and mouse tools each provide three official recipes in the curated catalog", library.Official.Count == 57 && presets.Select(preset => preset.Id).SequenceEqual(new[] { "official.presentation-keys", "official.presentation-keycaps", "official.presentation-keyboard" }) && library.OfficialFor(EditorTool.PointerPresentation).Count == 3);
         var keys = library.Apply("official.presentation-keys"); var pointer = LegacyPointer(keys);
         check("key panel preset has bounded geometry canonical appearance and all-key recording", keys.DefaultWidth == 360 && keys.DefaultHeight == 120 && keys.Presentation is { Modules: PresentationModules.Keys, KeyDisplay: PresentationKeyDisplayMode.AllPhysicalKeys } && keys.Style.Foreground == 0xfff8fafc && keys.Style.Background == 0xdd20252f && keys.IsValid());
+        var keyboardPreset = library.Apply("official.presentation-keyboard");
+        var presetKeys = keyboardPreset.Presentation!.KeyboardLayout?.Keys ?? PresentationKeyboardLayout.CreateDefault().Keys;
+        check("the official live keyboard preset starts with every lock indicator disabled",
+            presetKeys.Where(key => key.VirtualKey is 0x14 or 0x90 or 0x91).All(key => !key.ShowLockIndicator));
         check("legacy pointer tool snapshots remain readable without a new pointer-region recipe", pointer.IsValid() && library.Official.All(recipe => recipe.Id != "official.presentation-pointer"));
         var clone = pointer.Clone(); clone.Presentation!.TrailWidthPixels = 11;
         check("tool snapshot clones still own legacy presentation settings", pointer.Presentation!.TrailWidthPixels == 3 && keys.Presentation!.TrailWidthPixels == 3);
@@ -125,6 +129,15 @@ internal static class PresentationUiTests
         check("running key status needs no manual start interaction", Field<TextBlock>(panel, "status").Text == L.Get("Presentation.Status.Running") && toggles == 0 && bakes == 0);
         panel.Refresh(_ => new(true, false, true, "Presentation.Status.NoLayers"), node);
         check("legacy bake availability cannot reintroduce an authored pointer action", !Descendants(panel).OfType<Button>().Any() && toggles == 0 && bakes == 0);
+        var empty = PresentationKeyboardLayout.CreateDefault();
+        foreach (var key in empty.Keys) key.Enabled = false;
+        var placeholderOnly = empty.Clone();
+        placeholderOnly.Keys.Add(PresentationKeyboardLayout.CreatePlaceholder());
+        check("a live keyboard needs at least one enabled key before it starts input demand",
+            !DesktopSession.PresentationKeyboardActive(new() { DisplayStyle = PresentationDisplayStyle.Keyboard, KeyboardLayout = empty }) &&
+            !DesktopSession.PresentationKeyboardActive(new() { DisplayStyle = PresentationDisplayStyle.Keyboard, KeyboardLayout = placeholderOnly }) &&
+            DesktopSession.PresentationKeyboardActive(new() { DisplayStyle = PresentationDisplayStyle.Log, KeyboardLayout = empty }) &&
+            DesktopSession.PresentationKeyboardActive(new() { DisplayStyle = PresentationDisplayStyle.Keyboard }));
     }
     private static void Tools(string folder, Action<string, bool> check)
     {

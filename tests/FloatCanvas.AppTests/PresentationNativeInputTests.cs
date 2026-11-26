@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using FloatCanvas.Windows;
 
-/// <summary>Registration metadata only, on a never displayed desktop. No keyboard registration or input injection.</summary>
+/// <summary>Bounded registration metadata only, on a never displayed desktop. No input injection.</summary>
 internal static class PresentationNativeInputTests
 {
     private const uint InputSink = 0x100, DeviceNotify = 0x2000, Remove = 1;
@@ -30,6 +30,7 @@ internal static class PresentationNativeInputTests
             // Compare with the independent native call rather than claiming that API proves notification delivery.
             fixture.RemoveOwnedRegistrations();
             RejectForeign(fixture, check);
+            KeyboardOnly(fixture, calibration.Flags, check);
             StopOwned(fixture, calibration.Flags, check);
             PreserveReplacement(fixture, check);
             InactiveDesktop(calibration.Flags, check);
@@ -79,6 +80,26 @@ internal static class PresentationNativeInputTests
             check("stopped native observer reaches Completion and destroys its own carrier", observer.Completion.Wait(TimeSpan.FromSeconds(5)) && !IsWindow(carrier));
             check("native observer repeated Stop preserves foreign registration", observer.Stop() && Same(unrelated, Registrations()));
             Console.WriteLine($"PRESENTATION NATIVE Stop milliseconds={time.Elapsed.TotalMilliseconds:F3}; completion={observer.Completion.IsCompletedSuccessfully}; error={observer.LastError}");
+        }
+        finally
+        {
+            observer.Stop(); observer.Completion.Wait(TimeSpan.FromSeconds(5)); fixture.RemoveOwnedRegistrations();
+        }
+    }
+
+    private static void KeyboardOnly(MessageWindow fixture, uint reportedPassiveFlags, Action<string, bool> check)
+    {
+        using var observer = PresentationInputObserver.StartAsync(252, keyboard: true, pointer: false).GetAwaiter().GetResult();
+        nint carrier = 0;
+        try
+        {
+            var registrations = Registrations();
+            var keyboard = registrations.Single(item => item.Page == 1 && item.Usage == 6);
+            carrier = keyboard.Target;
+            check("keyboard-only observer registers keyboard input without any mouse class",
+                registrations.Length == 1 && registrations.All(item => item.Usage == 6) && keyboard.Flags == reportedPassiveFlags);
+            check("keyboard-only observer owns a private message-only carrier", IsOwnMessageWindow(carrier) && !IsWindowVisible(carrier));
+            check("keyboard-only Stop removes exactly its own registration", observer.Stop() && Registrations().Length == 0);
         }
         finally
         {

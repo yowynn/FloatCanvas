@@ -33,7 +33,8 @@ public sealed class PresentationSettings
         var copy = (PresentationSettings)MemberwiseClone(); copy.KeyboardLayout = KeyboardLayout?.Clone(); return copy;
     }
     public bool IsValid() => (Modules & ~(PresentationModules.Keys | PresentationModules.Cursor | PresentationModules.Clicks | PresentationModules.Trail)) == 0 &&
-        Enum.IsDefined(KeyDisplay) && Enum.IsDefined(KeyboardScope) && Enum.IsDefined(DisplayStyle) && (KeyboardLayout?.IsValid() ?? true) && Enum.IsDefined(KeyPanelAlignment) && RecentChordLimit is >= 1 and <= PresentationLimits.MaximumChords &&
+        Enum.IsDefined(KeyDisplay) && Enum.IsDefined(KeyboardScope) && Enum.IsDefined(DisplayStyle) &&
+        (KeyboardLayout?.IsValid() ?? true) && Enum.IsDefined(KeyPanelAlignment) && RecentChordLimit is >= 1 and <= PresentationLimits.MaximumChords &&
         Range(KeyHoldMilliseconds, 100, 5000) && Range(KeyPanelMaximumWidth, 1, 1_000_000) &&
         Range(CursorRadiusPixels, 2, 128) && Range(RippleMilliseconds, 100, 2000) &&
         Range(TrailMilliseconds, 100, 5000) && Range(TrailWidthPixels, 1, 64);

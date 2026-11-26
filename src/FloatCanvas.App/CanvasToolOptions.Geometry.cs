@@ -53,7 +53,8 @@ internal sealed partial class CanvasToolOptions
             Failed?.Invoke("");
             if (widthValue != old.Width || heightValue != old.Height) PlaneSizeChanged?.Invoke(widthValue, heightValue);
         }
-        BindGeometryNumber(planeWidth, () => CommitSize(true)); BindGeometryNumber(planeHeight, () => CommitSize(false));
+        BindGeometryNumber(planeWidth, () => CommitSize(true), "Canvas.InvalidPlaneSize");
+        BindGeometryNumber(planeHeight, () => CommitSize(false), "Canvas.InvalidPlaneSize");
         return planeFields;
     }
 
@@ -91,11 +92,11 @@ internal sealed partial class CanvasToolOptions
         return originFields;
     }
 
-    private void BindGeometryNumber(NumericValueField field, Action publish)
+    private void BindGeometryNumber(NumericValueField field, Action publish, string invalidMessageKey = "ToolOptions.InvalidNumber")
     {
         CommitOnExit(field.Input, publish);
         field.CanBeginGesture = () => BeginNumericGesture?.Invoke() != false;
-        BindTextGesture(field);
+        BindTextGesture(field, invalidMessageKey);
         field.ValueChanged += _ => { if (!refreshing) publish(); };
         field.GestureCompleted += commit => NumericGestureCompleted?.Invoke(commit);
     }

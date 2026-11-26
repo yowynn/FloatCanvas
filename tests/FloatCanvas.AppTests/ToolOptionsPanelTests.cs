@@ -281,6 +281,22 @@ internal static class ToolOptionsPanelTests
         }
         controller.Tool = EditorTool.Line; panel.PrepareForShow();
         panel.Measure(new Wpf.Size(ToolOptionsPanel.PreferredWidth, double.PositiveInfinity)); panel.Arrange(new Wpf.Rect(new Wpf.Size(ToolOptionsPanel.PreferredWidth, panel.DesiredSize.Height))); panel.UpdateLayout();
+        foreach (var tool in new[] { EditorTool.Freehand, EditorTool.Highlighter, EditorTool.Line, EditorTool.Arrow, EditorTool.DoubleArrow })
+        {
+            foreach (double width in new[] { ToolOptionsPanel.PreferredWidth, panel.MinWidth })
+            {
+                controller.Tool = tool; panel.PrepareForShow();
+                panel.Measure(new Wpf.Size(width, double.PositiveInfinity));
+                panel.Arrange(new Wpf.Rect(0, 0, width, panel.DesiredSize.Height)); panel.UpdateLayout();
+                var sizeTop = rows["StrokeWidth"].TranslatePoint(new Wpf.Point(), panel).Y;
+                var colorTop = rows["Colors"].TranslatePoint(new Wpf.Point(), panel).Y;
+                check($"{tool} at {width} DIP places a visible stroke row before a visible color row",
+                    Controls.Grid.GetRow(rows["StrokeWidth"]) < Controls.Grid.GetRow(rows["Colors"]) &&
+                    rows["StrokeWidth"].ActualHeight > 0 && rows["Colors"].ActualHeight > 0 && sizeTop < colorTop);
+            }
+        }
+        controller.Tool = EditorTool.Line; panel.PrepareForShow();
+        panel.Measure(new Wpf.Size(ToolOptionsPanel.PreferredWidth, double.PositiveInfinity)); panel.Arrange(new Wpf.Rect(new Wpf.Size(ToolOptionsPanel.PreferredWidth, panel.DesiredSize.Height))); panel.UpdateLayout();
         foreach (var pair in new[] { ("StartArrowHead", "EndArrowHead"), ("StrokePattern", "ArrowHeadSize") })
             check(pair.Item1 + " and " + pair.Item2 + " retain full-width readable controls", Controls.Grid.GetRow(rows[pair.Item1]) != Controls.Grid.GetRow(rows[pair.Item2]) &&
                 Controls.Grid.GetColumnSpan(rows[pair.Item1]) == 3 && Controls.Grid.GetColumnSpan(rows[pair.Item2]) == 3);
@@ -329,11 +345,13 @@ internal static class ToolOptionsPanelTests
             var contrast = Bounds(fields["HighlighterInkContrast"]);
             var lineWidth = Bounds(fields["StrokeWidth"]);
             var preceding = tip == HighlighterTip.Round ? Bounds(tipChoice) : Bounds(fields["HighlighterTipAngle"]);
-            check($"{tip} at {width} DIP gives ink contrast its own full-width numeric row " +
+            check($"{tip} at {width} DIP gives ink contrast and stroke width adjacent full-width rows " +
                 $"(previous bottom {preceding.Bottom:0.#}, contrast {contrast}, foreground top {Bounds(foreground).Top:0.#})",
                 Math.Abs(contrast.Top - preceding.Bottom - PropertyPanelLayout.RowGap) < 1 &&
-                Math.Abs(Bounds(foreground).Top - contrast.Bottom - PropertyPanelLayout.RowGap) < 1 &&
-                contrast.Height == PropertyPanelLayout.ControlHeight && Math.Abs(contrast.Left - lineWidth.Left) < 1 &&
+                Math.Abs(lineWidth.Top - contrast.Bottom - PropertyPanelLayout.RowGap) < 1 &&
+                Math.Abs(Bounds(foreground).Top - lineWidth.Bottom - PropertyPanelLayout.RowGap) < 1 &&
+                contrast.Height == PropertyPanelLayout.ControlHeight &&
+                lineWidth.Height == PropertyPanelLayout.ControlHeight && Math.Abs(contrast.Left - lineWidth.Left) < 1 &&
                 Math.Abs(contrast.Right - lineWidth.Right) < 1);
         }
 

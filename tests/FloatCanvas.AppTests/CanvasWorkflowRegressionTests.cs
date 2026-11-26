@@ -66,6 +66,7 @@ internal static class CanvasWorkflowRegressionTests
         {
             f.Live.Add(new() { Kind = ElementKind.Rectangle, Width = 30, Height = 20 });
             f.Trigger("shortcut");
+            System.Windows.Input.Keyboard.ClearFocus();
             using (new ThreadModifierScope(ModifierKeys.None)) f.Call("OnKey", 0x1B);
             check("Escape cancels new-canvas confirmation without replacing content", !f.NewButton.IsConfirming && f.Live.Document.Elements.Count == 1);
         }
@@ -213,7 +214,22 @@ internal static class CanvasWorkflowRegressionTests
             else if (entry == "menu")
                 Field<OverlayContextMenu>(Session, "_toolbarMenu").Items.OfType<MenuItem>().SelectMany(m => m.Items.OfType<MenuItem>()).Single(m => m.InputGestureText == "Ctrl+N").RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
             else using (new ThreadModifierScope(ModifierKeys.Control)) Call("OnKey", 0x4E);
-            Wait(() => !Field<bool>(NewButton, "executing") && !(bool)typeof(DesktopSession).GetProperty("DocumentOperationBusy", Hidden)!.GetValue(Session)!);
+            WaitForIdle();
+        }
+        void WaitForIdle()
+        {
+            var watch = Stopwatch.StartNew();
+            var quiet = Stopwatch.StartNew();
+            while (watch.Elapsed < TimeSpan.FromSeconds(20))
+            {
+                Pump();
+                bool busy = Field<bool>(NewButton, "executing") ||
+                    (bool)typeof(DesktopSession).GetProperty("DocumentOperationBusy", Hidden)!.GetValue(Session)!;
+                if (busy) quiet.Restart();
+                else if (quiet.Elapsed >= TimeSpan.FromMilliseconds(50)) return;
+                Thread.Sleep(1);
+            }
+            throw new TimeoutException("Canvas workflow did not settle");
         }
         public void Dispose()
         {

@@ -43,6 +43,7 @@ internal static class CanonicalToolAppearanceTests
                 kind == ElementKind.Number ? ElementAppearance.NumberFilled : ElementAppearance.Default;
             foreach (string key in new[] { "Stroke", "Fill", "LinkColors" }) style.Remove(key);
             style["HighlighterInkContrast"] ??= 1.0;
+            style["EmojiFontId"] ??= EmojiFontIds.Default;
             expected.AsObject().Remove("NumberColorRolesVersion"); expected["NumberTextSizeMode"] = (int)NumberTextSizeMode.FitBadge;
             check("official complete snapshot remains equivalent: " + preset.Id, JsonNode.DeepEquals(expected, JsonSerializer.SerializeToNode(preset.Parameters)));
         }

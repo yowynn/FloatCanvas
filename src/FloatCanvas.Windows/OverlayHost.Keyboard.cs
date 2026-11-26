@@ -29,6 +29,29 @@ public sealed partial class OverlayHost
 
     public bool IsPresentationKeyboardAvailable => _keyboardIsolation is { IsThreadAlive: true, Failure: null };
 
+    public void ObserveOrdinaryKeyboardMessage(nint window, uint message, nuint wParam, nint lParam, uint time)
+    {
+        if (message is not (0x100 or 0x101 or 0x104 or 0x105) || wParam is 0 or >= 255 ||
+            _systemInput is not null || !IsEditing || _keyboardIsolation is not { } isolation || !OwnsWindow(window) ||
+            !GetCurrentInputMessageSource(out var source) || source.DeviceType != 1 || source.OriginId is not (1 or 2)) return;
+        uint data = unchecked((uint)lParam);
+        uint flags = ((data >> 24) & 1) | (source.OriginId == 2 ? 0x10u : 0u);
+        isolation.ObserveOrdinaryKeyboardMessage((uint)wParam, (data >> 16) & 255, flags, time, message);
+    }
+
+    public void ObserveOrdinaryRawPresentationKeys(PresentationObservedBatch batch)
+    {
+        if (_systemInput is not null || !IsEditing || _keyboardIsolation is not { } isolation) return;
+        foreach (var key in batch.Changes)
+        {
+            if (key.InputOwner != PresentationInputOwner.FloatCanvas ||
+                key.Kind is not (PresentationObservedKind.RawKeyDown or PresentationObservedKind.RawKeyUp)) continue;
+            uint message = key.Kind == PresentationObservedKind.RawKeyUp ? 0x101u : 0x100u;
+            isolation.ObserveOrdinaryKeyboardMessage((uint)key.VirtualKey, (uint)key.ScanCode, (key.KeyFlags >> 1) & 1,
+                unchecked((uint)key.Milliseconds), message, raw: true);
+        }
+    }
+
     public bool IsKeyboardIsolationEnabled => _keyboardIsolation is not null;
     public bool IsKeyboardIsolationActive => _keyboardIsolation is { } isolation
         ? isolation.IsLeaseActive && (_systemInput?.Acknowledged ?? true)
@@ -55,10 +78,18 @@ public sealed partial class OverlayHost
     {
         CheckThread(); ArgumentNullException.ThrowIfNull(dispatcher);
         if (IsEditing) throw new InvalidOperationException(L.Get("Keyboard.ExitEditingBeforeConfigure"));
-        if (_keyboardIsolation is not null) throw new InvalidOperationException(L.Get("Keyboard.IsolationAlreadyEnabled"));
+        if (_dispatchPrivateKey is not null) throw new InvalidOperationException(L.Get("Keyboard.IsolationAlreadyEnabled"));
+        PrepareKeyboardIsolation();
         _dispatchPrivateKey = dispatcher;
-        try { _keyboardIsolation = KeyboardInputIsolation.StartAsync(ControlHandle, KeyboardPacketMessage).GetAwaiter().GetResult(); }
-        catch { _dispatchPrivateKey = null; throw; }
+    }
+
+    /// <summary>Prepares the hooks without an input lease or a live editor dispatcher.</summary>
+    public void PrepareKeyboardIsolation()
+    {
+        CheckThread();
+        if (IsEditing) throw new InvalidOperationException(L.Get("Keyboard.ExitEditingBeforeConfigure"));
+        if (_keyboardIsolation is not null) return;
+        _keyboardIsolation = KeyboardInputIsolation.StartAsync(ControlHandle, KeyboardPacketMessage).GetAwaiter().GetResult();
         _keyboardIsolation.ConfigurePresentationInputTap(_presentationTapKeyboard, _presentationTapPointer, _presentationTapEpoch, PresentationInputMessage);
     }
 
@@ -96,9 +127,11 @@ public sealed partial class OverlayHost
         if (message == 0x113 && wParam == InputMethodFocusTimer) { CheckInputMethodContext(); return true; }
         if (message == 0x113 && wParam == KeyboardHeartbeatTimer)
         {
-            if (IsEditing && _nativeDialogDepth == 0 && _systemInput is { } system &&
-                (!system.OwnsInput || !system.Acknowledged))
-            { EndEditingAfterFocusLoss(); return true; }
+            if (IsEditing && _nativeDialogDepth == 0 && _systemInput is { } system)
+            {
+                if (!system.OwnsInput) { EndEditingAfterFocusLoss(); return true; }
+                if (!system.Acknowledged) { CheckSystemInputEntry(); return true; }
+            }
             _keyboardIsolation?.Heartbeat();
             // A failed notification cannot carry its own LeaseEnded packet to this UI.
             // The recovered UI must still stop claiming editing before accepting input.

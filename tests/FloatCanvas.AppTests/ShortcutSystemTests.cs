@@ -128,7 +128,8 @@ internal static class ShortcutSystemTests
         void Key(Key key,bool down=true)=>field.Slider.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice,new DetachedSource(),Environment.TickCount,key)
             {RoutedEvent=down?Keyboard.PreviewKeyDownEvent:Keyboard.PreviewKeyUpEvent});
         for(int i=0;i<5;i++) Key(System.Windows.Input.Key.Right);
-        check("held numeric arrows share one pending gesture",field.Value==25 && field.IsInteracting && commits==0);
+        check($"held numeric arrows share one pending gesture (value={field.Value}, interacting={field.IsInteracting}, commits={commits})",
+            field.Value==25 && field.IsInteracting && commits==0);
         Key(System.Windows.Input.Key.Right,false);
         check("numeric key release commits once",!field.IsInteracting && commits==1);
         Key(System.Windows.Input.Key.Left);Key(System.Windows.Input.Key.Escape);Key(System.Windows.Input.Key.Left,false);

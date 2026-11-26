@@ -20,6 +20,8 @@ internal static class EmojiPickerWindowTests
         if (PresentationDesktopAvailability.IsCurrentInputDesktop()) return;
         HistoryReordering(check);
         var language=L.Preference;
+        var lastCategoryField=typeof(EmojiPickerPanel).GetField("lastCategory",BindingFlags.Static|BindingFlags.NonPublic)!;
+        object? previousCategory=lastCategoryField.GetValue(null);
         try
         {
             string originalProfile=ApplicationPaths.ProfileDirectory;
@@ -39,6 +41,7 @@ internal static class EmojiPickerWindowTests
             foreach(var (locale,theme) in new[]{("zh-CN","dark"),("en","light")})
             {
                 L.Initialize(locale); AppTheme.Apply(theme);
+                lastCategoryField.SetValue(null,null);
                 var editor=new EditorController(new()) { Tool=EditorTool.Emoji };
                 string tmp=Path.Combine(Path.GetTempPath(),"fc-emoji-picker-"+Guid.NewGuid().ToString("N"));
                 var tool=new ToolOptionsPanel(editor,new(Path.Combine(tmp,"presets.json")),new(Path.Combine(tmp,"colors.json")));
@@ -74,6 +77,7 @@ internal static class EmojiPickerWindowTests
                     }
                     Field<List<Button>>(library,"categories")[1].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Pump();
                     check(locale+" embedded category browser is populated",inlineGrid.Items.Count>100);
+                    string embeddedHeading=Field<TextBlock>(library,"heading").Text;
                     Until(()=>Visuals(inlineGrid).OfType<EmojiThumbnail>().Any() &&
                         Visuals(inlineGrid).OfType<EmojiThumbnail>().All(image=>image.Source is not null));
                     owner.Width=638;owner.Height=560;tool.PrepareForShow();owner.UpdateLayout();Pump();
@@ -98,15 +102,21 @@ internal static class EmojiPickerWindowTests
                     tone.IsDropDownOpen=false;Pump();
                     Until(()=>Visuals(tone).OfType<EmojiThumbnail>().Any(image=>image.Source is not null));
                     check(locale+" the collapsed skin tone selector also keeps a color icon",Visuals(tone).OfType<EmojiThumbnail>().Any(image=>image.Source is not null));
-                    check(locale+" opening the picker starts on recently used",Field<TextBlock>(panel,"heading").Text==L.Get("Emoji.Recent"));
+                    check(locale+" opening a separate picker retains the last category",
+                        Field<TextBlock>(panel,"heading").Text==embeddedHeading && embeddedHeading!=L.Get("Emoji.Recent"));
                     panel.SetCurrent(null);Pump();
                     check(locale+" footer stays empty when no emoji is current",Field<TextBlock>(panel,"name").Text.Length==0 &&
                         Field<EmojiThumbnail>(panel,"preview").DataContext is null);
                     panel.SetCurrent(editor.Emoji);Pump();
                     Until(()=>Visuals(grid).OfType<EmojiThumbnail>().Any(i=>i.Source!=null));
                     var selected=(Grid)window.Template.FindName("TitleBar",window);
-                    check(locale+" compact picker opens with its owner, one search row and virtualized tiles",selected.Visibility==Visibility.Collapsed &&
-                        window.ActualWidth<430 && grid.Items.Count<=16 && Visuals(grid).OfType<ListBoxItem>().Count()<=16);
+                    int realizedTiles = Visuals(grid).OfType<ListBoxItem>().Count();
+                    int tileColumns = Math.Max(1, (int)Math.Floor((grid.ActualWidth + .01) / 35));
+                    int maximumRealizedRows = (int)Math.Ceiling(grid.ActualHeight / 37) + 2;
+                    check(locale+" compact picker opens with its owner, one search row and bounded virtualized tiles",
+                        selected.Visibility==Visibility.Collapsed && window.ActualWidth<430 &&
+                        VirtualizingPanel.GetIsVirtualizing(grid) && grid.Items.Count>realizedTiles &&
+                        realizedTiles<=tileColumns*maximumRealizedRows);
                     panel.UpdateLayout();
                     var searchHint=Field<TextBlock>(panel,"searchHint");
                     double textStart=search.GetRectFromCharacterIndex(0,false).Left;
@@ -159,7 +169,11 @@ internal static class EmojiPickerWindowTests
                     search.Text="rocket";check(locale+" English lookup works in either locale",((EmojiEntry)grid.Items[0]).Glyph=="🚀");
                     search.Text="火箭";KeyPress(search,Key.Enter);Pump();
                     check(locale+" Enter selects the top bilingual search result and returns to the tool",editor.Emoji=="🚀" && !field.IsOpen && owner.IsVisible);
-                    field.Open();Pump();categories[0].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    field.Open();Pump();
+                    check(locale+" reopening after a cross-category search shows the selected emoji's category",
+                        Field<TextBlock>(panel,"heading").Text==L.Get("Emoji.Group."+EmojiGroup.Travel)&&
+                        ((EmojiEntry)grid.SelectedItem).Glyph=="🚀");
+                    categories[0].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                     check(locale+" recent category remembers applied entries",((EmojiEntry)grid.Items[0]).Glyph=="🚀");
                     categories[1].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));grid.UpdateLayout();Pump();
                     var hovered=(EmojiEntry)grid.Items[0];
@@ -172,19 +186,26 @@ internal static class EmojiPickerWindowTests
                     grid.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice,Environment.TickCount){RoutedEvent=Mouse.MouseLeaveEvent});Pump();
                     check(locale+" leaving the grid restores the current emoji instead of the last hover",Field<TextBlock>(panel,"name").Text==EmojiPickerPanel.DisplayName(selectedEmoji));
                     search.Text="🫱🏻‍🫲🏿";grid.UpdateLayout();Pump();
+                    var mixedEntry=(EmojiEntry)grid.Items[0];
                     var tile=(ListBoxItem)grid.ItemContainerGenerator.ContainerFromIndex(0)!;
                     tile.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice,Environment.TickCount,MouseButton.Left){RoutedEvent=UIElement.PreviewMouseLeftButtonDownEvent});
                     tile.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice,Environment.TickCount,MouseButton.Left){RoutedEvent=UIElement.PreviewMouseLeftButtonUpEvent});Pump();
                     check(locale+" choosing a mixed-tone tile applies immediately",editor.Emoji=="🫱🏻‍🫲🏿"&&!field.IsOpen);
                     field.Open();Pump();KeyPress(search,Key.Escape,Keyboard.KeyDownEvent);Pump();
                     check(locale+" Escape closes only the picker",owner.IsVisible&&!field.IsOpen&&editor.Emoji=="🫱🏻‍🫲🏿");
+                    check(locale+" reopening the picker retains the category used before it closed",
+                        Field<TextBlock>(panel,"heading").Text==L.Get("Emoji.Group."+mixedEntry.Group));
                     field.Open();Pump();editor.Tool=EditorTool.Text;tool.PrepareForShow();Pump();
                     check(locale+" switching tools dismisses its previous picker",!field.IsOpen);
                 }
                 finally {owner.Close();Pump();}
             }
         }
-        finally{L.Initialize(language);}
+        finally
+        {
+            lastCategoryField.SetValue(null,previousCategory);
+            L.Initialize(language);
+        }
     }
 
     private static void HistoryReordering(Action<string,bool> check)

@@ -33,6 +33,17 @@ internal static class RecoveryPreviewStorageTests
         await store.SaveWithPreviewAsync(state, assets, png);
         check((await store.LoadPreviewAsync(fromBackup: true))!.SequenceEqual(png), "rotation preserves previous generation preview");
         check((await File.ReadAllBytesAsync(store.BackupPath)).SequenceEqual(packageWithPreview), "backup carries package and preview byte exactly");
+        byte[] currentBeforeInvalid = await File.ReadAllBytesAsync(store.CurrentPath);
+        byte[] backupBeforeInvalid = await File.ReadAllBytesAsync(store.BackupPath);
+        var invalidWorkspace = state.Clone();
+        invalidWorkspace.LiveDocument.Elements.Single().Width = -1;
+        bool invalidRejected = false;
+        try { await store.SaveAsync(invalidWorkspace, assets); }
+        catch (InvalidDataException) { invalidRejected = true; }
+        byte[] currentAfterInvalid = await File.ReadAllBytesAsync(store.CurrentPath);
+        byte[] backupAfterInvalid = await File.ReadAllBytesAsync(store.BackupPath);
+        check(invalidRejected && currentBeforeInvalid.SequenceEqual(currentAfterInvalid) && backupBeforeInvalid.SequenceEqual(backupAfterInvalid),
+            "invalid recovery content is rejected before current is promoted over the backup");
         string historyDirectory = Path.Combine(root, "history", "copied-generation");
         Directory.CreateDirectory(historyDirectory);
         File.Copy(store.CurrentPath, Path.Combine(historyDirectory, "workspace.floatcanvas"));

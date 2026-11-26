@@ -26,6 +26,13 @@ public sealed class KeyboardInputIsolation : IDisposable
     private readonly IsolatedPointerPresses pointerPresses;
     private readonly CaptureInputObservationBuffer inputObservations = new();
     private readonly PresentationInputTap presentationInput = new();
+    private const int RecentKeyboardMessageLimit = 128;
+    private readonly List<SeenKeyboardMessage> recentKeyboardMessages = new(RecentKeyboardMessageLimit);
+    private int nextKeyboardMessage;
+    private readonly record struct KeyboardMessageIdentity(int Key, uint Scan, uint Extended, uint Time, bool Up);
+    private readonly record struct SeenKeyboardMessage(KeyboardMessageIdentity Identity, KeyboardMessageSource Sources);
+    [Flags]
+    private enum KeyboardMessageSource : byte { Hook = 1, Window = 2, Raw = 4 }
     private uint presentationInputMessage;
     private readonly nint notificationWindow;
     private readonly uint notificationThreadId;
@@ -38,7 +45,7 @@ public sealed class KeyboardInputIsolation : IDisposable
     private nint hook, pointerHook;
     private uint threadId;
     private int stopped, disposed, lastWin32Error;
-    private long lastHeartbeat, externalInputVersion;
+    private long lastHeartbeat, externalInputVersion, leaseStartedAt;
     private Exception? failure;
     private bool notificationFailed;
     // Published on the owner UI thread only after native delegation is acknowledged.
@@ -81,10 +88,61 @@ public sealed class KeyboardInputIsolation : IDisposable
     internal void ConfigurePresentationInputTap(bool keyboard, bool pointer, long epoch, uint message)
     {
         if (message is < 0x8000 or > 0xBFFF) throw new ArgumentOutOfRangeException(nameof(message));
-        lock (gate) { presentationInputMessage = message; presentationInput.Configure(keyboard, pointer, epoch); }
+        lock (gate)
+        {
+            presentationInputMessage = message;
+            presentationInput.Configure(keyboard, pointer, epoch);
+            if (!keyboard) { recentKeyboardMessages.Clear(); nextKeyboardMessage = 0; }
+        }
     }
     internal bool TryDrainPresentationInput(uint generation, out PresentationObservedBatch? batch)
     { lock (gate) return presentationInput.TryDrain(generation, out batch); }
+    internal void ObserveOrdinaryKeyboardMessage(uint vk, uint scan, uint flags, uint time, uint message, bool raw = false)
+    {
+        bool up = message is 0x101 or 0x105;
+        var identity = KeyboardIdentity(vk, scan, flags, time, up);
+        lock (gate)
+        {
+            long now = Environment.TickCount64;
+            nint foreground = Native.GetForegroundWindow();
+            if (!state.IsActive || delegatedForeground != 0 || !OwnsWindow(foreground) ||
+                now - Volatile.Read(ref lastHeartbeat) > heartbeatMilliseconds ||
+                raw && unchecked((int)(time - (uint)leaseStartedAt)) < 0) return;
+
+            // An inherited key was originally left with Windows. Its native release
+            // can arrive after entry even if the hook saw it before the lease began.
+            if (up && Native.GetAsyncKeyState(identity.Key) >= 0 &&
+                state.ReconcilePassedRelease(vk, scan, flags, time, message, foreground, now))
+            {
+                if (state.IsActive) modifierHistory.Record(time, now, state.CurrentModifiers);
+                NotifyLocked();
+            }
+            if (RememberPresentationKey(identity, raw ? KeyboardMessageSource.Raw : KeyboardMessageSource.Window))
+                NotifyPresentationInputLocked(presentationInput.Keyboard(vk, scan, flags, up, now, true));
+        }
+    }
+    private bool RememberPresentationKey(KeyboardMessageIdentity identity, KeyboardMessageSource source)
+    {
+        if (!presentationInput.ObservesKeyboard) return false;
+        for (int offset = 0; offset < recentKeyboardMessages.Count; offset++)
+        {
+            int index = (nextKeyboardMessage + offset) % recentKeyboardMessages.Count;
+            var entry = recentKeyboardMessages[index];
+            if (entry.Identity != identity || (entry.Sources & source) != 0) continue;
+            recentKeyboardMessages[index] = entry with { Sources = entry.Sources | source };
+            return false;
+        }
+        var message = new SeenKeyboardMessage(identity, source);
+        if (recentKeyboardMessages.Count < RecentKeyboardMessageLimit) recentKeyboardMessages.Add(message);
+        else
+        {
+            recentKeyboardMessages[nextKeyboardMessage] = message;
+            nextKeyboardMessage = (nextKeyboardMessage + 1) % RecentKeyboardMessageLimit;
+        }
+        return true;
+    }
+    private static KeyboardMessageIdentity KeyboardIdentity(uint vk, uint scan, uint flags, uint time, bool up) =>
+        new(KeyboardSuppressionState.Canonical((int)vk, scan, flags), scan & 255, flags & 1, time, up);
     private void NotifyPresentationInputLocked(uint generation)
     {
         if (generation == 0 || presentationInputMessage == 0) return;
@@ -225,6 +283,7 @@ public sealed class KeyboardInputIsolation : IDisposable
             if (i is not (1 or 2 or 4 or 5 or 6))
                 initial[i] = (byte)((initial[i] & 0x7F) | (Native.GetAsyncKeyState(i) < 0 ? 0x80 : 0));
         long now = Environment.TickCount64;
+        leaseStartedAt = now;
         Volatile.Write(ref lastHeartbeat, now);
         long lease = state.Begin(initial, toggle, hide, now, passModifiers: delegatedForeground != 0);
         modifierHistory.Reset(now, state.CurrentModifiers);
@@ -304,11 +363,13 @@ public sealed class KeyboardInputIsolation : IDisposable
                 // An old outside snapshot must not end a lease the UI has just replaced.
                 nint foreground = Native.GetForegroundWindow();
                 bool own = OwnsKeyboardForeground(foreground);
+                bool up = message is 0x101 or 0x105;
+                bool newPresentationKey = RememberPresentationKey(KeyboardIdentity(key.VirtualKey, key.ScanCode, key.Flags, key.Time, up), KeyboardMessageSource.Hook);
                 long tailsBefore = state.TailSuppressedCount;
                 bool shiftKey=key.VirtualKey is 0x10 or 0xA0 or 0xA1;
                 OverlayPoint? pointerPosition=shiftKey&&Native.GetPhysicalCursorPos(out var cursor)?new(cursor.X,cursor.Y):null;
                 bool? pointerLeftDown=shiftKey?Native.GetAsyncKeyState(1)<0:null;
-                suppress = state.Process(key.VirtualKey, key.ScanCode, key.Flags, key.Time, message is 0x101 or 0x105,
+                suppress = state.Process(key.VirtualKey, key.ScanCode, key.Flags, key.Time, up,
                     (uint)message, foreground, own, now - Volatile.Read(ref lastHeartbeat) <= heartbeatMilliseconds, now,pointerPosition,pointerLeftDown);
                 if (!own && message is 0x100 or 0x104)
                 {
@@ -320,9 +381,10 @@ public sealed class KeyboardInputIsolation : IDisposable
                 if (state.IsActive) modifierHistory.Record(key.Time, now, state.CurrentModifiers);
                 try
                 {
-                    NotifyPresentationInputLocked(presentationInput.Keyboard(key.VirtualKey, key.ScanCode, key.Flags,
-                        message is 0x101 or 0x105, now, true, foreground == 0 ? PresentationInputOwner.Unknown :
-                        own ? PresentationInputOwner.FloatCanvas : PresentationInputOwner.OtherApplication));
+                    if (newPresentationKey)
+                        NotifyPresentationInputLocked(presentationInput.Keyboard(key.VirtualKey, key.ScanCode, key.Flags,
+                            up, now, true, foreground == 0 ? PresentationInputOwner.Unknown :
+                            own ? PresentationInputOwner.FloatCanvas : PresentationInputOwner.OtherApplication));
                 }
                 catch { presentationInput.Clear(); } // A visual observer cannot end the editing lease.
                 NotifyLocked();
@@ -402,12 +464,15 @@ public sealed class KeyboardInputIsolation : IDisposable
         bool desktopAvailable = IsInputDesktopAvailable();
         lock (gate)
         {
-            bool own = OwnsKeyboardForeground(Native.GetForegroundWindow()) && desktopAvailable;
+            nint foreground = Native.GetForegroundWindow();
+            bool own = OwnsKeyboardForeground(foreground) && desktopAvailable;
             state.ExpireTails(now);
             if (state.IsActive && state.LeaseId == observedLease)
             {
                 if (!own) state.End(KeyboardLeaseEndReason.ForegroundLost, now);
                 else if (now - Volatile.Read(ref lastHeartbeat) > heartbeatMilliseconds) state.End(KeyboardLeaseEndReason.HeartbeatExpired, now);
+                else if (delegatedForeground == 0 && state.ReconcilePassedReleases(static key => Native.GetAsyncKeyState(key) < 0, foreground, now))
+                    modifierHistory.Record(unchecked((uint)now), now, state.CurrentModifiers);
             }
             NotifyLocked();
         }

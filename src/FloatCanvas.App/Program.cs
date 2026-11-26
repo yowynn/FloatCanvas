@@ -57,6 +57,9 @@ internal static class Program
             return;
         }
         var diagnostics = new ApplicationDiagnostics(ApplicationPaths.ProfileDirectory);
+        void LogStartupStage(string stage, object? data = null) =>
+            diagnostics.Write("App.Startup.Stage", new { Stage = stage, UptimeMilliseconds = Environment.TickCount64, Data = data });
+        LogStartupStage("DiagnosticsCreated");
         void LogEmojiBoundsProfile()
         {
             var mismatches = FloatCanvas.Rendering.EmojiBoundsProfile.FingerprintMismatches();
@@ -71,6 +74,7 @@ internal static class Program
             RenderingAssemblyId = typeof(FloatCanvas.Rendering.SceneRenderer).Assembly.ManifestModule.ModuleVersionId,
             Runtime = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,
             OperatingSystem = System.Runtime.InteropServices.RuntimeInformation.OSDescription });
+        LogStartupStage("ApplicationCreating");
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
         { if (e.ExceptionObject is Exception exception) diagnostics.WriteUnhandled(exception); };
         AppDomain.CurrentDomain.ProcessExit += (_, _) =>
@@ -80,12 +84,13 @@ internal static class Program
             diagnostics.Write("App.ProcessExit", new { Environment.ExitCode });
         };
         var app = new System.Windows.Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+        LogStartupStage("ApplicationCreated");
         app.Dispatcher.ShutdownStarted += (_, _) => diagnostics.Write("App.Dispatcher.ShutdownStarted");
         app.Dispatcher.ShutdownFinished += (_, _) => diagnostics.Write("App.Dispatcher.ShutdownFinished");
         CompatibleConfiguration.ConfirmRepair=(path,fields)=>ConfigurationStartup.ConfirmWrite(path,fields,diagnostics);
         DesktopSession? session = null;
         OverlayBackendProtection? protection = null;
-        bool recovering = false;
+        bool switchingOverlay = false;
         var pendingProjects = new Queue<string>();
         app.DispatcherUnhandledException += (_, e) =>
         {
@@ -96,33 +101,31 @@ internal static class Program
             else AppDialog.Show(null, e.Exception.Message, L.Get("App.OperationFailed"), MessageBoxButton.OK, MessageBoxImage.Error);
             e.Handled = true;
         };
-        async void RecoverDesktop(string reason)
+        async void SwitchOverlay(OverlayBackendMode target, string? failure)
         {
-            if (recovering || session is null || app.Dispatcher.HasShutdownStarted) return;
-            recovering = true;
+            if (switchingOverlay || session is not { } previous || app.Dispatcher.HasShutdownStarted) return;
+            switchingOverlay = true;
             try
             {
-                var previous = session;
-                var state = await previous.PrepareDesktopFallbackAsync();
-                session = null;
-                previous.Dispose();
-                var replacement = new DesktopSession(app, null, protection, state);
+                var replacement = await previous.SwitchOverlayAsync(target, failure, () => session = null);
+                if (ReferenceEquals(replacement, previous)) return;
                 session = replacement;
-                replacement.DesktopFallbackRequested += RecoverDesktop;
+                protection = replacement.BackendProtection;
+                replacement.OverlaySwitchRequested += SwitchOverlay;
                 while (pendingProjects.TryDequeue(out var pending)) replacement.QueueProjectOpen(pending);
                 replacement.Start(args);
             }
-            catch (OperationCanceledException) when (app.Dispatcher.HasShutdownStarted) { }
+            catch (OperationCanceledException) when (session is not null || app.Dispatcher.HasShutdownStarted) { }
             catch (Exception error) when (OverlayBackendProtection.Recoverable(error))
             {
-                protection?.Disable(error.Message);
-                diagnostics.Write("Input.DesktopFallbackFailed", exception: error);
+                if (failure is not null) protection?.Disable(error.Message);
+                diagnostics.Write(failure is null ? "Input.OverlayModeSwitchFailed" : "Input.DesktopFallbackFailed", new { Target = target.ToString() }, exception: error);
                 if (!app.Dispatcher.HasShutdownStarted)
-                    AppDialog.Show(null, L.Get("OverlaySafety.RecoverFailed") + "\n\n" + error.Message,
+                    AppDialog.Show(null, L.Get(failure is null ? "OverlaySafety.SwitchFailed" : "OverlaySafety.RecoverFailed") + "\n\n" + error.Message,
                         L.Get("App.OperationFailed"), MessageBoxButton.OK, MessageBoxImage.Error);
                 if (session is null) app.Shutdown(1);
             }
-            finally { recovering = false; }
+            finally { switchingOverlay = false; }
         }
         using var activation = new ProjectActivation(profileId, async path =>
             await app.Dispatcher.InvokeAsync(() =>
@@ -136,13 +139,19 @@ internal static class Program
         {
             try
             {
+                LogStartupStage("StartupHandlerBegin");
                 if(!ConfigurationStartup.Prepare(diagnostics,interactive:!args.Contains("--smoke"))){app.Shutdown(1);return;}
+                LogStartupStage("ConfigurationPrepared");
                 AppTheme.InitializeStartup();
+                LogStartupStage("ThemeInitialized");
                 protection = new OverlayBackendProtection(ApplicationPaths.ProfileDirectory,
                     OverlayBackendModes.Resolve(UserSettings.Load().OverlayMode, args));
+                LogStartupStage("ProtectionCreated", new { Mode = protection.Mode.ToString() });
                 session = new DesktopSession(app, null, protection);
-                session.DesktopFallbackRequested += RecoverDesktop;
+                LogStartupStage("SessionConstructed");
+                session.OverlaySwitchRequested += SwitchOverlay;
                 while (pendingProjects.TryDequeue(out var pending)) session.QueueProjectOpen(pending);
+                LogStartupStage("SessionStartEntering");
                 session.Start(args);
             }
             catch (Exception ex)

@@ -23,24 +23,25 @@ internal static class Preview4SettingsRuntimeFixture
         var toolbarAnchor = toolbarLauncher.PointToScreen(new Point(ToolbarLauncher.ArtworkSize, ToolbarLauncher.ArtworkSize));
         settings.ShowPassThroughLauncher = true;
         Invoke(session, "SetEditing", false, false); Pump();
-        var mascot = Field<PassThroughLauncherWindow>(session, "_passThroughLauncher");
+        PassThroughLauncherWindow mascot;
+        nint handle;
+        LauncherGestureState gestures;
+        CaptureLauncher();
         check("pass-through keeps the mascot eye art and toolbar bottom-right anchor without canvas input", mascot.IsVisible && !toolbar.IsVisible && !host.IsEditing &&
             Near(mascot.PointToScreen(new Point(mascot.ActualWidth, mascot.ActualHeight)), toolbarAnchor) &&
             ReferenceEquals(((Image)mascot.Launcher.Content).Source, AppIcon.LauncherImage(host.IsVisible,false)));
         check("pass-through keeps the editing window's artwork and hit size", Math.Abs(mascot.ActualWidth - ToolbarLauncher.ArtworkSize) < 1 && Math.Abs(mascot.ActualHeight - ToolbarLauncher.ArtworkSize) < 1 &&
             mascot.Launcher.TransformToAncestor((Visual)mascot.Content).TransformBounds(new Rect(mascot.Launcher.RenderSize)).Size == new Size(101,101));
-        nint handle = new WindowInteropHelper(mascot).Handle;
         check("mascot stays non-activating while accepting mouse clicks", !mascot.ShowActivated && !mascot.Focusable && !mascot.Launcher.Focusable &&
             ((long)GetWindowLongPtr(handle, -20) & 0x08000080L) == 0x08000080L && SendMessage(handle, 0x21, 0, 0) == 3);
         nint foreground = GetForegroundWindow();
-        Invoke(session, "RefreshPassThroughLauncher"); Pump();
+        RefreshLauncher();
         check("refreshing a visible mascot never takes foreground", GetForegroundWindow() == foreground);
         var expected = mascot.PointToScreen(new Point());
-        toolbar.Left += 20; toolbar.Top += 14; Invoke(session, "SaveToolbarPosition"); Invoke(session, "RefreshPassThroughLauncher"); Pump();
+        toolbar.Left += 20; toolbar.Top += 14; Invoke(session, "SaveToolbarPosition"); RefreshLauncher();
         check("the shared mascot follows later toolbar movement", !Near(mascot.PointToScreen(new Point()), expected) &&
             Near(mascot.PointToScreen(new Point(mascot.ActualWidth, mascot.ActualHeight)),
                 toolbarLauncher.PointToScreen(new Point(ToolbarLauncher.ArtworkSize, ToolbarLauncher.ArtworkSize))));
-        var gestures = Field<LauncherGestureState>(mascot.Launcher, "gestures");
         long now = Environment.TickCount64;
         gestures.PointerDown(10, 10, now);
         check("small pointer jitter retains click behavior", gestures.PointerMove(11, 11, now + 1) == LauncherGestureAction.None && !gestures.IsDragging);
@@ -53,40 +54,60 @@ internal static class Preview4SettingsRuntimeFixture
         check("a completed double-click leaves no delayed entry", !host.IsEditing && !toolbar.IsVisible);
         now = Environment.TickCount64; Click(now); Invoke(mascot.Launcher, "ArmTimer");
         check("single-click waits for the system double-click interval", !host.IsEditing && gestures.HasPendingClick);
-        activate(() => WaitFor(() => host.IsEditing && !WindowRevealGate.IsPending(toolbar), System.Windows.Forms.SystemInformation.DoubleClickTime + 1000));
+        activate(() => WaitFor(() => host.IsEditing && WindowRevealGate.IsPresented(toolbar), System.Windows.Forms.SystemInformation.DoubleClickTime + 1000));
         check("the real delayed timer enters drawing and hides the passive mascot", host.IsEditing && toolbar.IsVisible && (!mascot.IsVisible || WindowRevealGate.IsConcealed(mascot)) && !gestures.HasPendingClick);
-        Invoke(session, "SetEditing", false, false); Pump();
+        SetEditing(false);
         activate(() => Invoke(mascot.Launcher, "OnPreviewMouseRightButtonDown", new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Right) { RoutedEvent = UIElement.PreviewMouseRightButtonDownEvent }));
-        WaitFor(() => !WindowRevealGate.IsPending(toolbar), 1000);
+        WaitFor(() => WindowRevealGate.IsPresented(toolbar), 1000);
         check("right-click enters drawing immediately", host.IsEditing && toolbar.IsVisible && (!mascot.IsVisible || WindowRevealGate.IsConcealed(mascot)));
-        Invoke(session, "SetEditing", false, false); Pump();
+        SetEditing(false);
         var before = new Point(mascot.Left, mascot.Top);
         mascot.Left += 80; mascot.Top += 60; Invoke(mascot, "CompleteDrag", before); Pump();
         var shared = mascot.PointToScreen(new Point());
         check("a passive drag updates the shared session position",Math.Abs(settings.ToolbarX!.Value-shared.X)<2&&Math.Abs(settings.ToolbarY!.Value-shared.Y)<2);
-        activate(() => Invoke(session,"SetEditing",true,false));Pump();
+        activate(() => SetEditing(true));
         var fitted=toolbarLauncher.PointToScreen(new Point());
-        Invoke(session,"SetEditing",false,false);Pump();
+        SetEditing(false);
         check("both modes retain the shared fitted position after a passive drag",mascot.IsVisible&&Near(fitted,mascot.PointToScreen(new Point())));
         var monitor=host.PrimaryMonitor;before=new Point(mascot.Left,mascot.Top);
         OverlayCoordinates.PositionToolWindow(handle,new(monitor.Bounds.Right-101*monitor.DpiX/96d-2,monitor.Bounds.Top+120));
         Invoke(mascot,"CompleteDrag",before);Pump();
-        activate(()=>Invoke(session,"SetEditing",true,false));Pump();
+        activate(()=>SetEditing(true));
         fitted=toolbarLauncher.PointToScreen(new Point());
-        check("entering editing from the right edge brings the complete toolbar into view",fitted.X+toolbar.ActualWidth*VisualTreeHelper.GetDpi(toolbar).DpiScaleX<=monitor.Bounds.Right+2);
-        Invoke(session,"SetEditing",false,false);Pump();
+        double fittedWidth=Math.Min(toolbar.ActualWidth*VisualTreeHelper.GetDpi(toolbar).DpiScaleX,monitor.Bounds.Width);
+        check("entering editing from the right edge brings the complete available toolbar into view",fitted.X+fittedWidth<=monitor.Bounds.Right+2);
+        SetEditing(false);
         check("returning to passive mode keeps the adapted shared position",Near(fitted,mascot.PointToScreen(new Point())));
         Click(Environment.TickCount64); Invoke(mascot.Launcher, "ArmTimer");
-        settings.ShowPassThroughLauncher = false; Invoke(session, "RefreshPassThroughLauncher"); Pump();
+        settings.ShowPassThroughLauncher = false; RefreshLauncher();
         check("disabling mascot hides it and cancels pending entry", !mascot.IsVisible && !gestures.HasPendingClick && !host.IsEditing);
         using (var fresh = new FreshMascot()) check("a fresh mascot uses the shared artwork dimensions",fresh.Window.Width==ToolbarLauncher.ArtworkSize);
-        settings.ShowPassThroughLauncher = true; Invoke(session, "RefreshPassThroughLauncher"); Pump();
+        settings.ShowPassThroughLauncher = true; RefreshLauncher();
         string path = Path.Combine(Path.GetTempPath(), "FloatCanvas-pass-through-mascot-" + Guid.NewGuid().ToString("N") + ".png");
         Render(mascot, path); Console.WriteLine("SETTINGS_RENDER mascot " + path);
-        settings.ShowPassThroughLauncher = false; Invoke(session, "RefreshPassThroughLauncher");
+        settings.ShowPassThroughLauncher = false; RefreshLauncher();
 
         void Click(long time) { Execute(gestures.PointerDown(10, 10, time)); Execute(gestures.PointerUp(10, 10, time + 5)); }
         void Execute(LauncherGestureAction action) => Invoke(mascot.Launcher, "Execute", action);
+        void CaptureLauncher()
+        {
+            mascot = Field<PassThroughLauncherWindow>(session, "_passThroughLauncher");
+            handle = new WindowInteropHelper(mascot).Handle;
+            gestures = Field<LauncherGestureState>(mascot.Launcher, "gestures");
+        }
+        void RefreshLauncher()
+        {
+            Invoke(session, "RefreshPassThroughLauncher");
+            Pump();
+            CaptureLauncher();
+        }
+        void SetEditing(bool editing)
+        {
+            Invoke(session, "SetEditing", editing, false);
+            Pump();
+            if(editing) WaitFor(() => host.IsEditing && WindowRevealGate.IsPresented(toolbar), 1000);
+            CaptureLauncher();
+        }
     }
     private sealed class FreshMascot : IDisposable
     {

@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows.Threading;
 using FloatCanvas.Core;
 using FloatCanvas.Windows;
@@ -9,15 +10,17 @@ internal sealed partial class DesktopSession
 {
     private readonly OverlayBackendProtection? _backendProtection;
     private readonly DesktopFallbackState? _fallbackState;
-    private bool _desktopFallbackPending;
-    internal event Action<string>? DesktopFallbackRequested;
+    private bool _overlaySwitchPending;
+    internal event Action<OverlayBackendMode, string?>? OverlaySwitchRequested;
     internal bool UsesEnhancedOverlay => _host.UsesSystemInput;
+    internal OverlayBackendProtection? BackendProtection => _backendProtection;
 
     internal sealed record DesktopFallbackState(AssetLibrary Assets, EditorSession Live, EditorSession? Capture,
         PointD CaptureOrigin, bool CaptureActive, EditorTool Tool, EditorTool LiveTool, bool Visible,
         Dictionary<EditorSession, (string? Path, string? Fingerprint, long ContentVersion, FloatCanvas.Storage.ProjectFileVersion? DiskVersion)> Files,
         WorkspaceRecoveryHistory? History, string? RecoveryFingerprint, bool RecoveryWritesBlocked,
-        string? FrozenCaptureWarning, ProjectOpenRequest[] PendingProjects, PointD LiveOrigin = default);
+        string? FrozenCaptureWarning, ProjectOpenRequest[] PendingProjects, PointD LiveOrigin = default,
+        PrefabEditContext? PrefabContext = null, PointD ActiveOrigin = default, GroupCanvasMode GroupMode = GroupCanvasMode.RootProject);
 
     internal bool TryRequestDesktopFallback(Exception error)
     {
@@ -27,13 +30,80 @@ internal sealed partial class DesktopSession
     }
 
     private void RequestDesktopFallback(string reason)
+        => RequestOverlaySwitch(OverlayBackendMode.Desktop, reason);
+
+    private void RequestOverlaySwitch(OverlayBackendMode target, string? failure = null)
     {
-        if (_disposed || _desktopFallbackPending || !_host.UsesSystemInput || _backendProtection?.AllowsAutomaticFallback != true) return;
-        _desktopFallbackPending = true;
-        _backendProtection.Disable(reason);
-        _diagnostics.Write("Input.DesktopFallbackRequested", new { Reason = reason });
+        if (_disposed || _overlaySwitchPending || _documentExitRequested ||
+            (target == OverlayBackendMode.Enhanced) == _host.UsesSystemInput) return;
+        if (failure is not null)
+        {
+            if (_backendProtection?.AllowsAutomaticFallback != true) return;
+            _backendProtection.Disable(failure);
+            _diagnostics.Write("Input.DesktopFallbackRequested", new { Reason = failure });
+        }
+        else _diagnostics.Write(target == OverlayBackendMode.Enhanced ? "Input.EnhancedModeRequested" : "Input.DesktopModeRequested");
+        _overlaySwitchPending = true;
         // Leave the native callback before rebuilding any of its HWNDs.
-        _app.Dispatcher.BeginInvoke(DispatcherPriority.Background, () => DesktopFallbackRequested?.Invoke(reason));
+        _app.Dispatcher.BeginInvoke(DispatcherPriority.Background, () => OverlaySwitchRequested?.Invoke(target, failure));
+    }
+
+    internal async Task<DesktopSession> SwitchOverlayAsync(OverlayBackendMode target, string? failure, Action retire,
+        Func<OverlayBackendProtection.ProbeResult>? probe = null, Action<OverlayHost>? prepareInput = null)
+    {
+        bool enhanced = target == OverlayBackendMode.Enhanced;
+        var protection = failure is not null ? _backendProtection : new OverlayBackendProtection(ApplicationPaths.ProfileDirectory,
+            enhanced ? OverlayBackendMode.Auto : OverlayBackendMode.Desktop, probe);
+        OverlayHost? candidate = null;
+        try
+        {
+            if (enhanced)
+            {
+                var cancellation = _documentLifetime.Token;
+                var availability = await protection!.ProbeAsync(cancellation);
+                cancellation.ThrowIfCancellationRequested();
+                if (!protection.TryEnable(() =>
+                {
+                    // Stage the native windows and passive hooks before relinquishing
+                    // the ordinary session. Neither preparation starts an input lease.
+                    candidate = new OverlayHost(_host.Scope, _host.SelectedMonitorDevice, initiallyVisible: false);
+                    candidate.EnableSystemInput(Path.Combine(ApplicationPaths.ProfileDirectory, "overlay-input-safety.log"));
+                    if (prepareInput is null) candidate.PrepareKeyboardIsolation();
+                    else prepareInput(candidate);
+                }, availability))
+                {
+                    _diagnostics.Write("Input.EnhancedModeSwitchFailed", new { Reason = protection.Failure });
+                    var message = L.Get("OverlaySafety.EnhancedSwitchFailed");
+                    UpdateStatus(message);
+                    if (!_smokeStartup)
+                        _tray.ShowBalloonTip(5000, L.Get("OverlaySafety.ModeEnhanced"), message, System.Windows.Forms.ToolTipIcon.Warning);
+                    return this;
+                }
+            }
+            else candidate = new OverlayHost(_host.Scope, _host.SelectedMonitorDevice, initiallyVisible: false);
+            var state = await PrepareDesktopFallbackAsync();
+            retire();
+            Dispose();
+            if (failure is null) _backendProtection?.Complete();
+            var replacement = new DesktopSession(_app, candidate, protection, state);
+            candidate = null;
+            return replacement;
+        }
+        finally
+        {
+            if (candidate is not null)
+            {
+                candidate.Dispose();
+                protection?.Complete();
+            }
+            if (!_disposed) EndOverlaySwitchRequest();
+        }
+    }
+
+    private void EndOverlaySwitchRequest()
+    {
+        _overlaySwitchPending = false;
+        if (_projectOpenRequests.Count != 0) ScheduleProjectOpenDrain(DrainProjectOpenRequestsAsync);
     }
 
     internal async Task<DesktopFallbackState> PrepareDesktopFallbackAsync()
@@ -57,7 +127,7 @@ internal sealed partial class DesktopSession
             _documentLiveTool, _host.IsVisible,
             _documentFiles.ToDictionary(pair => pair.Key, pair => (pair.Value.Path, pair.Value.SavedFingerprint, pair.Value.SavedContentVersion, pair.Value.DiskVersion)),
             _workspaceRecoveryHistory, _documentRecoveryFingerprint, _documentRecoveryWritesBlocked,
-            _documentFrozenCaptureWarning, _projectOpenRequests.ToArray(), _liveOrigin);
+            _documentFrozenCaptureWarning, _projectOpenRequests.ToArray(), _liveOrigin, _prefabEditContext, _editor.ScreenOrigin, _groupCanvasMode);
     }
 
     private void RestoreFallbackWorkspace(DesktopFallbackState state)
@@ -70,10 +140,13 @@ internal sealed partial class DesktopSession
         _documentRecoveryFingerprint = state.RecoveryFingerprint;
         _documentRecoveryWritesBlocked = state.RecoveryWritesBlocked;
         _documentFrozenCaptureWarning = state.FrozenCaptureWarning;
-        var active = state.CaptureActive && _capture is not null ? _capture : _live;
-        _editor.ReplaceSession(active, ReferenceEquals(active, _capture) ? _captureOrigin : _liveOrigin);
+        _prefabEditContext = state.PrefabContext;
+        _groupCanvasMode = state.GroupMode;
+        var active = _prefabEditContext?.Session ?? (state.CaptureActive && _capture is not null ? _capture : _live);
+        var origin = _prefabEditContext is not null ? state.ActiveOrigin : ReferenceEquals(active, _capture) ? _captureOrigin : _liveOrigin;
+        _editor.ReplaceSession(active, origin);
         SwitchToolState(state.Tool);
-        if (!state.Visible) _host.SetVisible(false);
+        _host.SetVisible(state.Visible);
         foreach (var project in state.PendingProjects) QueueProjectOpen(project.Path, project.EnterEditing);
     }
 

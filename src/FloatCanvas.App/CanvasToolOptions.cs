@@ -57,12 +57,11 @@ internal sealed partial class CanvasToolOptions : UserControl, IToolOptionsConte
     public ToolOptionsHeader Header => new(L.Get("Tool.Canvas"), TargetLabel, L.Get("Canvas.Help"),
         L.Get("Canvas.HelpText") + "\n\n" + L.Get("Canvas.PinHelp") + "\n\n" + L.Get("Canvas.MultiMonitorHelp") + "\n\n" + L.Get("CanvasPreset.Scope"), headerActions);
     internal void NotifyHeaderChanged() => HeaderChanged?.Invoke();
-    private void BindTextGesture(NumericValueField field)
+    private void BindTextGesture(NumericValueField field, string invalidMessageKey = "ToolOptions.InvalidNumber")
     {
         field.Input.GotKeyboardFocus += (_, _) => { if (!refreshing && IsVisible && !field.IsInteracting) field.BeginGesture(); };
         field.Input.LostKeyboardFocus += (_, _) => { if (field.IsInteracting) field.EndGesture(true); };
-        field.Input.PreviewKeyDown += (_, e) => { if (e.Key == Key.Enter && field.IsInteracting) field.EndGesture(true); };
-        field.InvalidInput += () => { if (!refreshing) Failed?.Invoke(L.Get("ToolOptions.InvalidNumber")); };
+        field.InvalidInput += () => { if (!refreshing) Failed?.Invoke(L.Get(invalidMessageKey)); };
     }
     public void CancelEditing()
     {
@@ -461,7 +460,6 @@ internal sealed partial class CanvasToolOptions : UserControl, IToolOptionsConte
     private static void CommitOnExit(TextBox box, Action commit)
     {
         box.LostKeyboardFocus += (_, _) => commit();
-        box.KeyDown += (_, e) => { if (e.Key == Key.Enter) { commit(); e.Handled = true; } };
     }
     private static void AddField(Panel panel, string key, FrameworkElement field, NumericValueField? numeric = null)
     {

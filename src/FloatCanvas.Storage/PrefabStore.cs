@@ -22,9 +22,7 @@ public sealed class PrefabStore
     }
     public Task<LoadedPrefab> LoadAsync(string path, CancellationToken ct = default) => Task.Run(async () =>
     {
-        var version = await ProjectFileVersion.ReadAsync(path, ct).ConfigureAwait(false);
-        var loaded = await PackageCodec.LoadAsync<PrefabPackage>(path, "prefab", ct).ConfigureAwait(false);
-        if (version != await ProjectFileVersion.ReadAsync(path, ct).ConfigureAwait(false)) throw new ProjectFileConflictException();
-        return new LoadedPrefab(loaded.Value, loaded.Assets) { FileVersion = version };
+        var result = await PackageCodec.LoadVersionedAsync<PrefabPackage>(path, "prefab", ct).ConfigureAwait(false);
+        return new LoadedPrefab(result.Value, result.Assets) { FileVersion = result.Version };
     }, ct);
 }

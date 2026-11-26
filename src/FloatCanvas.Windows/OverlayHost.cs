@@ -124,7 +124,9 @@ public sealed partial class OverlayHost : IDisposable
 
     public OverlayHost(OverlayMonitorScope scope) : this(scope, EnumerateMonitors) { }
     public OverlayHost(OverlayMonitorScope scope, string? deviceName)
-        : this(scope, EnumerateMonitors, true, WindowsCapabilities.Current, deviceName) { }
+        : this(scope, deviceName, true) { }
+    public OverlayHost(OverlayMonitorScope scope, string? deviceName, bool initiallyVisible)
+        : this(scope, EnumerateMonitors, initiallyVisible, WindowsCapabilities.Current, deviceName) { }
 
     // Hidden native-contract fixture: real monitor HWNDs without showing or activating a desktop surface.
     internal OverlayHost(OverlayMonitorScope scope, bool initiallyVisible) : this(scope, EnumerateMonitors, initiallyVisible) { }
@@ -558,6 +560,7 @@ public sealed partial class OverlayHost : IDisposable
         }
         _systemInput?.End();
         DestroyPairs();
+        ReleaseDesktopCanvasTextServices();
         _systemInput?.Dispose();_systemInput=null;
         DisposeImageDrops();
         ReleaseGpuRenderer();
@@ -613,7 +616,9 @@ public sealed partial class OverlayHost : IDisposable
         var monitors = OverlayMonitorSelection.Select(available, Scope, SelectedMonitorDevice);
         if (_captureActive) CancelPendingCapture();
         var foreground = _systemInput is not null?GetFocus():GetForegroundWindow();
-        bool preserveToolFocus = IsEditing && OwnsEditingInput() && !OwnsWindow(foreground);
+        bool preserveToolFocus = IsEditing && OwnsEditingInput() && foreground != 0 &&
+            GetWindowThreadProcessId(foreground, out uint focusedProcess) != 0 &&
+            focusedProcess == Environment.ProcessId && !OwnsWindow(foreground);
         bool restoredCanvasFocus = !IsEditing || preserveToolFocus || _nativeDialogDepth != 0;
         EndDropReceptionCore();
         CancelPointer();
@@ -658,7 +663,7 @@ public sealed partial class OverlayHost : IDisposable
             InputActivated?.Invoke();
             foreach (var pair in _windows)
             {
-                if (IsVisible) ShowWindowPreservingZOrder(pair.Display.Handle);
+                if (IsVisible || IsPreviewVisible) ShowWindowPreservingZOrder(pair.Display.Handle);
                 if (IsEditing && _nativeDialogDepth==0) ShowWindowPreservingZOrder(pair.Input.Handle);
             }
             // Transfer focus while the previous input HWND still owns foreground.
@@ -748,11 +753,12 @@ public sealed partial class OverlayHost : IDisposable
         PostEditingFocusValidation();
     }
 
-    private void EndEditingAfterFocusLoss()
+    private void EndEditingAfterFocusLoss([System.Runtime.CompilerServices.CallerMemberName] string cause = "")
     {
         // Our native modal owns the input handoff. A changed foreground here does
         // not cancel the user's editing intent; explicit ExitEditing still does.
         if(_nativeDialogDepth!=0)return;
+        inputFocusLossCause = cause;
         TryBeginSystemScreenshot(releaseInput: false);
         CompleteEditingFocusLoss();
     }
@@ -807,7 +813,12 @@ public sealed partial class OverlayHost : IDisposable
         {
             if(IsEditing && system.EntryKeysTimedOut)CancelBlockedSystemInputEntry();
             else if(IsEditing && !system.Acknowledged)
-            {bool interrupted=system.OwnsInput;EndEditingAfterFocusLoss();if(interrupted)SystemInputUnavailable?.Invoke();}
+            {
+                bool interrupted=system.OwnsInput;
+                if(interrupted){CheckSystemInputEntry();return 0;}
+                EndEditingAfterFocusLoss();
+                if(interrupted)SystemInputUnavailable?.Invoke();
+            }
             else if(IsEditing) SystemInputReady();
             return 0;
         }
@@ -887,9 +898,10 @@ public sealed partial class OverlayHost : IDisposable
             return 0;
         }
         if (state.Kind != WindowKind.Input) return DefWindowProcW(state.Handle, message, wParam, lParam);
-        if (message == 0x7 && _systemInput is not null) // WM_SETFOCUS: native canvas has no TSF text store.
+        if (message == 0x7) // WM_SETFOCUS: native canvas has no TSF text store.
         {
-            _systemInput.FocusCanvas(state.Handle);
+            if (_systemInput is { } systemTextInput) systemTextInput.FocusCanvas(state.Handle);
+            else FocusDesktopCanvasTextServices(state.Handle);
             return 0;
         }
         if (message == 0x02A3) { OnPointerLeft(state); return 0; }
@@ -975,7 +987,7 @@ public sealed partial class OverlayHost : IDisposable
             if (!state.Freed) reference.Free();
             throw new Win32Exception(error, L.Get("Overlay.WindowCreationFailed"));
         }
-        if(_systemInput is not null && kind==WindowKind.Input)DisableCanvasInputMethod(hwnd);
+        if (kind == WindowKind.Input) DisableCanvasInputMethod(hwnd);
         if (kind == WindowKind.Display)
         {
             // The canvas annotates the desktop rather than participating in application Peek.

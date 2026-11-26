@@ -4,6 +4,8 @@ param(
     [switch]$Platform,
     [switch]$Session,
     [Alias('Input')][switch]$NativeInput,
+    [Alias('Overlay')][switch]$AppOverlay,
+    [switch]$InteractiveOverlay,
     [switch]$RecoveryProcess,
     [switch]$Benchmarks
 )
@@ -40,6 +42,9 @@ try {
             if ($LASTEXITCODE -ne 0) { throw "Production input checks failed with exit code $LASTEXITCODE" }
         }
         finally { Write-Host '生产输入验收段已结束；测试清理自建窗口并尝试恢复鼠标和原前台窗口。' -ForegroundColor Yellow }
+    }
+    if ($AppOverlay -or $InteractiveOverlay) {
+        & (Join-Path $PSScriptRoot 'Test-AppOverlay.ps1') -Configuration $Configuration -Interactive:$InteractiveOverlay
     }
     if ($RecoveryProcess) {
         Write-Host '开始跨进程恢复验收：只启动和终止本次创建的两个浮绘子进程，使用独立测试配置；可能显示欢迎窗口，不注入输入。'

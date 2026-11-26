@@ -10,6 +10,8 @@ public sealed partial class OverlayHost
     private bool _inputMethodFocusPending;
     private nint _inputMethodReturnWindow;
     private long _inputMethodReturnUntil;
+    private string? inputFocusLossCause;
+    public string? InputFocusLossCause => inputFocusLossCause;
 
     /// <summary>A bounded Win+Space return candidate, never permission to isolate an external window's input.</summary>
     public bool IsInputMethodSwitchPending

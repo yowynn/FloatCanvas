@@ -56,7 +56,15 @@ internal static class PublicationCleanup
     {
         if (!Directory.Exists(directory) || (File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0) return;
         // Only our exact publication outputs, and no recursive delete of unknown files.
-        foreach (string name in new[] { "workspace.floatcanvas", "workspace.previous.floatcanvas", "history-info.json", "history-info.json.tmp", ".owner" })
+        foreach (string name in new[]
+        {
+            "workspace.floatcanvas",
+            "workspace.previous.floatcanvas",
+            "history-info.json",
+            "history-info.json.tmp",
+            ".owner",
+            ".recovery.lock"
+        })
         {
             string path = Path.Combine(directory, name);
             if (File.Exists(path) && (File.GetAttributes(path) & FileAttributes.ReparsePoint) == 0) File.Delete(path);

@@ -83,6 +83,31 @@ internal static class MonitorPresentationRecoveryTests
             SendMessageW(host.ControlHandle, 0x8001, 0, 0);
             Settle();
             check("monitor changes preserve a deliberately hidden canvas", !host.IsVisible && host.Diagnostics.All(pair => !pair.DisplayVisible && !pair.InputVisible));
+            editor.Session.BeginTransaction("hidden monitor preview");
+            editor.Session.Document.Elements.Add(new CanvasElement
+            {
+                Kind = ElementKind.Rectangle,
+                Width = 30,
+                Height = 30,
+                Transform = Affine2D.Translation(primary.Bounds.Left + 40, primary.Bounds.Top + 40),
+                Style = new() { Fill = 0xFF00FF00, StrokeWidth = 0 }
+            });
+            typeof(DesktopSession).GetMethod("UpdateHiddenCanvasState", Private)!.Invoke(session, null);
+            previous = host.Diagnostics[0].DisplayHandle;
+            host.SetPreviewVisible(true);
+            check("hidden monitor fixture holds an active preview before rebuilding",
+                host.IsPreviewVisible && host.Diagnostics[0].DisplayVisible);
+            SendMessageW(host.ControlHandle, 0x8001, 0, 0);
+            Settle();
+            check("monitor changes retain an active preview while the canvas stays hidden",
+                !host.IsVisible && host.IsPreviewVisible && host.Diagnostics[0].DisplayHandle != previous &&
+                host.Diagnostics[0].DisplayVisible && Green(primary));
+            host.SetPreviewVisible(false);
+            Settle();
+            check("ending a retained preview hides the rebuilt output without changing canvas visibility",
+                !host.IsVisible && !host.IsPreviewVisible && host.Diagnostics.All(pair => !pair.DisplayVisible));
+            editor.Session.Cancel();
+            typeof(DesktopSession).GetMethod("UpdateHiddenCanvasState", Private)!.Invoke(session, null);
             host.SetVisible(true); Settle();
             check("showing the rebuilt hidden canvas restores existing content without a drawing edit", host.IsVisible && Red(primary));
             check("native output recovery leaves canvas objects and undo history unchanged", JsonSerializer.Serialize(editor.Session.Document.Elements) == elementsBefore &&
@@ -92,6 +117,7 @@ internal static class MonitorPresentationRecoveryTests
         finally { host.Draw -= Observe; }
 
         bool Red(MonitorInfo monitor) => pixels.TryGetValue(monitor.DeviceName, out var color) && color.Red > 245 && color.Green < 10 && color.Blue < 10 && color.Alpha == 255;
+        bool Green(MonitorInfo monitor) => pixels.TryGetValue(monitor.DeviceName, out var color) && color.Red < 10 && color.Green > 245 && color.Blue < 10 && color.Alpha == 255;
         void Settle()
         {
             var clock = Stopwatch.StartNew();

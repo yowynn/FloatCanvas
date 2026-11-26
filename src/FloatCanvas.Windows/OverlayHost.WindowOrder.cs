@@ -100,12 +100,13 @@ public sealed partial class OverlayHost
         var protectedWindows = rows.Where(row => row.Process == Environment.ProcessId &&
             !displays.Contains(row.Handle) && (row.Topmost || inputs.Contains(row.Handle)) &&
             visibleDisplays.Any(display => display.Band is null || row.Band is null || display.Band == row.Band)).ToArray();
-        bool ownInversion = protectedWindows.Any(tool => visibleDisplays.Any(display => tool.Rank > display.Rank &&
-            (display.Band is null || tool.Band is null || display.Band == tool.Band)));
+        var tools = protectedWindows.Where(row => !inputs.Contains(row.Handle)).ToArray();
+        var visibleInputs = protectedWindows.Where(row => inputs.Contains(row.Handle)).ToArray();
+        var stack = tools.Concat(visibleInputs).Concat(visibleDisplays).ToArray();
+        bool ownInversion = stack.Zip(stack.Skip(1)).Any(pair => pair.First.Rank > pair.Second.Rank);
         if (!ownInversion && !visibleDisplays.Any(display => !display.Topmost || rows.Any(above =>
             above.Rank < display.Rank && above.Process != Environment.ProcessId &&
             SameRepairableBand(display, above) && Intersects(display.Bounds, above.Bounds)))) return;
-        var stack = protectedWindows.Concat(visibleDisplays).ToArray();
         if (stack.Length == 0 || stack.Any(row => !IsWindow(row.Handle) || !IsWindowVisible(row.Handle) ||
             GetWindowThreadProcessId(row.Handle, out uint process) == 0 || process != Environment.ProcessId)) return;
         // Repair a lost topmost flag or an ordinary-window inversion, but retain external

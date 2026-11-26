@@ -42,7 +42,7 @@ internal sealed class WindowSourceCropWindow : Window
     private readonly Canvas overlay = new() { Background = Brushes.Transparent, ClipToBounds = true };
     private readonly System.Windows.Shapes.Rectangle selection = new() { StrokeThickness = 2, IsHitTestVisible = false };
     private readonly BitmapImage bitmap;
-    private readonly Button apply = new() { Content = L.Get("WindowSource.ApplyCrop"), IsDefault = true, MinHeight = PropertyPanelLayout.ControlHeight, MinWidth = 96 };
+    private readonly Button apply = new() { Content = L.Get("WindowSource.ApplyCrop"), MinHeight = PropertyPanelLayout.ControlHeight, MinWidth = 96 };
     private PointD? dragStart;
     private RectD crop;
     internal bool Accepted { get; private set; }
@@ -80,6 +80,7 @@ internal sealed class WindowSourceCropWindow : Window
         AutomationProperties.SetName(overlay, L.Get("WindowSource.CropTitle"));
         reset.Click += (_, _) => SetCrop(null); cancel.Click += (_, _) => SessionWindowCoordinator.Close(this);
         apply.Click += (_, _) => { if (WindowSourceCropGeometry.IsValid(crop)) { Accepted = true; SessionWindowCoordinator.Close(this); } };
+        AppInputPolicy.AttachFormSubmit(this, apply);
         overlay.SizeChanged += (_, _) => RefreshSelection();
         overlay.MouseLeftButtonDown += (_, e) =>
         {

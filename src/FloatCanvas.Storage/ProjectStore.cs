@@ -28,9 +28,7 @@ public sealed class ProjectStore
     }
     public Task<LoadedProject> LoadAsync(string path, CancellationToken ct = default) => Task.Run(async () =>
     {
-        var version = await ProjectFileVersion.ReadAsync(path, ct).ConfigureAwait(false);
-        var result = await PackageCodec.LoadAsync<SceneDocument>(path, "project", ct).ConfigureAwait(false);
-        if (version != await ProjectFileVersion.ReadAsync(path, ct).ConfigureAwait(false)) throw new ProjectFileConflictException();
-        return new LoadedProject(result.Value, result.Assets) { FileVersion = version };
+        var result = await PackageCodec.LoadVersionedAsync<SceneDocument>(path, "project", ct).ConfigureAwait(false);
+        return new LoadedProject(result.Value, result.Assets) { FileVersion = result.Version };
     }, ct);
 }

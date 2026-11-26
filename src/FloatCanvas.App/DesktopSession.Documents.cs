@@ -73,7 +73,10 @@ internal sealed partial class DesktopSession
         public byte[] Bytes { get; set; } = [];
     }
 
-    private async Task InitializeDocumentsAsync(bool recover = false)
+    private Task InitializeDocumentsAsync(bool recover = false) =>
+        RunOnUiThreadAsync(() => InitializeDocumentsCoreAsync(recover));
+
+    private async Task InitializeDocumentsCoreAsync(bool recover)
     {
         PrefabDraftState? pendingPrefabEdit = null;
         _documentBusy = true;
@@ -286,9 +289,11 @@ internal sealed partial class DesktopSession
             var restored = await RecoveryHistory.LoadAsync(selected, _documentLifetime.Token);
             if (!coordinator.CanContinue(request, _live.Document)) return;
             if (restored is null) { UpdateStatus(L.Get("Recovery.NoHistory")); return; }
-            if (!await ConfirmReplaceAsync(_live, L.Get("Project.ReplaceLive"))) return;
+            if (FileState(_live).Path is not null &&
+                !await ConfirmReplaceAsync(_live, L.Get("Project.ReplaceLive"))) return;
             if (!coordinator.CanContinue(request, _live.Document)) return;
-            if (_capture is not null && !await ConfirmReplaceAsync(_capture, L.Get("Project.ReplaceCapture"))) return;
+            if (_capture is { } currentCapture && FileState(currentCapture).Path is not null &&
+                !await ConfirmReplaceAsync(currentCapture, L.Get("Project.ReplaceCapture"))) return;
             if (!coordinator.CanContinue(request, _live.Document)) return;
             await FlushRecoveryAsync();
             await ArchiveWorkspaceAsync();
@@ -309,14 +314,20 @@ internal sealed partial class DesktopSession
             RestorePrefabRecoveryState(restored.State.PendingPrefabEdit);
             SwitchToolState(_documentLiveTool);
             RecoveryHistory.WorkspaceRestored();
-            await RecoveryHistory.EnterWorkspaceAsync(SnapshotWorkspace(), _documentLifetime.Token);
+            var restoredWorkspace = SnapshotWorkspace();
             _documentRecoveryFingerprint = null;
             OnMonitorsChanged();
             // The chosen history entry becomes the current editable workspace.
-            // Enter before awaiting recovery IO; later callbacks must not reacquire input.
+            // Restore interaction first; history hashing and the confirming recovery
+            // write must not keep the global document-busy gate closed.
             _host.SetVisible(true);
-            SetEditing(true);
-            await FlushRecoveryAsync();
+            _documentBusy = false;
+            // Replacing the live workspace is independent of whether a transient
+            // input-acquisition failure leaves interaction in pass-through mode.
+            _ = CompleteRestoredHistoryPersistenceAsync(restoredWorkspace, _live);
+            if (!SetEditing(true)) return;
+            _windowCoordinator?.ReconcileInteractionSurface();
+            RaiseVisibleToolWindows();
             RequestRender();
             UpdateStatus(L.Get(_host.IsEditing ? "Recovery.RestoredEditing" : "Recovery.RestoredPassThrough"));
         }
@@ -327,6 +338,23 @@ internal sealed partial class DesktopSession
             else UpdateStatus(message);
         }
         finally { _documentBusy = false; PruneDocumentResources(); ScheduleRecovery(); }
+    }
+
+    private async Task CompleteRestoredHistoryPersistenceAsync(WorkspaceState restoredWorkspace, EditorSession restoredOwner)
+    {
+        try
+        {
+            await RecoveryHistory.EnterWorkspaceAsync(restoredWorkspace, _documentLifetime.Token);
+            if (_documentStopped || !ReferenceEquals(_live, restoredOwner)) return;
+            await FlushRecoveryAsync();
+        }
+        catch (OperationCanceledException) when (_documentLifetime.IsCancellationRequested) { }
+        catch (Exception error)
+        {
+            _diagnostics.Write("Recovery.HistoryRestorePersistenceFailed", exception: error);
+            UpdateStatus(L.Get("Recovery.SaveFailed") + error.Message);
+        }
+        finally { ScheduleRecovery(); }
     }
 
     private WorkspaceRecoveryEntry? ChooseRecoveryWorkspace()

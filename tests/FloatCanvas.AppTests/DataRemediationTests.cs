@@ -11,7 +11,8 @@ internal static class DataRemediationTests
 {
     internal static void Run(Action<string, bool> check)
     {
-        string root = Path.Combine(AppContext.BaseDirectory, "data-remediation", Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
+        string scratch = Environment.GetEnvironmentVariable("FLOATCANVAS_TEST_SCRATCH") ?? Path.GetTempPath();
+        string root = Path.Combine(scratch, "data-remediation", Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
         string prefix = Guid.NewGuid().ToString("N") + "-" + Guid.NewGuid().ToString("N");
         string output = Path.Combine(root, prefix + ".floatcanvas"), thumbnail = Path.Combine(root, prefix + ".png");
         string unknown = Path.Combine(root, "user-notes.txt"); File.WriteAllText(unknown, "keep");

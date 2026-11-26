@@ -202,13 +202,19 @@ try
     Key(state, 0x11, scan: 0x1D, flags: 1); var rightControl = Take(state); state.Complete(rightControl.Sequence);
     Check(rightControl.KeyboardState[0xA3] == 0x80 && (rightControl.Modifiers & OverlayModifiers.Control) != 0,
         "Extended generic Ctrl maps to right Ctrl");
-    state = New();
-    Key(state, 0x14); var caps = Take(state); state.Complete(caps.Sequence);
-    Key(state, 0x14); var capsRepeat = Take(state); state.Complete(capsRepeat.Sequence);
-    Check(caps.KeyboardState[0x14] == 0x81 && capsRepeat.KeyboardState[0x14] == 0x81,
-        "Caps Lock toggles only on the first down, not repeat");
-    Key(state, 0x14, true); Drain(state); Key(state, 0x14); var capsAgain = Take(state); state.Complete(capsAgain.Sequence);
-    Check(capsAgain.KeyboardState[0x14] == 0x80, "A fresh Caps Lock press toggles the local bit back");
+    foreach (uint lockKey in new[] { 0x14u, 0x90u, 0x91u })
+    {
+        state = New();
+        bool originalDown = !Key(state, lockKey); var firstLock = Take(state); state.Complete(firstLock.Sequence);
+        bool originalRepeat = !Key(state, lockKey); var repeatLock = Take(state); state.Complete(repeatLock.Sequence);
+        Check(originalDown && originalRepeat && firstLock.IsStateOnly && repeatLock.IsStateOnly &&
+            firstLock.KeyboardState[(int)lockKey] == 0x81 && repeatLock.KeyboardState[(int)lockKey] == 0x81,
+            "ordinary isolation lets Windows toggle each lock key and mirrors only its first down");
+        bool originalUp = !Key(state, lockKey, true); var releasedLock = Take(state); state.Complete(releasedLock.Sequence);
+        Key(state, lockKey); var nextLock = Take(state); state.Complete(nextLock.Sequence);
+        Check(originalUp && releasedLock.IsStateOnly && nextLock.KeyboardState[(int)lockKey] == 0x80,
+            "lock keys retain their native up and a fresh press flips the mirrored toggle bit back");
+    }
 
     var initial = new byte[256]; initial[0xA2] = initial[0x11] = initial[0xC0] = 0x80;
     state = New(initial);
@@ -216,6 +222,16 @@ try
         "Entering through a globally held Ctrl+backtick preserves each repeat and physical up");
     Check(state.QueuedCount == 0 && state.IsActive, "Inherited releases do not create fake relays or toggle commands");
     Check(Key(state, 0xC0), "A released inherited key becomes isolated on its next fresh down");
+
+    state = New(initial);
+    Check(!state.ReconcilePassedReleases(_ => true, 10, 120) && state.CurrentModifiers == OverlayModifiers.Control,
+        "The ordinary watchdog keeps an inherited shortcut while it is physically held");
+    Check(state.ReconcilePassedReleases(_ => false, 10, 130) && state.CurrentModifiers == OverlayModifiers.None &&
+          Drain(state) is [var controlRelease, var triggerRelease] && controlRelease.IsStateOnly && triggerRelease.IsStateOnly,
+        "Polling clears both missed releases without replaying the shortcut");
+    Check(Key(state, 0xA2) && !state.ReconcilePassedReleases(_ => false, 10, 140) &&
+          state.CurrentModifiers == OverlayModifiers.Control,
+        "Async state cannot release a key whose down was privately suppressed");
 
     state = new(256, 2000);
     Check(!Key(state, 0xA2, own: false), "Inactive physical down passes before lease acquisition");

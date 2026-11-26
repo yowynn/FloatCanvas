@@ -62,6 +62,7 @@ internal sealed class NumericValueField : UserControl
     internal event Action<double>? ValueChanged;
     internal event Action? InvalidInput;
     internal event Action? SliderValueCommitted;
+    internal Func<bool>? ConfirmText { get; set; }
     internal event Action? GestureStarted;
     internal event Action<bool>? GestureCompleted;
 
@@ -177,6 +178,7 @@ internal sealed class NumericValueField : UserControl
         };
         Slider.LostMouseCapture += (_, _) => { if (railGesture) EndGesture(false); };
         PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape && CancelGesture()) e.Handled = true; };
+        KeyDown += (_, e) => AppInputPolicy.HandleFieldEnter(e, ConfirmTypedValue);
         Unloaded += (_, _) => CancelGesture();
         IsVisibleChanged += (_, _) => { if (!IsVisible) CancelGesture(); };
         IsEnabledChanged += (_, _) => { if (!IsEnabled) CancelGesture(); };
@@ -280,6 +282,7 @@ internal sealed class NumericValueField : UserControl
         synchronizing = true;
         try { SetDisplayedText(text); invalidDraft = false; hasPlaceholder = true; }
         finally { synchronizing = false; }
+        if (outside.Text == "!") RefreshRange(value);
     }
 
     internal void SetScrubAnchor(NumericPropertyKind kind, string name)
@@ -412,6 +415,11 @@ internal sealed class NumericValueField : UserControl
 
     private void RefreshRange(double next)
     {
+        if (outside.Text == "!")
+        {
+            outside.SetResourceReference(TextBlock.ForegroundProperty, "CanvasAccent");
+            Input.ClearValue(AutomationProperties.ItemStatusProperty);
+        }
         outside.Text = next < Slider.Minimum ? "‹" : next > Slider.Maximum ? "›" : "";
         Slider.ToolTip = $"{Format(Slider.Minimum)} – {Format(Slider.Maximum)}{(Unit.Length == 0 ? "" : " " + Unit)}";
         AutomationProperties.SetItemStatus(Slider, outside.Text.Length == 0 ? "" : Format(next));
@@ -467,5 +475,22 @@ internal sealed class NumericValueField : UserControl
         { result = value; return true; }
         return (double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out result) || double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out result)) &&
             double.IsFinite(result) && result >= minimum && result <= maximum && (!integerOnly || result == Math.Truncate(result));
+    }
+
+    private bool ConfirmTypedValue()
+    {
+        if (!TryGetValue(out _))
+        {
+            if (!hasPlaceholder)
+            {
+                outside.Text = "!";
+                outside.SetResourceReference(TextBlock.ForegroundProperty, "CanvasErrorText");
+                AutomationProperties.SetItemStatus(Input, L.Get("ToolOptions.InvalidNumber"));
+            }
+            return false;
+        }
+        if (ConfirmText?.Invoke() == false) return false;
+        if (IsInteracting) EndGesture(true);
+        return true;
     }
 }

@@ -30,7 +30,9 @@ internal static class PresentationLayerParityTests
                 var layer = new CanvasElement { Kind = ElementKind.Presentation, Width = 400, Height = 200, Presentation = new() };
                 var labels = Enum.GetValues<PresentationDisplayStyle>().Select(style =>
                 { layer.Presentation.DisplayStyle = style; return InspectorWindow.ElementName(layer); }).ToArray();
-                check(locale + " every keyboard display mode has a distinct meaningful default layer name", labels.Distinct().Count() == 3 && labels.All(name => name != L.Get("Editor.ElementKind.Unknown")));
+                check(locale + " every keyboard display mode has a distinct meaningful default layer name",
+                    labels.Distinct().Count() == Enum.GetValues<PresentationDisplayStyle>().Length &&
+                    labels.All(name => name != L.Get("Editor.ElementKind.Unknown")));
                 layer.Name = "My keyboard";
                 check(locale + " style changes never replace a custom layer name", InspectorWindow.ElementName(layer) == "My keyboard");
                 var source = new CanvasElement { Kind = ElementKind.Image, WindowSource = new() { BindingIntent = Guid.NewGuid() } };

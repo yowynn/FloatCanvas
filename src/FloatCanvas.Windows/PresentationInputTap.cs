@@ -6,10 +6,12 @@ namespace FloatCanvas.Windows;
 /// <summary>Metadata only; its owner serializes configuration and hook callbacks.</summary>
 internal sealed class PresentationInputTap
 {
+    internal const uint InjectedKeyFlag = 0x100;
     private readonly PresentationInputBuffer buffer = new();
     private readonly Dictionary<(int, int, uint), string> labels = [];
     private bool keyboard, pointer;
     private long epoch;
+    internal bool ObservesKeyboard => keyboard;
     internal uint Generation { get; private set; } = 1;
 
     internal void Configure(bool keyboard, bool pointer, long epoch)
@@ -24,12 +26,19 @@ internal sealed class PresentationInputTap
     {
         // The presentation shows physical presses. Re-injected mapper/system edges
         // must not start a second chord or release a still-held physical key.
-        if (!keyboard || !active || (flags & 0x10) != 0 || vk is 0 or >= 255 || scan == 255) return 0;
-        int key = (int)vk;
-        if (key == 0x10) key = scan == 0x36 ? 0xA1 : 0xA0;
-        else if (key == 0x11) key = (flags & 1) != 0 ? 0xA3 : 0xA2;
-        else if (key == 0x12) key = (flags & 1) != 0 ? 0xA5 : 0xA4;
-        uint physicalFlags = (flags & 1) != 0 ? 2u : 0u;
+        // Hardware and vendor remappers commonly retransmit command keys and
+        // side-specific modifiers as injected events, so those remain observable.
+        if (!keyboard || !active || vk is 0 or >= 255 || scan == 255) return 0;
+        int key = vk switch
+        {
+            0x10 => scan == 0x36 ? 0xA1 : 0xA0,
+            0x11 => (flags & 1) != 0 ? 0xA3 : 0xA2,
+            0x12 => (flags & 1) != 0 ? 0xA5 : 0xA4,
+            _ => (int)vk
+        };
+        if ((flags & 0x10) != 0 && !IsInjectedCommandKey((uint)key) && key is not (>= 0xA0 and <= 0xA5)) return 0;
+        uint physicalFlags = ((flags & 1) != 0 ? 2u : 0u) |
+            ((flags & 0x10) != 0 ? InjectedKeyFlag : 0u);
         return buffer.Add(new(up ? PresentationObservedKind.KeyUp : PresentationObservedKind.KeyDown,
             now, Device: 0, VirtualKey: key, ScanCode: (int)scan, KeyFlags: physicalFlags,
             KeyLabel: Label(key, (int)scan, physicalFlags), InputOwner: owner)) ? Generation : 0;
@@ -70,6 +79,7 @@ internal sealed class PresentationInputTap
         }
         if (labels.Count >= 256) labels.Clear(); labels.Add(key, label); return label;
     }
+    private static bool IsInjectedCommandKey(uint virtualKey) => virtualKey is >= 0xA6 and <= 0xB7;
     [DllImport("user32.dll", EntryPoint = "GetKeyNameTextW", CharSet = CharSet.Unicode)]
     private static extern int GetKeyNameText(int code, StringBuilder text, int maximum);
 }

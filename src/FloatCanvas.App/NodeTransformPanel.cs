@@ -71,8 +71,7 @@ internal sealed class NodeTransformPanel : StackPanel
             field.Input.LostKeyboardFocus += (_, _) => { if (!refreshing && !field.IsInteracting) { Publish(key); CompletePendingEdit(); } };
             field.Input.PreviewKeyDown += (_, e) =>
             {
-                if (e.Key == Key.Enter) { Publish(key); CompletePendingEdit(); e.Handled = true; }
-                else if (e.Key == Key.Escape && IsEditing) { CancelEditing(); Refresh(); e.Handled = true; }
+                if (e.Key == Key.Escape && IsEditing) { CancelEditing(); Refresh(); e.Handled = true; }
             };
         }
         Children.Insert(1, PropertyPanelLayout.Row(new PropertyLabel(L.Get("Property.Position")), PropertyPanelLayout.Pair(fields["X"], fields["Y"])));

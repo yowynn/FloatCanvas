@@ -134,12 +134,17 @@ internal static class WindowRobustnessTests
         var outer = NewWindow("outer", toolbar);
         new WindowInteropHelper(outer).EnsureHandle();
         var inner = NewWindow("inner", outer);
-        var order = new List<string>(); bool cleanupByTest = false;
+        var order = new List<string>(); bool cleanupByTest = false, modalOwnerStayedDisabled = false;
         outer.Closed += (_, _) => order.Add("outer"); inner.Closed += (_, _) => order.Add("inner");
         var timeout = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
         timeout.Tick += (_, _) => { timeout.Stop(); cleanupByTest = true; inner.Close(); outer.Close(); };
         outer.Loaded += (_, _) => outer.Dispatcher.BeginInvoke(DispatcherPriority.Background, () => SessionWindowCoordinator.ShowModal(inner));
-        inner.Loaded += (_, _) => inner.Dispatcher.BeginInvoke(DispatcherPriority.Background, () => coordinator.SuspendEditingWindows());
+        inner.Loaded += (_, _) =>
+        {
+            SessionWindowCoordinator.Show(toolbar);
+            modalOwnerStayedDisabled = !IsWindowEnabled(new WindowInteropHelper(toolbar).Handle);
+            inner.Dispatcher.BeginInvoke(DispatcherPriority.Background, () => coordinator.SuspendEditingWindows());
+        };
         try
         {
             timeout.Start(); SessionWindowCoordinator.ShowModal(outer);
@@ -147,6 +152,12 @@ internal static class WindowRobustnessTests
             check("nested modal exit reenables the toolbar HWND", IsWindowEnabled(new WindowInteropHelper(toolbar).Handle));
             check("modal exit leaves no visible dialog or disabled owner", !inner.IsVisible && !outer.IsVisible && toolbar.IsEnabled);
             check("nested modal exit completely balances the thread's modal stack", !ComponentDispatcher.IsThreadModal);
+            check("showing an owner during an active modal does not reopen its disabled native surface", modalOwnerStayedDisabled);
+            nint toolbarHandle = new WindowInteropHelper(toolbar).Handle;
+            EnableWindow(toolbarHandle, false);
+            SessionWindowCoordinator.Show(toolbar);
+            check("an explicit editing-window show repairs a stale native disabled owner",
+                IsWindowEnabled(toolbarHandle));
         }
         finally { timeout.Stop(); if (inner.IsVisible) inner.Close(); if (outer.IsVisible) outer.Close(); toolbar.Close(); }
     }
@@ -242,6 +253,7 @@ internal static class WindowRobustnessTests
     [DllImport("user32.dll")] private static extern nint GetTopWindow(nint handle);
     [DllImport("user32.dll")] private static extern nint GetWindow(nint handle, uint command);
     [DllImport("user32.dll")] private static extern bool IsWindowEnabled(nint handle);
+    [DllImport("user32.dll")] private static extern bool EnableWindow(nint handle, bool enabled);
     [DllImport("user32.dll")] private static extern nint GetThreadDesktop(uint thread);
     [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
     [DllImport("user32.dll", EntryPoint = "GetUserObjectInformationW", CharSet = CharSet.Unicode)] private static extern bool GetUserObjectInformation(nint handle, int index, System.Text.StringBuilder value, int length, out int needed);

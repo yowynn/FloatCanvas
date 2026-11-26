@@ -97,7 +97,8 @@ internal sealed class CanvasGridCalibrationWindow : Window
         effect.SetResourceReference(TextBlock.ForegroundProperty, "CanvasMuted");
         var actions = new WrapPanel { HorizontalAlignment = HorizontalAlignment.Right };
         var adjust = new Button { Content = L.Get("Canvas.AdjustGridSample"), MinHeight = PropertyPanelLayout.ControlHeight, Margin = new(0, 0, 8, 0) };
-        var apply = new Button { Content = L.Get("Canvas.ApplyPlane"), MinHeight = PropertyPanelLayout.ControlHeight, MinWidth = 80, IsDefault = true };
+        var apply = new Button { Content = L.Get("Canvas.ApplyPlane"), MinHeight = PropertyPanelLayout.ControlHeight, MinWidth = 80 };
+        AppInputPolicy.AttachFormSubmit(this, apply);
         var cancel = new Button { Content = L.Get("Dialog.Cancel"), MinHeight = PropertyPanelLayout.ControlHeight, MinWidth = 80, IsCancel = true, Margin = new(0, 0, 8, 0) };
         actions.Children.Add(adjust); actions.Children.Add(cancel); actions.Children.Add(apply); panel.Children.Add(actions);
         CanvasSettings? candidate = null; bool syncing = false, queued = false, closed = false; long candidateVersion = 0;

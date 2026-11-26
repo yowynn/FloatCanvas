@@ -73,6 +73,8 @@ internal static class CanvasAnchorCaptureTests
             using var image = raster.Snapshot(); using var pixels = SkiaSharp.SKBitmap.FromImage(image);
             check("production reference-line overlay renders the sampled frame", pixels.GetPixel(200, 350).Alpha > 0);
         }
+        System.Windows.Input.Keyboard.ClearFocus();
+        Pump();
         fixture.Invoke("OnKey", 0x08);
         check("Backspace removes only the last reference line", Field<List<CanvasReferenceLine>>(fixture.Session, "_canvasReferenceLines").Count == 3 && session.UndoCount == undo);
         fixture.Pointer(OverlayPointerKind.Down, segments[3][0]); fixture.Pointer(OverlayPointerKind.Up, segments[3][1]);
@@ -123,7 +125,7 @@ internal static class CanvasAnchorCaptureTests
             var dialog = Field<CanvasGridCalibrationWindow>(fixture.Session, "_canvasGridCalibrationWindow");
             check("Escape from sample adjustment returns to the confirmation dialog with retained counts", Field<CanvasGridCalibrationDraft>(fixture.Session, "_canvasGridDraft").Columns == "4");
             WaitForSafeCandidate(dialog);
-            Descendants(dialog).OfType<System.Windows.Controls.Button>().Single(b => b.IsDefault).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+            Descendants(dialog).OfType<System.Windows.Controls.Button>().Single(b => Equals(b.Content, L.Get("Canvas.ApplyPlane"))).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
         }));
         fixture.Invoke("OnKey", 0x1B); Pump();
         check("sample application creates one undo while preserving hidden grid setting and restoring panels", session.UndoCount == undo + 2 && !session.Document.Canvas.Grid.Visible && fixture.Panel.IsVisible);

@@ -45,18 +45,34 @@ internal sealed class SessionWindowLayout
             if (window.ResizeMode is ResizeMode.CanResize or ResizeMode.CanResizeWithGrip)
             { window.Height = previous.Height; window.SizeToContent = SizeToContent.Manual; }
         }
+        bool closing = false;
         void Remember()
         {
-            if (window.WindowState != WindowState.Normal || !window.IsLoaded ||
+            if (closing || !window.IsVisible || window.WindowState != WindowState.Normal || !window.IsLoaded ||
                 !double.IsFinite(window.Left) || !double.IsFinite(window.Top) || window.ActualWidth <= 1 || window.ActualHeight <= 1) return;
             bounds[key] = new Rect(window.Left, window.Top, window.ActualWidth, window.ActualHeight);
             if (TryOrigin(window, out var origin)) physicalOrigins[key] = origin;
         }
+        window.Closing += (_, _) =>
+        {
+            closing = true;
+            // Close can be cancelled by validation or unsaved-edit handlers. Re-enable
+            // geometry tracking once that synchronous close pass has finished.
+            window.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background,
+                new Action(() => { if (window.IsVisible) closing = false; }));
+        };
+        window.Closed += (_, _) => closing = true;
         window.LocationChanged += (_, _) => Remember();
         window.SizeChanged += (_, _) => Remember();
         window.Loaded += (_, _) => Remember();
-        window.IsVisibleChanged += (_, _) => Remember();
-        window.Closed += (_, _) => Remember();
+        // Hiding and closing can publish transitional layout values after the user's
+        // last real geometry. Keep the last visible size instead of overwriting it.
+        window.IsVisibleChanged += (_, _) =>
+        {
+            if (!window.IsVisible) return;
+            closing = false;
+            Remember();
+        };
     }
 
     internal void TrackEditing(Window window, Func<IReadOnlyList<MonitorInfo>> monitors)

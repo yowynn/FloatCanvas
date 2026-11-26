@@ -29,6 +29,7 @@ internal sealed partial class DesktopSession
     private Controls.Border _toolOptionsFrame = null!;
     private Controls.Button _toolOptionsPin = null!;
     private bool _toolOptionsPinned;
+    private bool _toolbarOriginEstablished;
     private string? _toolbarParameterFingerprint;
     private NumberSequenceSettings? _toolbarNumbering;
     private EditorTool _toolbarObservedTool = EditorTool.Freehand;
@@ -156,10 +157,12 @@ internal sealed partial class DesktopSession
         };
         _status.Text = L.Get("Preset.Freehand"); _toolbarStatusDisplay = new(_status); Cell(_toolbarStatusDisplay, 14, 1, 19);
         RefreshToolShortcutHints();
+        LogStartupStage("ToolbarCommandsCreated");
         _toolbarExpandedContent = Surface(content, ToolbarUpperRow.OuterCornerRadius, new Thickness(20, 2, 4, 2));
         _toolbarExpandedContent.Visibility = _settings.ToolbarExpanded ? Visibility.Visible : Visibility.Collapsed;
         _toolbarExpandedContent.SetResourceReference(UIElement.EffectProperty,"ToolbarEdgeEffect");
         var shell = _toolbarLauncher.CreateSurface(_toolbarExpandedContent);
+        LogStartupStage("ToolbarShellCreated");
         _boundFileIndicator=new BoundFileIndicator(()=>_ = RunCommand(RevertActiveFileAsync),LocateActiveFile,DetachActiveFile,
             CanRevertActiveFile,()=>!DocumentOperationBusy);
         _rootCanvasHeader = new(_boundFileIndicator, () => SwitchRootCanvas(RootCanvasKind.Main),
@@ -181,6 +184,7 @@ internal sealed partial class DesktopSession
             Background = Brushes.Transparent, ResizeMode = ResizeMode.NoResize, SizeToContent = SizeToContent.WidthAndHeight,
             Topmost = true, ShowInTaskbar = true, Icon = _host.IsVisible?AppIcon.WindowImage:AppIcon.HiddenWindowImage, FontSize = 14, FontFamily = new FontFamily("Segoe UI, Microsoft YaHei UI"),
             UseLayoutRounding = true, SnapsToDevicePixels = true };
+        LogStartupStage("ToolbarWindowCreated");
         OverlayWindowScope.Prepare(window);
         ToolbarWindowBounds.Attach(window, () => _host.Monitors);
         _toolbarMenu = CreateLauncherMenu();
@@ -219,6 +223,7 @@ internal sealed partial class DesktopSession
             SaveToolbarPosition(); RepositionToolOptions();
         };
         CreateToolOptionsPopup(window);
+        LogStartupStage("ToolbarOptionsPopupCreated");
         Action libraryChanged = () => window.Dispatcher.BeginInvoke(() => { ValidateSelectedStamp(); RefreshToolbarState(); });
         _stampLibrary.Changed += libraryChanged;
         window.Closed += (_, _) => _stampLibrary.Changed -= libraryChanged;

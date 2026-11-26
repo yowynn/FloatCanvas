@@ -14,6 +14,9 @@ internal static class SystemInputEntryTimingTests
         timing.Begin();
         check(!timing.TimedOut(false,9000)&&!timing.TimedOut(false,10999),"A retry or native-dialog return receives a new ACK budget");
         check(timing.TimedOut(false,11000),"The new generation still has a bounded ACK deadline");
+        timing.Acknowledged();
+        check(!timing.TimedOut(false,12000)&&!timing.TimedOut(false,13999)&&timing.TimedOut(false,14000),
+            "A later ACK recovery starts a fresh bounded grace window");
         timing.Begin();
         check(!timing.TimedOut(true,50000)&&!timing.TimedOut(false,60000)&&!timing.TimedOut(false,61999)&&timing.TimedOut(false,62000),
             "Delayed message pumping grants a full ACK budget after native key waiting ends");

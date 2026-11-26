@@ -141,8 +141,12 @@ internal static class ProjectionUnsafeHoverTests
             editor.Tool = EditorTool.Freehand;
             editor.Style.StrokeWidth = 20; editor.Style.Foreground = 0xFF0080FF;
             Observe(new(100, 100)); Invoke(session, "UpdateBrushTipDamage");
-            check("brush hover draws the configured color centered at the pointer hotspot",
-                Pixel(100, 100) == new SKColor(0xFF0080FF) && Alpha(109, 100) > 200 && Alpha(111, 100) == 0);
+            var center = Pixel(100, 100);
+            var inside = Alpha(109, 100);
+            var outside = Alpha(111, 100);
+            check($"brush hover draws the configured color centered at the pointer hotspot " +
+                $"(center={center} inside={inside} outside={outside})",
+                center == new SKColor(0xFF0080FF) && inside > 200 && outside == 0);
             check("brush hover invalidates only a small presentation region", !Pending() && presentationDamage is [{ Width: 24, Height: 24 }]);
             AbortPresentation();
             Observe(new(130, 100)); Invoke(session, "UpdateBrushTipDamage");

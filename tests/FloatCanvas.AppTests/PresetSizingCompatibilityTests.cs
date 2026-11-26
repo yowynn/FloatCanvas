@@ -37,10 +37,19 @@ internal static class PresetSizingCompatibilityTests
         foreach (var preset in library.Official.Where(p => p.Parameters.Tool is EditorTool.Rectangle or EditorTool.Ellipse))
             check(preset.Id + " has one consistent 108 pixel side", preset.Parameters.DefaultWidth == 108 || preset.Parameters.DefaultHeight == 108);
         check("official text uses 36 point type", library.Apply("official.text").Style.FontSize == 36);
-        var stretched = emoji.Clone(); stretched.Width = 144; stretched.Height = 36; stretched.Transform = Affine2D.Translation(10, 10);
-        using var renderer = new SceneRenderer(); using var bitmap = SKBitmap.Decode(renderer.ExportPng(new SceneDocument { Viewport = new(0, 0, 180, 80), Elements = [stretched] }, session.Assets, true));
-        var ink = Enumerable.Range(0, bitmap.Height).SelectMany(y => Enumerable.Range(0, bitmap.Width).Where(x => bitmap.GetPixel(x, y).Alpha > 16).Select(x => (X:x,Y:y))).ToArray();
-        check("emoji artwork stretches to its actual frame", ink.Max(p => p.X) - ink.Min(p => p.X) > 138 && ink.Max(p => p.Y) - ink.Min(p => p.Y) < 38);
+        var stretched = emoji.Clone(); stretched.ConstrainAspect = false;
+        stretched.Width = 144; stretched.Height = 36; stretched.Transform = Affine2D.Translation(10, 10);
+        var square = emoji.Clone(); square.ConstrainAspect = false;
+        square.Width = square.Height = 36; square.Transform = Affine2D.Translation(10, 10);
+        using var renderer = new SceneRenderer();
+        using var wideBitmap = SKBitmap.Decode(renderer.ExportPng(new SceneDocument { Viewport = new(0, 0, 180, 80), Elements = [stretched] }, session.Assets, true));
+        using var squareBitmap = SKBitmap.Decode(renderer.ExportPng(new SceneDocument { Viewport = new(0, 0, 180, 80), Elements = [square] }, session.Assets, true));
+        var wideInk = Ink(wideBitmap); var squareInk = Ink(squareBitmap);
+        double wideAspect = (wideInk.Right - wideInk.Left) / (double)(wideInk.Bottom - wideInk.Top);
+        double squareAspect = (squareInk.Right - squareInk.Left) / (double)(squareInk.Bottom - squareInk.Top);
+        check("unlocked emoji stretches non-uniformly inside its global content frame",
+            wideInk.Left >= 10 && wideInk.Top >= 10 && wideInk.Right <= 154 && wideInk.Bottom <= 46 &&
+            wideAspect > squareAspect * 2.5);
         LinkedColors(editor, library, check);
         var badgeScene = new SceneDocument { Viewport = new(0,0,72,72), Elements = [number.Clone()] }; badgeScene.Elements[0].Transform = Affine2D.Identity;
         using var badge = SKBitmap.Decode(renderer.ExportPng(badgeScene, session.Assets, true));
@@ -79,6 +88,19 @@ internal static class PresetSizingCompatibilityTests
         check("workspace recovery preserves linked colors", recovery.LoadAsync().GetAwaiter().GetResult()!.State.LiveDocument.Elements.Single().Style.LinkColors);
     }
     private static T Field<T>(object target, string name) => (T)target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(target)!;
+    private static (int Left, int Top, int Right, int Bottom) Ink(SKBitmap bitmap)
+    {
+        int left = bitmap.Width, top = bitmap.Height, right = -1, bottom = -1;
+        for (int y = 0; y < bitmap.Height; y++)
+        for (int x = 0; x < bitmap.Width; x++)
+        {
+            if (bitmap.GetPixel(x, y).Alpha <= 16) continue;
+            left = Math.Min(left, x); top = Math.Min(top, y);
+            right = Math.Max(right, x); bottom = Math.Max(bottom, y);
+        }
+        if (right < left || bottom < top) throw new InvalidOperationException("Expected visible emoji ink.");
+        return (left, top, right, bottom);
+    }
     private static void Click(EditorController editor, double x, double y)
     {
         editor.Pointer(new(OverlayPointerKind.Down, new(x,y), OverlayMouseButton.Left, OverlayModifiers.None));

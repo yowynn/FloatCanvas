@@ -53,6 +53,7 @@ internal sealed class WindowSourcePickerWindow : Window
         itemStyle.Setters.Add(new Setter(FrameworkElement.ToolTipProperty, new Binding(nameof(WindowSourceCandidate.WindowClass)))); candidates.ItemContainerStyle = itemStyle;
         AutomationProperties.SetName(search, L.Get("WindowSource.Search")); AutomationProperties.SetName(candidates, L.Get("WindowSource.PickerTitle"));
         reload.Click += async (_, _) => await RefreshCandidatesAsync(); search.TextChanged += (_, _) => Filter();
+        AppInputPolicy.AttachSearchEnter(search, Filter);
         candidates.SelectionChanged += (_, _) => RefreshSelection();
         select.Click += (_, _) => { if (select.IsEnabled && SelectedCandidate is not null) { Accepted = true; SessionWindowCoordinator.Close(this); } };
         cancel.Click += (_, _) => SessionWindowCoordinator.Close(this);

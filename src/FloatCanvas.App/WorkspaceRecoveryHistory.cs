@@ -2,6 +2,7 @@ using System.IO;
 using System.Text.Json;
 using FloatCanvas.Core;
 using FloatCanvas.Storage;
+using L = FloatCanvas.Localization.AppText;
 
 namespace FloatCanvas.App;
 
@@ -10,10 +11,16 @@ internal sealed record WorkspaceRecoveryEntry(string DirectoryPath, DateTime Sav
 // Snapshot-based history work is serialized off UI; RecoveryStore retains its atomic package writes.
 internal sealed class WorkspaceRecoveryHistory(RecoveryStore store)
 {
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim> DirectoryGates =
+        new(StringComparer.OrdinalIgnoreCase);
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, object> InfoLocks =
+        new(StringComparer.OrdinalIgnoreCase);
     private string? freshBaseline;
     private string? entryBaseline;
     private long entryEpoch;
-    private readonly SemaphoreSlim operations = new(1, 1);
+    private Task baselineReady = Task.CompletedTask;
+    private readonly SemaphoreSlim operations = DirectoryGates.GetOrAdd(
+        Path.TrimEndingDirectorySeparator(Path.GetFullPath(store.DirectoryPath)), _ => new(1, 1));
     public int MaximumVersions { get; set; } = 60;
     private sealed record HistoryInfo(string Fingerprint, string? SourceFile, bool Eligible = true, long PackageTicks = 0, long PackageLength = 0);
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (long Ticks, long Length, HistoryInfo Info)> legacyInfo = new(StringComparer.OrdinalIgnoreCase);
@@ -22,18 +29,25 @@ internal sealed class WorkspaceRecoveryHistory(RecoveryStore store)
     {
         Interlocked.Increment(ref entryEpoch);
         entryBaseline = ContentFingerprint(workspace);
+        baselineReady = Task.CompletedTask;
     }
     public async Task EnterWorkspaceAsync(WorkspaceState workspace, CancellationToken ct = default)
     {
         long epoch = Interlocked.Increment(ref entryEpoch);
-        string fingerprint = await Task.Run(() => ContentFingerprint(workspace), ct).ConfigureAwait(false);
+        var ready = Task.Run(() => ContentFingerprint(workspace), ct);
+        baselineReady = ready;
+        string fingerprint = await ready.ConfigureAwait(false);
         if (epoch == Interlocked.Read(ref entryEpoch)) entryBaseline = fingerprint;
     }
+    public Task WaitForBaselineAsync() => baselineReady;
     public bool HasNewVersion(WorkspaceState workspace) => ContentFingerprint(workspace) != entryBaseline && HasValue(workspace);
     public Task<bool> HasNewVersionAsync(WorkspaceState workspace, CancellationToken ct = default)
     {
-        string? baseline = entryBaseline;
-        return Task.Run(() => HasValue(workspace) && ContentFingerprint(workspace) != baseline, ct);
+        return RunAfterBaselineAsync(() =>
+        {
+            string? baseline = entryBaseline;
+            return HasValue(workspace) && ContentFingerprint(workspace) != baseline;
+        }, ct);
     }
     private static bool HasValue(WorkspaceState workspace) => HasObjects(workspace);
     private static bool HasObjects(WorkspaceState workspace) => workspace.LiveDocument.Elements.Count > 0 ||
@@ -55,19 +69,34 @@ internal sealed class WorkspaceRecoveryHistory(RecoveryStore store)
     }
     private static void WriteInfo(string path, HistoryInfo info)
     {
-        var package = new FileInfo(Path.Combine(Path.GetDirectoryName(path)!, "workspace.floatcanvas"));
-        if (package.Exists) info = info with { PackageTicks = package.LastWriteTimeUtc.Ticks, PackageLength = package.Length };
-        File.WriteAllText(path + ".tmp", JsonSerializer.Serialize(info));
-        File.Move(path + ".tmp", path, true);
+        path = Path.GetFullPath(path);
+        lock (InfoLocks.GetOrAdd(Path.TrimEndingDirectorySeparator(path), _ => new()))
+        {
+            var package = new FileInfo(Path.Combine(Path.GetDirectoryName(path)!, "workspace.floatcanvas"));
+            if (package.Exists) info = info with { PackageTicks = package.LastWriteTimeUtc.Ticks, PackageLength = package.Length };
+            string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            try
+            {
+                File.WriteAllText(temporary, JsonSerializer.Serialize(info));
+                File.Move(temporary, path, true);
+            }
+            finally
+            {
+                try { if (File.Exists(temporary)) File.Delete(temporary); }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+            }
+        }
     }
-    public Task ArchiveAsync(WorkspaceState workspace, AssetLibrary assets, byte[]? preview,
+    public async Task ArchiveAsync(WorkspaceState workspace, AssetLibrary assets, byte[]? preview,
         string? sourceFile, bool force = false, CancellationToken ct = default, Func<WorkspaceState, AssetLibrary, byte[]?>? createPreview = null)
     {
+        await WaitForBaselineAsync().WaitAsync(ct).ConfigureAwait(false);
         var snapshot = workspace.Clone();
         var resources = assets.Resources.ToArray();
         string? baseline = entryBaseline;
         int maximum = MaximumVersions;
-        return RunSerializedAsync(() => ArchiveCoreAsync(snapshot, resources, preview, sourceFile, force, baseline, maximum, ct, createPreview), ct);
+        await RunSerializedAsync(() => ArchiveCoreAsync(snapshot, resources, preview, sourceFile, force, baseline, maximum, ct, createPreview), ct)
+            .ConfigureAwait(false);
     }
 
     private async Task RunSerializedAsync(Func<Task> operation, CancellationToken ct)
@@ -75,6 +104,11 @@ internal sealed class WorkspaceRecoveryHistory(RecoveryStore store)
         await operations.WaitAsync(ct).ConfigureAwait(false);
         try { await Task.Run(operation, ct).ConfigureAwait(false); }
         finally { operations.Release(); }
+    }
+    private async Task<T> RunAfterBaselineAsync<T>(Func<T> operation, CancellationToken ct)
+    {
+        await WaitForBaselineAsync().WaitAsync(ct).ConfigureAwait(false);
+        return await Task.Run(operation, ct).ConfigureAwait(false);
     }
 
     private async Task ArchiveCoreAsync(WorkspaceState workspace, AssetResource[] resources, byte[]? preview,
@@ -130,41 +164,70 @@ internal sealed class WorkspaceRecoveryHistory(RecoveryStore store)
         string path = Path.Combine(directory, "history-info.json");
         var package = new FileInfo(Path.Combine(directory, "workspace.floatcanvas"));
         long ticks = package.Exists ? package.LastWriteTimeUtc.Ticks : 0, length = package.Exists ? package.Length : 0;
+        HistoryInfo? metadata = null;
         if (File.Exists(path))
         {
             try
             {
-                var metadata = JsonSerializer.Deserialize<HistoryInfo>(File.ReadAllText(path));
-                if (ticks != 0 && metadata is not null && metadata.PackageTicks == ticks && metadata.PackageLength == length) return metadata;
+                metadata = JsonSerializer.Deserialize<HistoryInfo>(File.ReadAllText(path));
+                if (ticks != 0 && metadata is not null && metadata.Eligible &&
+                    metadata.PackageTicks == ticks && metadata.PackageLength == length) return metadata;
             }
             catch (JsonException) { }
         }
         else if (legacyInfo.TryGetValue(directory, out var cached) && ticks == cached.Ticks && length == cached.Length) return cached.Info;
-        var recovered = new RecoveryStore(directory).LoadAsync(ct).GetAwaiter().GetResult();
-        if (recovered is null) return null;
-        var state = recovered.State;
-        string fingerprint = ContentFingerprint(state);
+        var generations = new List<(WorkspaceState State, string Fingerprint, bool Eligible, bool FromBackup)>();
+        Exception? readFailure = null;
+        foreach (bool fromBackup in new[] { false, true })
+        {
+            try
+            {
+                var loaded = new RecoveryStore(directory).LoadGenerationAsync(fromBackup, ct).GetAwaiter().GetResult();
+                if (loaded is null) continue;
+                generations.Add((loaded.State, ContentFingerprint(loaded.State),
+                    HasObjects(loaded.State) || JsonSerializer.Serialize(loaded.State.LiveDocument.Canvas) != JsonSerializer.Serialize(new CanvasSettings()),
+                    fromBackup));
+            }
+            catch (Exception error) when (error is InvalidDataException or IOException or JsonException or NotSupportedException or EndOfStreamException)
+            {
+                readFailure ??= error;
+            }
+        }
+        if (generations.Count == 0)
+        {
+            if (readFailure is not null)
+                throw new InvalidDataException(L.Get("Recovery.BothFilesUnreadable"), readFailure);
+            return null;
+        }
+        if (metadata is { Eligible: false } && generations.FirstOrDefault(generation => !generation.FromBackup) is { State: not null } current &&
+            current.Fingerprint == metadata.Fingerprint)
+            return metadata;
+        var selectedGeneration = generations.FirstOrDefault(generation => generation.Eligible);
+        if (selectedGeneration.State is null) selectedGeneration = generations[0];
+        string fingerprint = selectedGeneration.Fingerprint;
+        bool eligible = generations.Any(generation => generation.Eligible);
         if (File.Exists(path))
         {
             try
             {
                 var info = JsonSerializer.Deserialize<HistoryInfo>(File.ReadAllText(path));
-                if (info?.Fingerprint == fingerprint) return info;
+                if (info?.Fingerprint == fingerprint)
+                    return info with { Eligible = info.Eligible || eligible };
             }
             catch (JsonException) { }
         }
-        var result = new HistoryInfo(fingerprint, null, HasObjects(state) ||
-            JsonSerializer.Serialize(state.LiveDocument.Canvas) != JsonSerializer.Serialize(new CanvasSettings()));
+        var result = new HistoryInfo(fingerprint, null, eligible);
         if (!File.Exists(path)) legacyInfo[directory] = (ticks, length, result);
         return result;
     }
 
     private bool archiveBeforeWrite = true;
-    public Task PrepareClearAsync(CancellationToken ct=default)
+    public async Task PrepareClearAsync(CancellationToken ct=default)
     {
+        await WaitForBaselineAsync().WaitAsync(ct).ConfigureAwait(false);
         string? baseline = entryBaseline;
         int maximum = MaximumVersions;
-        return RunSerializedAsync(() => PrepareClearCoreAsync(baseline, maximum, ct), ct);
+        await RunSerializedAsync(() => PrepareClearCoreAsync(baseline, maximum, ct), ct).ConfigureAwait(false);
     }
     private async Task PrepareClearCoreAsync(string? baseline, int maximum, CancellationToken ct)
     {
@@ -186,15 +249,19 @@ internal sealed class WorkspaceRecoveryHistory(RecoveryStore store)
     public bool ShouldWrite(WorkspaceState workspace) => freshBaseline is null || ContentFingerprint(workspace) != freshBaseline;
     public Task<bool> ShouldWriteAsync(WorkspaceState workspace, CancellationToken token = default)
     {
-        var baseline = freshBaseline;
-        return baseline is null ? Task.FromResult(true) :
-            Task.Run(() => ContentFingerprint(workspace) != baseline, token);
+        return RunAfterBaselineAsync(() =>
+        {
+            var baseline = freshBaseline;
+            return baseline is null || ContentFingerprint(workspace) != baseline;
+        }, token);
     }
 
-    public Task PreserveBeforeFirstWriteAsync(CancellationToken ct = default)
+    public async Task PreserveBeforeFirstWriteAsync(CancellationToken ct = default)
     {
+        await WaitForBaselineAsync().WaitAsync(ct).ConfigureAwait(false);
         int maximum = MaximumVersions;
-        return RunSerializedAsync(() => archiveBeforeWrite ? PreserveCurrentCoreAsync(maximum, ct) : Task.CompletedTask, ct);
+        await RunSerializedAsync(() => archiveBeforeWrite ? PreserveCurrentCoreAsync(maximum, ct) : Task.CompletedTask, ct)
+            .ConfigureAwait(false);
     }
 
     public Task PreserveCurrentAsync(CancellationToken ct = default)
@@ -206,6 +273,15 @@ internal sealed class WorkspaceRecoveryHistory(RecoveryStore store)
     {
         ct.ThrowIfCancellationRequested();
         var sources = new[] { store.CurrentPath, store.BackupPath }.Where(File.Exists).ToArray();
+        if (sources.Length == 0)
+        {
+            archiveBeforeWrite = false;
+            return;
+        }
+        // A disabled history limit must not consume the one-time preservation
+        // obligation. If history is later enabled, the launch generation can
+        // still be archived before the next recovery rotation overwrites it.
+        if (maximum <= 0) return;
         HistoryInfo? info;
         try { info = sources.Length > 0 ? EntryInfo(store.DirectoryPath, ct) : null; }
         catch (Exception ex) when (ex is InvalidDataException or JsonException or NotSupportedException or EndOfStreamException)
@@ -215,7 +291,7 @@ internal sealed class WorkspaceRecoveryHistory(RecoveryStore store)
             archiveBeforeWrite = false;
             return;
         }
-        if (maximum > 0 && sources.Length > 0 && info is { Eligible: true } && !GetEntries(ct).Any(e => !e.IsCurrent && EntryInfo(e.DirectoryPath, ct)?.Fingerprint == info.Fingerprint))
+        if (info is { Eligible: true } && !GetEntries(ct).Any(e => !e.IsCurrent && EntryInfo(e.DirectoryPath, ct)?.Fingerprint == info.Fingerprint))
         {
             string history = Path.Combine(store.DirectoryPath, "history");
             Directory.CreateDirectory(history);
@@ -288,21 +364,39 @@ internal sealed class WorkspaceRecoveryHistory(RecoveryStore store)
 
     public async Task<RecoveredWorkspace?> LoadAsync(WorkspaceRecoveryEntry entry, CancellationToken ct = default)
     {
-        var loaded = await new RecoveryStore(entry.DirectoryPath).LoadAsync(ct).ConfigureAwait(false);
+        var entryStore = new RecoveryStore(entry.DirectoryPath);
+        var loaded = await LoadPreferredGenerationAsync(entryStore, ct).ConfigureAwait(false);
         if (loaded is not null) ImageImportBudget.ValidateResources(loaded.Assets.Resources);
+        return loaded;
+    }
+
+    private static async Task<RecoveredWorkspace?> LoadPreferredGenerationAsync(RecoveryStore entryStore,
+        CancellationToken ct)
+    {
+        RecoveredWorkspace? current = null, backup = null;
+        Exception? failure = null;
+        try { current = await entryStore.LoadGenerationAsync(fromBackup: false, ct).ConfigureAwait(false); }
+        catch (Exception error) when (error is InvalidDataException or IOException or JsonException or NotSupportedException or EndOfStreamException) { failure = error; }
+        try { backup = await entryStore.LoadGenerationAsync(fromBackup: true, ct).ConfigureAwait(false); }
+        catch (Exception error) when (error is InvalidDataException or IOException or JsonException or NotSupportedException or EndOfStreamException) { failure ??= error; }
+        bool Meaningful(RecoveredWorkspace? value) => value is not null &&
+            (HasObjects(value.State) || JsonSerializer.Serialize(value.State.LiveDocument.Canvas) != JsonSerializer.Serialize(new CanvasSettings()));
+        var loaded = Meaningful(current) ? current : Meaningful(backup) ? backup : current ?? backup;
+        if (loaded is null && failure is not null) throw new InvalidDataException(L.Get("Recovery.BothFilesUnreadable"), failure);
         return loaded;
     }
 
     public async Task<byte[]?> LoadPreviewAsync(WorkspaceRecoveryEntry entry, CancellationToken ct = default)
     {
         var entryStore = new RecoveryStore(entry.DirectoryPath);
-        var bytes = await entryStore.LoadPreviewAsync(ct: ct).ConfigureAwait(false);
+        var restored = await LoadPreferredGenerationAsync(entryStore, ct).ConfigureAwait(false);
+        if (restored is null) return null;
+        var bytes = await entryStore.LoadPreviewAsync(fromBackup: restored.FromBackup, ct).ConfigureAwait(false);
         if (bytes is not null) return bytes;
-        // Older history has no embedded preview. Render its own saved annotations on demand;
-        // do not alter the archive or capture whatever happens to be on the desktop now.
-        var restored = await entryStore.LoadAsync(ct).ConfigureAwait(false);
-        if (restored is not null) ImageImportBudget.ValidateResources(restored.Assets.Resources);
-        return restored is null ? null : WorkspacePreview.Render(restored.State.LiveDocument, restored.Assets);
+        // The selected generation may have no embedded preview. Render that same
+        // generation on demand; never show a preview from the unselected sibling.
+        ImageImportBudget.ValidateResources(restored.Assets.Resources);
+        return WorkspacePreview.Render(restored.State.LiveDocument, restored.Assets);
     }
 
     private static string ContentFingerprint(WorkspaceState workspace)

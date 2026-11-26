@@ -76,6 +76,9 @@ internal static class LayerRenameTests
         void ClickName(Guid id)
         {
             window.PrepareForShow();
+            if (session.Selection.Contains(id) && Item(id) is { IsSelected: false } selected)
+                selected.IsSelected = true;
+            window.UpdateLayout();
             var presenter = LayerTreeRowPresenter.Find(Item(id))!;
             presenter.ActivateNameClick(LayerRowPolishTests.PaintedPoint(Label(id)));
         }

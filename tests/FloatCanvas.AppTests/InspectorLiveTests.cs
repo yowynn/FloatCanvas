@@ -84,6 +84,7 @@ internal static class InspectorLiveTests
         check("mixed font families clear the visible font picker", Field<Controls.ComboBox>(window, "fontPicker").SelectedIndex == -1);
         session.SetSelection([second]);
         var commandSession = (DesktopSession)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(DesktopSession));
+        Set(commandSession, "_app", System.Windows.Application.Current);
         Set(commandSession, "_editor", new EditorController(session)); Set(commandSession, "_inspector", window);
         Set(commandSession, "_canvasCalibration", new CanvasCalibrationController());
         Set(commandSession, "_canvasReferenceLines", new List<CanvasReferenceLine>());

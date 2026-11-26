@@ -3,14 +3,14 @@ namespace FloatCanvas.Core;
 /// <summary>Finite authored-region clipping shared by live rendering and explicit trail baking.</summary>
 public static class PresentationGeometry
 {
-    public static bool TryScreenRegion(CanvasElement worldSource, CanvasMapping mapping, RectD viewport, out IReadOnlyList<PointD> polygon, bool horizontalOverflow = false)
+    public static bool TryScreenRegion(CanvasElement worldSource, CanvasMapping mapping, RectD viewport, out IReadOnlyList<PointD> polygon, bool contentOverflow = false)
     {
         polygon = [];
         if (worldSource is null || worldSource.Kind != ElementKind.Presentation || !Finite(viewport) || viewport.IsEmpty ||
             !double.IsFinite(worldSource.Width) || !double.IsFinite(worldSource.Height) || worldSource.Width <= 0 || worldSource.Height <= 0) return false;
         var transform = worldSource.IsBillboard ? mapping.ElementToScreen(worldSource) : ElementGeometry.LocalToPlane(worldSource);
-        double left = 0, right = worldSource.Width;
-        if (horizontalOverflow)
+        double left = 0, right = worldSource.Width, top = 0, bottom = worldSource.Height;
+        if (contentOverflow)
         {
             var screenTransform = mapping.ElementToScreen(worldSource);
             if (screenTransform.TryInverse(out var screenToLocal))
@@ -18,10 +18,15 @@ public static class PresentationGeometry
                 PointD[] viewportCorners = [new(viewport.Left, viewport.Top), new(viewport.Right, viewport.Top), new(viewport.Right, viewport.Bottom), new(viewport.Left, viewport.Bottom)];
                 var visible = viewportCorners.Select(point => screenToLocal.TryTransformPoint(point, out var localPoint) ? localPoint : new PointD(double.NaN, double.NaN)).Where(Finite).ToArray();
                 if (visible.Length == 4)
-                { left = Math.Min(0, visible.Min(point => point.X) - worldSource.Width); right = Math.Max(worldSource.Width, visible.Max(point => point.X) + worldSource.Width); }
+                {
+                    left = Math.Min(0, visible.Min(point => point.X) - worldSource.Width);
+                    right = Math.Max(worldSource.Width, visible.Max(point => point.X) + worldSource.Width);
+                    top = Math.Min(0, visible.Min(point => point.Y) - worldSource.Height);
+                    bottom = Math.Max(worldSource.Height, visible.Max(point => point.Y) + worldSource.Height);
+                }
             }
         }
-        PointD[] local = [new(left, 0), new(right, 0), new(right, worldSource.Height), new(left, worldSource.Height)];
+        PointD[] local = [new(left, top), new(right, top), new(right, bottom), new(left, bottom)];
         if (!transform.TryInverse(out _) || worldSource.IsBillboard && !mapping.TryGetDepthScale(worldSource.BillboardAnchor, out _)) return false;
         var points = new List<PointD>(4);
         foreach (var point in local)

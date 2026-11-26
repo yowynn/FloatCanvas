@@ -29,6 +29,11 @@ internal static class CanvasFeedbackTests
         typeof(OverlayHost).GetProperty("IsEditing")!.SetValue(host, true);
         var editor = Field<EditorController>("_editor");
         editor.BackgroundPickingEnabled = false;
+        int uiThread=Environment.CurrentManagedThreadId, commandThread=0;
+        Task command = Task.Run(() => (Task)Call("RunCommand",
+            new Func<Task>(() => { commandThread=Environment.CurrentManagedThreadId; return Task.CompletedTask; }))!);
+        Await(command);
+        Expect("background command entry marshals its work back to the production Dispatcher", commandThread==uiThread);
         Call("CurrentGroupCanvasView");
         Expect("multi-screen viewing reference is the primary screen", Field<RectD>("_canvasViewViewport") == new RectD(0, 0, 640, 360));
         var screenBounds = monitors.Select(item => new RectD(item.Bounds.Left, item.Bounds.Top, item.Bounds.Width, item.Bounds.Height)).ToArray();

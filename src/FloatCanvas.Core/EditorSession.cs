@@ -1,4 +1,5 @@
 using L = FloatCanvas.Localization.AppText;
+using System.Diagnostics;
 
 namespace FloatCanvas.Core;
 
@@ -91,7 +92,7 @@ public sealed partial class EditorSession
             // Even a net-zero gesture may have published an intermediate preview before
             // its final unnotified mutation. Preserve history while invalidating that frame.
             if (PreviewRevision != transactionPreviewRevision) RecordPreviewChange(elementsChanged: !knownSettings);
-            if (viewing is not null) CanvasViewRestored?.Invoke(viewing.After);
+            if (viewing is not null) RaiseCanvasViewRestored(viewing.After);
             OnChanged(); return;
         }
         var after = Document.Clone();
@@ -99,10 +100,10 @@ public sealed partial class EditorSession
         ContentVersion = restoredContentVersion ?? ++nextContentVersion;
         redo.Clear();
         undo.Add(new(transactionLabel, before, after, selectedBefore, [.. Selection], EstimateBytes(before) + EstimateBytes(after), ++sequence, before.ReferencedAssets.Concat(after.ReferencedAssets).Distinct(StringComparer.Ordinal).ToArray(), transactionContentVersion, ContentVersion, Viewing: viewing));
-        if (viewing is not null) CanvasViewRestored?.Invoke(viewing.After);
+        if (viewing is not null) RaiseCanvasViewRestored(viewing.After);
         TrimHistory(); OnChanged(contentChanged: true, preserveContentVersion: true, previewElementsChanged: !knownSettings,
             definitionsUnchanged: knownDefinitionsUnchanged || SceneContent.Equal(before.Definitions, Document.Definitions), topologyValidated: true);
-        if (transactionOwnerDocument is { } owner) ContentCommitted?.Invoke(owner, transactionScopeVersion);
+        if (transactionOwnerDocument is { } owner) RaiseContentCommitted(owner, transactionScopeVersion);
         transactionOwnerDocument = null;
     }
     public void Cancel()
@@ -165,7 +166,7 @@ public sealed partial class EditorSession
         else { Document = item.Before!.Clone(); ContentVersion = item.BeforeVersion; SetSelectionCore(item.SelectionBefore!); }
         undo.RemoveAt(undo.Count - 1); redo.Add(item); HistoryNavigationVersion++;
         PruneSelection();
-        if (item.Viewing is { } viewing) CanvasViewRestored?.Invoke(viewing.Before);
+        if (item.Viewing is { } viewing) RaiseCanvasViewRestored(viewing.Before);
         OnChanged(contentChanged: item.UndoOperation is null, preserveContentVersion: true); return true;
     }
     public bool Redo()
@@ -177,7 +178,7 @@ public sealed partial class EditorSession
         else { Document = item.After!.Clone(); ContentVersion = item.AfterVersion; SetSelectionCore(item.SelectionAfter!); }
         redo.RemoveAt(redo.Count - 1); undo.Add(item); HistoryNavigationVersion++;
         PruneSelection();
-        if (item.Viewing is { } viewing) CanvasViewRestored?.Invoke(viewing.After);
+        if (item.Viewing is { } viewing) RaiseCanvasViewRestored(viewing.After);
         OnChanged(contentChanged: item.RedoOperation is null, preserveContentVersion: true); return true;
     }
     public void ReplaceDocument(SceneDocument document)
@@ -372,6 +373,31 @@ public sealed partial class EditorSession
         { PreviewDefinitionsRevision = PreviewRevision; placementDocument = null; placementDefinitions = new(); }
         if (contentChanged && IsTransactionActive) HasPendingChanges = true;
         if (contentChanged && !IsTransactionActive) { SceneRevision++; if (!preserveContentVersion) ContentVersion = ++nextContentVersion; }
-        Changed?.Invoke(this, EventArgs.Empty);
+        if (Changed is null) return;
+        foreach (EventHandler handler in Changed.GetInvocationList())
+        {
+            try { handler(this, EventArgs.Empty); }
+            catch (Exception error) { ReportObserverFailure(error); }
+        }
     }
+    private void RaiseContentCommitted(SceneDocument owner, long scopeVersion)
+    {
+        if (ContentCommitted is null) return;
+        foreach (Action<SceneDocument, long> handler in ContentCommitted.GetInvocationList())
+        {
+            try { handler(owner, scopeVersion); }
+            catch (Exception error) { ReportObserverFailure(error); }
+        }
+    }
+    private void RaiseCanvasViewRestored(CanvasViewHistoryState state)
+    {
+        if (CanvasViewRestored is null) return;
+        foreach (Action<CanvasViewHistoryState> handler in CanvasViewRestored.GetInvocationList())
+        {
+            try { handler(state); }
+            catch (Exception error) { ReportObserverFailure(error); }
+        }
+    }
+    private static void ReportObserverFailure(Exception error) =>
+        Trace.TraceError("FloatCanvas EditorSession observer failed: " + error);
 }

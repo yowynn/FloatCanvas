@@ -1,12 +1,14 @@
 namespace FloatCanvas.Windows;
 
-public enum PresentationObservedKind { KeyDown, KeyUp, ButtonDown, ButtonUp, DeviceRemoved }
+public enum PresentationObservedKind { KeyDown, KeyUp, ButtonDown, ButtonUp, DeviceRemoved, LockStateChanged, Wheel, RawKeyDown, RawKeyUp }
 public enum PresentationInputOwner { Unspecified, OtherApplication, FloatCanvas, Unknown }
+public enum PresentationDeviceKind { Unknown, Keyboard, Mouse, Gamepad }
 
 /// <summary>Transient physical input metadata, never input text or a persisted recording.</summary>
 public readonly record struct PresentationObservedInput(PresentationObservedKind Kind, long Milliseconds,
     long Device = 0, int VirtualKey = 0, int ScanCode = 0, uint KeyFlags = 0, string? KeyLabel = null,
-    int X = 0, int Y = 0, bool HasPosition = false, int Button = 0, PresentationInputOwner InputOwner = PresentationInputOwner.Unspecified);
+    int X = 0, int Y = 0, bool HasPosition = false, int Button = 0, PresentationInputOwner InputOwner = PresentationInputOwner.Unspecified,
+    PresentationDeviceKind DeviceKind = PresentationDeviceKind.Unknown, bool IsLocked = false);
 
 public readonly record struct PresentationObservedCursor(int X, int Y, long Milliseconds);
 

@@ -47,8 +47,9 @@ internal static class CanvasGridSettingsControlsTests
             foreach (string invalid in new[] { ".5", "1000001", "NaN", "invalid" })
             {
                 size.Input.Text = invalid; SendEnter(size.Input);
-                check("invalid flat size restores its exact previous value without an edit", edits.Count == 1 && current.Grid.FlatCellSize == changed &&
-                    size.Input.Text == changed.ToString("0.###", CultureInfo.CurrentCulture));
+                check("invalid flat size retains the draft for correction without an edit",
+                    edits.Count == 1 && current.Grid.FlatCellSize == changed && size.Input.Text == invalid &&
+                    !size.TryGetValue(out _));
             }
             for (int iteration = 0; iteration < 100; iteration++)
             {

@@ -83,7 +83,8 @@ internal sealed partial class DesktopSession
     private static bool SameKeyboardScope(PresentationFrame first, PresentationFrame second)
     {
         if (ReferenceEquals(first, second)) return true;
-        if (first.KeyboardSuppressed != second.KeyboardSuppressed || first.RecentChords.Count != second.RecentChords.Count) return false;
+        if (first.KeyboardSuppressed != second.KeyboardSuppressed || first.LockState != second.LockState ||
+            first.RecentChords.Count != second.RecentChords.Count) return false;
         if (!first.PressedKeys.SequenceEqual(second.PressedKeys)) return false;
         for (int i = 0; i < first.RecentChords.Count; i++)
         {
@@ -111,7 +112,8 @@ internal sealed partial class DesktopSession
     }
 
     private bool HasPresentationLayerGuides => _host.IsVisible && _presentationLeaves.Any(IsLogPresentation);
-    private static bool IsLogPresentation(ResolvedLeaf leaf) => leaf.RenderElement.Presentation?.DisplayStyle is PresentationDisplayStyle.Log or PresentationDisplayStyle.Keycaps;
+    private static bool IsLogPresentation(ResolvedLeaf leaf) =>
+        leaf.RenderElement.Presentation?.DisplayStyle is PresentationDisplayStyle.Log or PresentationDisplayStyle.Keycaps;
 
     private void DrawPresentationLayerGuides(SKCanvas canvas)
     {

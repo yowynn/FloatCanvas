@@ -812,6 +812,13 @@ internal sealed partial class InspectorWindow : Wpf.Window
             {
                 ShiftLocalFrame(source, edited, shift);
             }
+            else if (source.Presentation?.DisplayStyle == PresentationDisplayStyle.Keyboard &&
+                     edited.Presentation?.DisplayStyle == PresentationDisplayStyle.Keyboard)
+            {
+                if (dirtyFields.Contains("FontSize"))
+                    PresentationFrameLayout.Resize(edited, source, edited.Style.FontSize / source.Style.FontSize,
+                        edited.Style.FontSize / source.Style.FontSize);
+            }
             else
             {
                 using var renderer = new SceneRenderer();
@@ -934,6 +941,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
             numeric.CanBeginGesture = () => { CompleteEdit(); return !invalidDraft && canMutate() && !getSession().IsTransactionActive; };
             numeric.ValueChanged += _ => ChangeField(key);
             numeric.InvalidInput += () => ChangeField(key);
+            numeric.ConfirmText = () => !invalidDraft;
             numeric.GestureStarted += () => ShowNumericDragReadouts(true);
             numeric.GestureCompleted += commit =>
             {

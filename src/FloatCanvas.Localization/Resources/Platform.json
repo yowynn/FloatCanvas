@@ -407,6 +407,10 @@
     "zh": "浮绘需要 Windows 10 1607（内部版本 14393）或更新版本。",
     "en": "FloatCanvas requires Windows 10 version 1607 (build 14393) or later."
   },
+  "Overlay.EnhancedToolBandFailed": {
+    "zh": "无法把浮绘工具窗口放到增强输入层。已停止使用不安全的增强输入。",
+    "en": "FloatCanvas could not place its tool window in the enhanced input band. Unsafe enhanced input was stopped."
+  },
   "Overlay.DpiContextFailed": {
     "zh": "无法启用屏幕物理像素坐标，浮绘已取消当前窗口操作。",
     "en": "Physical screen pixel coordinates could not be enabled. The window operation was cancelled."

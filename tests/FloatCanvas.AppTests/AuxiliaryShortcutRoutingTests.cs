@@ -140,7 +140,7 @@ internal static class AuxiliaryShortcutRoutingTests
                 foreach (var key in new[] { Key.B, Key.D1, Key.Delete })
                     check(name + " does not consume a canvas shortcut " + key, !Send(window, key).Handled);
             }
-            check("settings and confirmation retain their own default buttons", settings.SaveButton.IsDefault &&
+            check("settings use explicit submit while confirmation retains its default button", !settings.SaveButton.IsDefault &&
                 ((DockPanel)dialog.Content).Children.OfType<StackPanel>().Single().Children.OfType<Button>().Single().IsDefault);
             check("auxiliary routing uses no native window, visibility or activation", windows.All(window => !window.IsVisible && new WindowInteropHelper(window).Handle == 0));
         }

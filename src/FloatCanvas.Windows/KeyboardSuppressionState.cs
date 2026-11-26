@@ -156,8 +156,10 @@ internal sealed class KeyboardSuppressionState
             }
             return false;
         }
-        bool passedNativeKey = passModifiers && (key is 0xA0 or 0xA1 or 0xA2 or 0xA3 or 0xA4 or 0xA5 or
-            0x14 or 0x90 or 0x91 or 0x2C or >= 0xAD and <= 0xB3);
+        // Let Windows own lock toggles in either backend. The passive observer
+        // and text input then both see the same state, including after mode exit.
+        bool passedNativeKey = key is 0x14 or 0x90 or 0x91 ||
+            passModifiers && (key is >= 0xA0 and <= 0xA5 or 0x2C or >= 0xAD and <= 0xB3);
         if (up && !suppressed[key] && !passedNativeKey) { UpdateLocal(key, true, false); TrackPassed(key, true); return false; }
         // Visibility is independent of editing. A consumed visibility key keeps its
         // stream until physical release even if its modifiers have already been lifted.
@@ -172,7 +174,7 @@ internal sealed class KeyboardSuppressionState
         bool repeat = !up && physical[key];
         UpdateLocal(key, up, !repeat && !up);
         // Delegation still delivers these original messages to our UI. Preserve their
-        // global streams for Alt+Tab, reverse switching and Ctrl+Esc, along with lock,
+        // global streams for Alt+Tab, reverse switching and Ctrl+Esc, along with
         // screenshot and media keys. Only publish an ordered state snapshot, never a
         // second key message through the private bridge.
         if (passedNativeKey)
@@ -230,7 +232,31 @@ internal sealed class KeyboardSuppressionState
             (key == 0x1B && (modifiers & OverlayModifiers.Control) != 0) ||
             (key == 0x2E && (modifiers & (OverlayModifiers.Control | OverlayModifiers.Alt)) == (OverlayModifiers.Control | OverlayModifiers.Alt));
     }
-    private static int Canonical(int key, uint scan, uint eventFlags) => key switch
+    internal bool ReconcilePassedRelease(uint vk, uint scan, uint eventFlags, uint time, uint message, nint foreground, long now)
+    {
+        int key = Canonical((int)vk, scan, eventFlags);
+        if (!IsActive || !inherited[key]) return false;
+        UpdateLocal(key, true, false);
+        inherited[key] = false;
+        TrackPassed(key, true);
+        if (queue.Count >= capacity) End(KeyboardLeaseEndReason.QueueOverflow, now);
+        else queue.Enqueue(Packet(KeyboardInputPacketKind.Key, vk, scan, eventFlags, time, true, false,
+            foreground, message: message, stateOnly: true));
+        return true;
+    }
+
+    internal bool ReconcilePassedReleases(Func<int, bool> isDown, nint foreground, long now)
+    {
+        bool changed = false;
+        for (int key = 1; IsActive && key < 255; key++)
+        {
+            if (key is 0x10 or 0x11 or 0x12 || !inherited[key] || !physical[key] || isDown(key)) continue;
+            changed |= ReconcilePassedRelease((uint)key, 0, 0, unchecked((uint)now), 0x101, foreground, now);
+        }
+        return changed;
+    }
+
+    internal static int Canonical(int key, uint scan, uint eventFlags) => key switch
     {
         0x10 => scan == 0x36 ? 0xA1 : 0xA0,
         0x11 => (eventFlags & 1) != 0 ? 0xA3 : 0xA2,

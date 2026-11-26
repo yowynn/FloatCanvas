@@ -127,7 +127,9 @@ internal static class PresentationDesktopReworkTests
         preferences.Pointer.CursorEnabled = true; preferences.Pointer.ClicksEnabled = false; preferences.Pointer.TrailEnabled = true;
         preferences.Pointer.CursorColor = 0xff00ff00; preferences.Pointer.CursorRadiusPixels = 12; preferences.Pointer.CursorOpacity = 1;
         Apply(preferences);
-        check("enabling pointer effects keeps an active keyboard source and its recent chord", starts.Count == keyboardSourceCount && runtime.InputEpoch == keyboardEpoch && runtime.Frame.RecentChords.Count == 1 && Demand().Keyboard && Demand().Pointer);
+        check("enabling pointer effects restarts registration with both roles and retires keyboard-only state",
+            starts.Count == keyboardSourceCount + 1 && runtime.InputEpoch != keyboardEpoch && runtime.Frame.RecentChords.Count == 0 &&
+            Demand().Keyboard && Demand().Pointer);
         preferences = Settings().PresentationGlobal.Clone(); preferences.Pointer.ClicksEnabled = true;
         preferences.Pointer.LeftClick.Shape = preferences.Pointer.RightClick.Shape = preferences.Pointer.MiddleClick.Shape = PresentationClickShape.Disc;
         Apply(preferences);
@@ -160,10 +162,15 @@ internal static class PresentationDesktopReworkTests
         check("changing cursor radius schedules cleanup of the formerly larger screen mark", Dirty().Any(region => region.Contains(new((int)oldEdge.X, (int)oldEdge.Y))));
         using (var changed = DrawPointer())
             check("cursor color and radius update actual screen pixels", changed.GetPixel(680, 330).Blue > 200 && changed.GetPixel(690, 330).Alpha == 0);
-        ClearDamage(); Call("TogglePresentationPointer");
+        ClearDamage();
+        int bothSourceCount = starts.Count; long bothEpoch = runtime.InputEpoch;
+        Call("TogglePresentationPointer");
         check("pointer master off clears its drawing and schedules old-pixel removal", !Settings().PresentationGlobal.Pointer.Enabled && Field<PresentationFrame?>(desktop, "_pointerPresentationFrame") is null && Dirty().Any(region => region.Contains(new(bounds.Left + 680, bounds.Top + 330))));
         using (var off = DrawPointer()) check("disabled pointer draws no pixels", Count(off) == 0);
-        check("pointer off preserves styles and does not stop or clear keyboard recording", Settings().PresentationGlobal.Pointer.CursorColor == 0xff0066ff && Settings().PresentationGlobal.Pointer.CursorRadiusPixels == 4 && starts.Count == keyboardSourceCount && runtime.InputEpoch == keyboardEpoch && runtime.Frame.RecentChords.Count == 1);
+        check("pointer off restarts as keyboard-only while preserving styles and keyboard demand",
+            Settings().PresentationGlobal.Pointer.CursorColor == 0xff0066ff && Settings().PresentationGlobal.Pointer.CursorRadiusPixels == 4 &&
+            starts.Count == bothSourceCount + 1 && runtime.InputEpoch != bothEpoch && starts[^1] is { Keyboard: true, Pointer: false } &&
+            Demand().Keyboard && !Demand().Pointer && runtime.Frame.RecentChords.Count == 0);
         check("global mouse commands leave authored source history and resources untouched", session.UndoCount == undo && session.Assets.Count == assets && JsonSerializer.Serialize(session.Document) == untouched);
 
         Call("TogglePresentationPointer");
@@ -222,6 +229,19 @@ internal static class PresentationDesktopReworkTests
         void SetEditing(bool value) => typeof(OverlayHost).GetProperty(nameof(OverlayHost.IsEditing))!.SetValue(host, value);
         void Feed(IEnumerable<PresentationObservedInput>? changes = null, PresentationObservedCursor? cursor = null)
         {
+            if (runtime.ObservingKeyboard && runtime.Frame.KeyboardSuppressed)
+            {
+                privacy.Observe();
+                var waiting = Stopwatch.StartNew();
+                while (runtime.Frame.KeyboardSuppressed && waiting.Elapsed < TimeSpan.FromSeconds(3))
+                {
+                    var pending = new DispatcherFrame();
+                    app.Dispatcher.BeginInvoke(DispatcherPriority.Background, () => pending.Continue = false);
+                    Dispatcher.PushFrame(pending);
+                    Thread.Sleep(1);
+                }
+                if (runtime.Frame.KeyboardSuppressed) throw new TimeoutException("The synthetic ordinary focus was not classified.");
+            }
             now += 10; starts[^1].Source.Queue(changes, cursor);
             typeof(PresentationRuntimeBroker).GetMethod("Drain", Hidden)!.Invoke(runtime, null);
         }

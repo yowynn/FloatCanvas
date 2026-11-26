@@ -285,7 +285,7 @@ internal static class Preview4ShiftTests
 
     private static void Boxes(Action<string,bool> check)
     {
-        foreach(var tool in new[] {EditorTool.Rectangle,EditorTool.RoundedRectangle,EditorTool.Ellipse,EditorTool.Symbol})
+        foreach(var tool in new[] {EditorTool.Rectangle,EditorTool.RoundedRectangle,EditorTool.Ellipse})
         foreach(bool keep in new[] {false,true})foreach(bool shift in new[] {false,true})
         {
             var editor=new EditorController(new()) {Tool=tool,ConstrainAspect=keep,DefaultWidth=90,DefaultHeight=40};
@@ -299,7 +299,34 @@ internal static class Preview4ShiftTests
             var clicked=editor.Session.Document.Elements.Last();
             check($"{tool} default insertion keep={keep} Shift={shift} uses configured dimensions",clicked.Width==90&&clicked.Height==(!keep && shift ? 90 : 40));
         }
+        SymbolCreation(check);
     }
+    private static void SymbolCreation(Action<string,bool> check)
+    {
+        var shape=SymbolGeometry.Shape(SymbolKind.Triangle);
+        var natural=shape.SizeAtLongEdge(80);
+        foreach(bool keep in new[] {false,true})
+        foreach(bool shift in new[] {false,true})
+        {
+            var editor=new EditorController(new()) {Tool=EditorTool.Symbol,ConstrainAspect=keep,DefaultWidth=90,DefaultHeight=40};
+            var modifiers=shift?OverlayModifiers.Shift:OverlayModifiers.None;
+            Send(editor,OverlayPointerKind.Down,new(20,20),modifiers);Send(editor,OverlayPointerKind.Up,new(100,50),modifiers);
+            var created=editor.Session.Document.Elements.Single();
+            var bounds=ElementGeometry.Bounds(created,false);
+            var expected=shift?new RectD(20,20,80,30):new RectD(20,20,natural.X,natural.Y);
+            check($"Symbol creation keep={keep} Shift={shift} uses the current natural-artwork geometry",
+                NearlyRect(bounds,expected)&&created.ConstrainAspect==true);
+            editor.Session.SetSelection([]);
+            Send(editor,OverlayPointerKind.Down,new(300,200),modifiers);Send(editor,OverlayPointerKind.Up,new(300,200),modifiers);
+            var clicked=editor.Session.Document.Elements.Last();
+            check($"Symbol default insertion keep={keep} Shift={shift} uses the configured long edge",
+                NearlyRect(ElementGeometry.Bounds(clicked,false),
+                    new(300-shape.SizeAtLongEdge(90).X/2,200-shape.SizeAtLongEdge(90).Y/2,shape.SizeAtLongEdge(90).X,shape.SizeAtLongEdge(90).Y)));
+        }
+    }
+    private static bool NearlyRect(RectD actual,RectD expected)=>
+        Math.Abs(actual.X-expected.X)<1e-6&&Math.Abs(actual.Y-expected.Y)<1e-6&&
+        Math.Abs(actual.Width-expected.Width)<1e-6&&Math.Abs(actual.Height-expected.Height)<1e-6;
     private static bool Eight(PointD delta)=>Math.Abs(delta.X)<1e-6||Math.Abs(delta.Y)<1e-6||Math.Abs(Math.Abs(delta.X)-Math.Abs(delta.Y))<1e-6;
     private static void Lines(Action<string,bool> check)
     {

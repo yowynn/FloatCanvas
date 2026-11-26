@@ -1,7 +1,9 @@
 using System.Reflection;
 using FloatCanvas.App;
 using FloatCanvas.Core;
+using FloatCanvas.Rendering;
 using FloatCanvas.Windows;
+using SkiaSharp;
 
 internal static class PresentationPhysicalStateTests
 {
@@ -34,6 +36,10 @@ internal static class PresentationPhysicalStateTests
         check("one device release cannot clear another device's held key", Frame().PressedKeys.Count == 1);
         Apply(Key(0x41, 30, device: 2, up: true));
         check("the physical position clears after all devices release", Frame().PressedKeys.Count == 0);
+        Apply(Key(0x41, 30, keyFlags: 0), Key(0x41, 30, up: true, keyFlags: 0x100));
+        check("an injected key-up cannot release the physically held key", Frame().PressedKeys.Count == 1);
+        Apply(Key(0x41, 30, up: true, keyFlags: 0));
+        check("the physical release clears after an injected duplicate was ignored", Frame().PressedKeys.Count == 0);
         Apply(Key(0x61, 79));
         Apply(Key(0x23, 79, up: true));
         check("NumLock navigation aliases release the same physical numpad key", Frame().PressedKeys.Count == 0 && Frame().RecentChords.All(chord => !chord.IsHeld));
@@ -46,13 +52,65 @@ internal static class PresentationPhysicalStateTests
         check("a full keyboard snapshot is not truncated at the former sixteen-key limit", Frame().PressedKeys.Count == full.Count && full.Count == 104 && Frame().PayloadBytes <= PresentationLimits.MaximumFramePayloadBytes);
         timeline.SetKeyboardSuppressed(true);
         check("password suppression removes live held state as well as semantic history", Frame().PressedKeys.Count == 0 && Frame().RecentChords.Count == 0 && Frame().KeyboardSuppressed);
+        Apply(Lock(0x14, true), Lock(0x90, true), Lock(0x91, true));
+        check("password suppression hides lock indicators while retaining their current toggle state",
+            Frame() is { KeyboardSuppressed: true, LockState: PresentationLockState.None });
+        timeline.SetKeyboardSuppressed(false);
+        check("lock-state packets populate persistent locked keys without pretending they are pressed after protection ends",
+            Frame() is
+            {
+                LockState: PresentationLockState.CapsLock | PresentationLockState.NumLock | PresentationLockState.ScrollLock,
+                PressedKeys.Count: 0
+            });
+        Apply(Lock(0x90, false));
+        check("lock-state changes are independent from physical key make and break",
+            Frame().LockState == (PresentationLockState.CapsLock | PresentationLockState.ScrollLock) && Frame().PressedKeys.Count == 0);
+        LockIndicators(check);
         bool invalid = false;
         try { _ = new PresentationFrame(0, 0, TimeSpan.Zero, [new(65, "A", ScanCode: -1)]); }
         catch (ArgumentException) { invalid = true; }
         check("runtime snapshots reject invalid physical scan identity", invalid);
     }
-    private static PresentationObservedInput Key(int vk, int scan, bool extended = false, bool up = false, long device = 1) =>
-        new(up ? PresentationObservedKind.KeyUp : PresentationObservedKind.KeyDown, 1000, device, vk, scan, extended ? 2u : 0u, "Key " + vk);
+    private static PresentationObservedInput Key(int vk, int scan, bool extended = false, bool up = false, long device = 1,
+        uint keyFlags = 0) =>
+        new(up ? PresentationObservedKind.KeyUp : PresentationObservedKind.KeyDown, 1000, device, vk, scan,
+            (extended ? 2u : 0u) | keyFlags, "Key " + vk);
+    private static PresentationObservedInput Lock(int vk, bool locked) =>
+        new(PresentationObservedKind.LockStateChanged, 1000, VirtualKey: vk, IsLocked: locked);
+    private static void LockIndicators(Action<string, bool> check)
+    {
+        var layout = PresentationKeyboardLayout.CreateDefault();
+        foreach (var key in layout.Keys.Where(key => key.VirtualKey is 0x14 or 0x90 or 0x91))
+            key.ShowLockIndicator = true;
+        var keyboard = new CanvasElement
+        {
+            Kind = ElementKind.Presentation, Width = 760, Height = 260, Transform = Affine2D.Translation(20, 20),
+            Style = new() { Foreground = 0xFFFFFFFF, Background = 0xFF203040, FontSize = 18 },
+            Presentation = new() { DisplayStyle = PresentationDisplayStyle.Keyboard, KeyboardLayout = layout }
+        };
+        var document = new SceneDocument { Viewport = new(0, 0, 820, 320), Elements = [keyboard] };
+        byte[] Pixels(PresentationFrame frame)
+        {
+            using var renderer = new SceneRenderer { PresentationFrame = frame };
+            using var bitmap = SKBitmap.Decode(renderer.ExportPng(document, new AssetLibrary(), true));
+            using var image = SKImage.FromBitmap(bitmap);
+            using var data = image.Encode(SKEncodedImageFormat.Png, 100);
+            return data.ToArray();
+        }
+        var plain = new PresentationFrame(1, 1, TimeSpan.FromSeconds(1));
+        var locks = new PresentationFrame(1, 1, TimeSpan.FromSeconds(1),
+            lockState: PresentationLockState.CapsLock | PresentationLockState.NumLock | PresentationLockState.ScrollLock);
+        var pressed = new PresentationFrame(1, 1, TimeSpan.FromSeconds(1),
+            pressedKeys: [new(0x14, "Caps"), new(0x90, "Num"), new(0x91, "Scroll")]);
+        var hidden = new PresentationFrame(1, 1, TimeSpan.FromSeconds(1), keyboardSuppressed: true,
+            lockState: PresentationLockState.CapsLock | PresentationLockState.NumLock | PresentationLockState.ScrollLock);
+        byte[] plainPixels = Pixels(plain), lockedPixels = Pixels(locks), pressedPixels = Pixels(pressed), hiddenPixels = Pixels(hidden);
+        check("live keyboard rendering gives persistent lock indicators distinct pixels",
+            !plainPixels.SequenceEqual(lockedPixels) && !pressedPixels.SequenceEqual(lockedPixels));
+        check("password suppression removes the filled lock state while retaining the authored indicator", plainPixels.SequenceEqual(hiddenPixels));
+        check("lock state remains transient and never enters authored presentation settings",
+            !System.Text.Json.JsonSerializer.Serialize(keyboard.Presentation).Contains("LockState", StringComparison.Ordinal));
+    }
     private static bool Same(PresentationFrame first, PresentationFrame second) => (bool)typeof(DesktopSession)
         .GetMethod("SameKeyboardPresentation", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, [first, second])!;
 }

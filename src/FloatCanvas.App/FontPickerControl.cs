@@ -19,6 +19,7 @@ internal sealed class FontPickerControl : OverlayComboBox
     private static readonly MouseButtonEventHandler candidateMouseUp = CandidateMouseUp;
 
     private readonly List<FontChoice> catalog = [];
+    private readonly bool previewSelectedFont;
     private readonly ICollectionView choices;
     private readonly DispatcherTimer search = new(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(250) };
     private string query = "";
@@ -31,8 +32,9 @@ internal sealed class FontPickerControl : OverlayComboBox
     internal bool IsSelectionRefresh { get; private set; }
     internal event Action<string>? FontCommitted;
 
-    internal FontPickerControl()
+    internal FontPickerControl(bool previewSelectedFont = false)
     {
+        this.previewSelectedFont = previewSelectedFont;
         MinHeight = 32; MaxDropDownHeight = 300; IsEditable = true; IsReadOnly = true;
         SetResourceReference(StyleProperty, typeof(ComboBox));
         IsTextSearchEnabled = false; IsSynchronizedWithCurrentItem = false; StaysOpenOnEdit = true;
@@ -88,7 +90,11 @@ internal sealed class FontPickerControl : OverlayComboBox
     public override void OnApplyTemplate()
     {
         updating++;
-        try { base.OnApplyTemplate(); editor = Template.FindName("PART_EditableTextBox", this) as TextBox; }
+        try
+        {
+            base.OnApplyTemplate(); editor = Template.FindName("PART_EditableTextBox", this) as TextBox;
+            ApplySelectedFontPreview();
+        }
         finally { updating--; }
     }
 
@@ -100,6 +106,7 @@ internal sealed class FontPickerControl : OverlayComboBox
         try
         {
             search.Stop(); mode = PickerMode.Search; IsReadOnly = false;
+            ApplySelectedFontPreview();
             bool changed = query != text.Trim() || viewNeedsRefresh;
             SetQuery(text.Trim());
             candidate = !changed && candidate is not null && choices.Contains(candidate) ? candidate :
@@ -180,11 +187,21 @@ internal sealed class FontPickerControl : OverlayComboBox
 
     private void SetDisplayText()
     {
+        ApplySelectedFontPreview();
         string text = displayed?.DisplayName ?? "";
         if (Text != text) SetCurrentValue(TextProperty, text);
         if (editor is not null && editor.Text != text) editor.Text = text;
         ClearDisplaySelection();
         System.Windows.Automation.AutomationProperties.SetHelpText(this, displayed is { Installed: false } ? displayed.DisplayName : "");
+    }
+
+    private void ApplySelectedFontPreview()
+    {
+        if (!previewSelectedFont || editor is null) return;
+        if (mode != PickerMode.Search && displayed is { Installed: true } font)
+            editor.FontFamily = font.Family;
+        else
+            editor.ClearValue(FontFamilyProperty);
     }
 
     private void ClearDisplaySelection()

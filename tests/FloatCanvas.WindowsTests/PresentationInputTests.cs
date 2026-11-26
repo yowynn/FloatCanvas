@@ -64,16 +64,30 @@ internal static class PresentationInputTests
             check(!PresentationRawInputDecoder.TryKeyboard(keyboard, pointerSize, out _), "Keyboard overrun packets are not displayed as keys");
             var mouse = Packet(0, header + 24, pointerSize);
             BinaryPrimitives.WriteUInt16LittleEndian(mouse.AsSpan(header + 4), 1 | 512 | 1024);
-            check(PresentationRawInputDecoder.TryMouse(mouse, pointerSize, out long device, out ushort buttons) && device == 12345 && buttons == 1537,
+            check(PresentationRawInputDecoder.TryMouse(mouse, pointerSize, out long device, out ushort buttons, out _) && device == 12345 && buttons == 1537,
                 pointerSize + "-byte pointer mouse union is aligned independently of relative movement");
+            BinaryPrimitives.WriteInt16LittleEndian(mouse.AsSpan(header + 6), -120);
+            check(PresentationRawInputDecoder.TryMouse(mouse, pointerSize, out _, out _, out short wheel) && wheel == -120,
+                pointerSize + "-byte raw wheel packet retains its signed vertical delta");
             BinaryPrimitives.WriteUInt32LittleEndian(mouse.AsSpan(4), (uint)(mouse.Length + 1));
-            check(!PresentationRawInputDecoder.TryMouse(mouse, pointerSize, out _, out _), "A raw packet with inconsistent size is rejected");
+            check(!PresentationRawInputDecoder.TryMouse(mouse, pointerSize, out _, out _, out _), "A raw packet with inconsistent size is rejected");
             check(!PresentationRawInputDecoder.TryKeyboard(keyboard.AsSpan(0, header), pointerSize, out _), "Truncated raw input does not read beyond its owned bytes");
         }
         check(!PresentationRawInputDecoder.TryKeyboard(new byte[64], 5, out _), "Unknown pointer sizes are rejected");
         check(PresentationInputObserver.ExpandMessageTime(99, 120) == 99, "Delayed raw input retains its event time rather than consumption time");
         check(PresentationInputObserver.ExpandMessageTime(uint.MaxValue - 9, (1L << 32) + 50) == (1L << 32) - 10, "Raw event timestamps expand correctly across the 32-bit clock wrap");
         check(PresentationInputObserver.ExpandMessageTime(120, 120) == 120 && PresentationInputObserver.ExpandMessageTime(0, 0) == 0, "Current and startup raw timestamps remain nonnegative");
+        var mouseInfo = new byte[32]; BinaryPrimitives.WriteUInt32LittleEndian(mouseInfo, 32); BinaryPrimitives.WriteUInt32LittleEndian(mouseInfo.AsSpan(4), 0);
+        var keyboardInfo = new byte[32]; BinaryPrimitives.WriteUInt32LittleEndian(keyboardInfo, 32); BinaryPrimitives.WriteUInt32LittleEndian(keyboardInfo.AsSpan(4), 1);
+        check(PresentationInputObserver.DecodeDeviceType(mouseInfo) == PresentationDeviceKind.Mouse &&
+            PresentationInputObserver.DecodeDeviceType(keyboardInfo) == PresentationDeviceKind.Keyboard &&
+            PresentationInputObserver.DecodeDeviceType(mouseInfo.AsSpan(0, 4)) == PresentationDeviceKind.Unknown,
+            "Raw device type is decoded from dwType rather than cbSize");
+        bool targetForeground = SystemOverlayInput.IsOwnedForeground(101, 101, 7, 7, 99);
+        bool ownToolWindow = SystemOverlayInput.IsOwnedForeground(105, 101, 7, 99, 99);
+        bool externalWindow = SystemOverlayInput.IsOwnedForeground(105, 101, 7, 42, 99);
+        check(targetForeground && ownToolWindow && !externalWindow,
+            $"delegated editing accepts its original foreground and its own tool windows: target={targetForeground}, own={ownToolWindow}, external={externalWindow}");
     }
     private static byte[] Packet(uint type, int size, int pointerSize)
     {

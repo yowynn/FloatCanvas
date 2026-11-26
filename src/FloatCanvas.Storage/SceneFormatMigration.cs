@@ -22,7 +22,57 @@ internal static class SceneFormatMigration
             options = new(currentOptions);
             options.Converters.Insert(0, new HistoricalElementReader(version, currentOptions));
         }
-        return json.Deserialize<T>(options) ?? throw new InvalidDataException(L.Get("Project.EmptyContent"));
+        var value = json.Deserialize<T>(options) ?? throw new InvalidDataException(L.Get("Project.EmptyContent"));
+        NormalizePresentationLayouts(value);
+        return value;
+    }
+
+    private static void NormalizePresentationLayouts<T>(T value)
+    {
+        switch (value)
+        {
+            case SceneDocument document:
+                Normalize(document);
+                break;
+            case PrefabPackage package:
+                foreach (var definition in package.Definitions) Normalize(definition.Graph);
+                break;
+            case WorkspaceState workspace:
+                Normalize(workspace.LiveDocument);
+                if (workspace.CaptureDocument is { } capture) Normalize(capture);
+                foreach (var draft in PrefabDraftState.Enumerate(workspace.PendingPrefabEdit)) Normalize(draft.DraftDocument);
+                break;
+        }
+    }
+
+    private static void Normalize(SceneDocument document)
+    {
+        NormalizeElements(document.Elements.Append(document.Background).OfType<CanvasElement>());
+        foreach (var definition in document.Definitions) Normalize(definition.Graph);
+    }
+
+    private static void Normalize(SceneNodeGraph graph) => NormalizeElements(graph.Elements);
+
+    private static void NormalizeElements(IEnumerable<CanvasElement> elements)
+    {
+        foreach (var settings in elements.Select(element => element.Presentation).OfType<PresentationSettings>())
+        {
+            var layout = settings.KeyboardLayout;
+            if (layout is not null && IsLegacyUnusableLayout(layout))
+                settings.KeyboardLayout = null;
+        }
+    }
+
+    private static bool IsLegacyUnusableLayout(PresentationKeyboardLayout layout)
+    {
+        if (layout.Keys is not { } keys)
+            return true;
+        if (keys.Count == 0)
+            return true;
+        if (keys.Count > PresentationKeyboardLayout.MaximumKeys)
+            return false;
+        return keys.All(key => key is { Enabled: false } && key.IsValid()) &&
+            keys.Select(key => key.Id).Distinct(StringComparer.Ordinal).Count() == keys.Count;
     }
 
     private sealed class HistoricalElementReader(int version, JsonSerializerOptions currentOptions) : JsonConverter<CanvasElement>

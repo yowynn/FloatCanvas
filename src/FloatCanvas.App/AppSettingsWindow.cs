@@ -11,7 +11,7 @@ internal sealed class AppSettingsWindow : Window
     private readonly ListBox navigation = new() { BorderThickness = new Thickness(0), Margin = WindowLayout.ContentMargin() };
     private readonly Grid pages = new();
     internal TextBlock Error { get; } = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 16, 0), VerticalAlignment = VerticalAlignment.Center };
-    internal Button SaveButton { get; } = new() { Content = L.Get("Settings.Save"), IsDefault = true, MinWidth = 90, Padding = new Thickness(18, 8, 18, 8) };
+    internal Button SaveButton { get; } = new() { Content = L.Get("Settings.Save"), MinWidth = 90, Padding = new Thickness(18, 8, 18, 8) };
 
     internal AppSettingsWindow(bool regular = false)
     {
@@ -45,6 +45,7 @@ internal sealed class AppSettingsWindow : Window
             Padding = new Thickness(18, 8, 18, 8), Margin = new Thickness(0, 0, 8, 0) };
         cancel.Click += (_, _) => SessionWindowCoordinator.Close(this);
         SaveButton.SetResourceReference(StyleProperty, "CanvasPrimaryButton");
+        AppInputPolicy.AttachFormSubmit(this, SaveButton);
         buttons.Children.Add(cancel); buttons.Children.Add(SaveButton);
         Grid.SetColumn(buttons, 1); actions.Children.Add(buttons);
         var footer = new Border { Child = actions, BorderThickness = new Thickness(0, 1, 0, 0) };

@@ -20,6 +20,7 @@ internal static class ScopeNavigationTests
     internal static void Run(Action<string, bool> check, string? output = null)
     {
         _ = Application.Current ?? new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+        OverlayContextMenu.CloseAll();
         string language = L.Preference;
         if (output is not null) Directory.CreateDirectory(output);
         try

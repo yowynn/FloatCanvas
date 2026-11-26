@@ -32,7 +32,9 @@ internal sealed class OverlayBackendProtection
         this.probe = probe ?? ProbeProcess;
     }
 
-    internal bool TryEnable(Action enable)
+    internal Task<ProbeResult> ProbeAsync(CancellationToken cancellationToken) => Task.Run(probe, cancellationToken);
+
+    internal bool TryEnable(Action enable, ProbeResult? probed = null)
     {
         if (Mode == OverlayBackendMode.Desktop || disabled) return false;
         if (attempted) return enabled;
@@ -46,7 +48,7 @@ internal sealed class OverlayBackendProtection
         {
             // A past process exit and writable diagnostics do not establish current support.
             WriteState("active", "Probing and initializing the enhanced backend.");
-            var result = probe();
+            var result = probed ?? probe();
             if (!result.Available && !result.Inconclusive) { Disable(result.Detail); return false; }
             if (result.Inconclusive) AddWarning(result.Detail);
             enable(); enabled = true;

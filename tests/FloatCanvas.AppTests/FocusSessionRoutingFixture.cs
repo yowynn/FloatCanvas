@@ -51,10 +51,18 @@ internal static class FocusSessionRoutingFixture
             var captured = Mouse.Captured as DependencyObject;
             var captureWindow = captured is null ? null : PresentationSource.FromDependencyObject(captured) as HwndSource;
             Point? point = sourceWindow?.RootVisual is UIElement rootVisual ? rootVisual.PointToScreen(mouse.GetPosition(rootVisual)) : null;
+            PixelRect nativeRect = default;
+            bool hasNativeRect = false;
+            if (sourceWindow is not null)
+                hasNativeRect = GetWindowRect(sourceWindow.Handle, out nativeRect);
             Console.WriteLine($"FOCUS_WPF {mouse.RoutedEvent?.Name} {mouse.ChangedButton}/{mouse.ButtonState} original={mouse.OriginalSource?.GetType().Name} target={mouse.MouseDevice.Target?.GetType().Name} source={sourceWindow?.Handle:X} root={sourceWindow?.RootVisual?.GetType().Name} captured={captured?.GetType().Name} captureSource={captureWindow?.Handle:X}/{captureWindow?.RootVisual?.GetType().Name} nativeCapture={GetCapture():X} point={point} handled={mouse.Handled}");
             observations.Add(new { Stage = "WpfPointer", Event = mouse.RoutedEvent?.Name, Original = mouse.OriginalSource?.GetType().Name, Target = mouse.MouseDevice.Target?.GetType().Name,
                 SourceHandle = (long)(sourceWindow?.Handle ?? 0), SourceRoot = sourceWindow?.RootVisual?.GetType().Name, Captured = captured?.GetType().Name,
-                CaptureHandle = (long)(captureWindow?.Handle ?? 0), CaptureRoot = captureWindow?.RootVisual?.GetType().Name, NativeCapture = (long)GetCapture(), X = point?.X, Y = point?.Y });
+                CaptureHandle = (long)(captureWindow?.Handle ?? 0), CaptureRoot = captureWindow?.RootVisual?.GetType().Name, NativeCapture = (long)GetCapture(), X = point?.X, Y = point?.Y,
+                NativeLeft = hasNativeRect ? nativeRect.Left : (int?)null, NativeTop = hasNativeRect ? nativeRect.Top : (int?)null,
+                NativeRight = hasNativeRect ? nativeRect.Right : (int?)null, NativeBottom = hasNativeRect ? nativeRect.Bottom : (int?)null,
+                WpfLeft = sourceWindow?.RootVisual is Window sourceRoot ? sourceRoot.Left : (double?)null,
+                WpfTop = sourceWindow?.RootVisual is Window sourceTop ? sourceTop.Top : (double?)null });
         };
         InputManager.Current.PreProcessInput += pointerTrace;
         Exception? failure = null;
@@ -67,6 +75,8 @@ internal static class FocusSessionRoutingFixture
                 new PixelBounds(primary.WorkArea.Left + 30, primary.WorkArea.Top + 160, 640, 360);
             Func<IReadOnlyList<MonitorInfo>> provider = () => [primary with { Bounds = tile }];
             host = (OverlayHost)Activator.CreateInstance(typeof(OverlayHost), Private, null, [OverlayMonitorScope.PrimaryScreen, provider, false], null)!;
+            if (scenario == "desktop-fallback-selection" || Environment.GetEnvironmentVariable("FLOATCANVAS_FOCUS_BACKEND") == "enhanced")
+                host.EnableSystemInput();
             host.Pointer += pointer => { pointers.Add(pointer); Console.WriteLine($"FOCUS_POINTER {pointer.Kind} {pointer.Button} {pointer.Position} {pointer.Modifiers}"); };
             host.EditingFocusLost += () => Snapshot("EditingFocusLost");
             host.KeyboardIsolationReleased += reason => Snapshot("KeyboardIsolationReleased:" + reason);
@@ -109,12 +119,219 @@ internal static class FocusSessionRoutingFixture
                 app.MainWindow = toolbar; ActivateOwnWindow(new WindowInteropHelper(toolbar).Handle); gate.Close();
             }
             ActivateOwnWindow(new WindowInteropHelper(toolbar).Handle);
-            check("production focus fixture enters its own bounded canvas", (bool)Invoke("SetEditing", true, false)!);
-            Pump(100);
-            toolbar.Left = (primary.WorkArea.Right - 1500) * 96d / primary.DpiX;
+            if (scenario is not ("desktop-fallback-selection" or "desktop-keyboard-toggle"))
+            {
+                check("production focus fixture enters its own bounded canvas", (bool)Invoke("SetEditing", true, false)!);
+                Wait(() => !host.IsEditing || host.IsKeyboardIsolationActive, "initial keyboard isolation lease");
+            }
+            double toolbarLeftPixels = Math.Max(primary.WorkArea.Left, primary.WorkArea.Right - 1500);
+            toolbar.Left = toolbarLeftPixels * 96d / primary.DpiX;
             toolbar.Top = (primary.WorkArea.Top + 20) * 96d / primary.DpiY;
             Pump(50); Snapshot("editing-entered");
-            check("production focus fixture retains the actual keyboard isolation lease", host.IsEditing && host.IsKeyboardIsolationActive);
+            if (scenario is not ("desktop-fallback-selection" or "desktop-keyboard-toggle"))
+                check("production focus fixture retains the actual keyboard isolation lease", host.IsEditing && host.IsKeyboardIsolationActive);
+            if (scenario == "desktop-keyboard-toggle")
+            {
+                const ushort control = 0xA2, fixtureToggle = 0x87, backtick = 0xC0;
+                host.RegisterHotkeys(new(2, fixtureToggle), default);
+                Invoke("SwitchToolState", EditorTool.Select, false);
+                var origin = editor.CanvasOrigin;
+                var keyboard = new CanvasElement { Kind = ElementKind.Presentation, Width = 420, Height = 130,
+                    Transform = Affine2D.Translation(tile.Left + 30 - origin.X, tile.Top + 60 - origin.Y),
+                    Presentation = new() { DisplayStyle = PresentationDisplayStyle.Keyboard } };
+                var rectangle = new CanvasElement { Kind = ElementKind.Rectangle, Width = 40, Height = 40,
+                    Transform = Affine2D.Translation(tile.Left + 160 - origin.X, tile.Top + 240 - origin.Y),
+                    Style = new() { Background = 0xFFFF3300 } };
+                editor.Session.Add(keyboard); editor.Session.Add(rectangle); editor.Session.SetSelection([rectangle.Id]);
+                Invoke("UpdatePresentationRuntime");
+                var runtime = Field<PresentationRuntimeBroker>(session, "_presentationRuntime");
+                Wait(() => runtime.ObservingKeyboard, "live keyboard observer");
+                var isolation = Field<KeyboardInputIsolation>(host, "_keyboardIsolation");
+                var hook = typeof(KeyboardInputIsolation).GetMethod("OnKeyboard", Private)!;
+                var chord = new ushort[] { control, fixtureToggle };
+                try
+                {
+                    SendKeys(chord, up: false);
+                    Wait(() => host.IsEditing && host.IsKeyboardIsolationActive, "registered desktop keyboard hotkey");
+                    check("Ctrl from the held entry chord hides the frame", !editor.ShouldShowSelection(host.InteractionModifiers));
+                    var target = host.Diagnostics.Single().InputHandle;
+                    var edge = new PixelPoint(tile.Left + 160, tile.Top + 250);
+                    ReplayHook(backtick, 0x29, up: false);
+                    Pump(90);
+                    check("the keyboard layer sees the held hotkey while editing", Keys(runtime.Frame, control, backtick));
+                    var whileHeld = ReadScreenEdge(target, edge);
+                    // Deliberately remove only this fixture's hook. Windows can deliver
+                    // a native edge even if the original low-level callback is missing.
+                    var installedHook = typeof(KeyboardInputIsolation).GetField("hook", Private)!;
+                    nint handle = (nint)installedHook.GetValue(isolation)!;
+                    if (handle == 0 || !UnhookWindowsHookEx(handle)) throw new InvalidOperationException("Could not detach the fixture keyboard hook.");
+                    installedHook.SetValue(isolation, (nint)0);
+                    SendKeys(chord.Reverse(), up: true);
+                    ObserveRaw(backtick, 0x29, up: true);
+                    Pump(250);
+                    check("the native hotkey release clears the editing modifier and restores selection",
+                        host.InteractionModifiers == OverlayModifiers.None && editor.ShouldShowSelection(host.InteractionModifiers) &&
+                        editor.SelectionScreenCorners.Count == 4 && CountNewBluePixels(whileHeld, ReadScreenEdge(target, edge)) >= 8);
+                    check("the live keyboard clears the complete hotkey chord", runtime.Frame.PressedKeys.Count == 0 && Presented()?.PressedKeys.Count == 0);
+                    foreach (var (key, scan) in new[] { (0x51, 0x10), (0x55, 0x16) })
+                    {
+                        ObserveRaw(key, scan, up: false);
+                        Wait(() => Keys(Presented(), key), "raw key is visible in the keyboard demonstration");
+                        ObserveRaw(key, scan, up: true);
+                        Wait(() => Presented()?.PressedKeys.Count == 0, "raw key is released in the keyboard demonstration");
+                    }
+                    check("device-backed Q and U enter and leave live keyboard frames without a hook or window message", Presented()?.PressedKeys.Count == 0);
+                    SendKeys([0xA1], up: false);
+                    Pump(100);
+                    check("the native keyboard route observes a new right Shift with the hook missing",
+                        Keys(runtime.Frame, 0xA1) && Keys(Presented(), 0xA1));
+                    SendKeys([0xA1], up: true);
+                    Pump(100);
+                    check("the native keyboard route clears that right Shift on release", Presented()?.PressedKeys.Count == 0);
+
+                    int shiftDowns = 0;
+                    host.PresentationInputObserved += batch => shiftDowns += batch.Changes.Count(change =>
+                        change.Kind == PresentationObservedKind.KeyDown && change.VirtualKey == 0xA1);
+                    uint time = unchecked((uint)Environment.TickCount64);
+                    ReplayHook(0xA1, 0x36, up: false, flags: 0x10, time: time);
+                    SendKeys([0xA1], up: false, time: time);
+                    Pump(120);
+                    check("one edge seen by both input routes is published only once", shiftDowns == 1 && Keys(Presented(), 0xA1));
+                    ReplayHook(0xA1, 0x36, up: true, flags: 0x10);
+                    SendKeys([0xA1], up: true);
+                    ReplayHook(0x48, 0x23, up: false);
+                    Pump(250);
+                    check("the keyboard demonstration continues to submit ordinary hook input in editing mode", Keys(runtime.Frame, 0x48) && Keys(Presented(), 0x48));
+                    ReplayHook(0x48, 0x23, up: true);
+                    Pump(180);
+                    check("the submitted keyboard frame clears a regular key on release", Presented()?.PressedKeys.Count == 0);
+                }
+                finally
+                {
+                    if (IsOwnForeground()) SendKeys(chord.Reverse().Prepend((ushort)0xA1).Where(key => GetAsyncKeyState(key) < 0), up: true);
+                }
+                return;
+
+                PresentationFrame? Presented() => Field<PresentationFrame?>(session, "_presentedPresentationFrame");
+                void ObserveRaw(int key, int scan, bool up) => host!.ObserveOrdinaryRawPresentationKeys(new(runtime.InputEpoch,
+                    [new(up ? PresentationObservedKind.RawKeyUp : PresentationObservedKind.RawKeyDown,
+                        Environment.TickCount64, VirtualKey: key, ScanCode: scan, InputOwner: PresentationInputOwner.FloatCanvas)], null, false));
+                static bool Keys(PresentationFrame? frame, params int[] keys) => frame is not null &&
+                    frame.PressedKeys.Count == keys.Length && frame.PressedKeys.Select(key => key.VirtualKey).ToHashSet().SetEquals(keys);
+
+                void ReplayHook(uint key, uint scan, bool up, uint flags = 0, uint? time = null)
+                {
+                    if (!IsOwnForeground()) throw new InvalidOperationException("The key replay fixture lost its own foreground.");
+                    // Windows intentionally labels SendInput as injected. Exercise ordinary
+                    // physical-key decoding by replaying hook metadata only inside this process.
+                    var data = new HookKeyboardEvent { VirtualKey = key, Scan = scan, Flags = flags | (up ? 0x80u : 0),
+                        Time = time ?? unchecked((uint)Environment.TickCount64) };
+                    nint packet = Marshal.AllocHGlobal(Marshal.SizeOf<HookKeyboardEvent>());
+                    try { Marshal.StructureToPtr(data, packet, false); hook.Invoke(isolation, [0, up ? (nuint)0x101 : 0x100, packet]); }
+                    finally { Marshal.FreeHGlobal(packet); }
+                }
+                void SendKeys(IEnumerable<ushort> keys, bool up, uint time = 0)
+                {
+                    if (!IsOwnForeground() || !up && keys.Any(key => GetAsyncKeyState(key) < 0))
+                        throw new InvalidOperationException("The native hotkey fixture does not own a clean keyboard target.");
+                    NativeInput[] inputs = keys.Select(key => new NativeInput { Type = 1,
+                        Data = new() { Keyboard = key == 0xA1
+                            ? new() { Scan = 0x36, Flags = (up ? 2u : 0u) | 8u, Time = time }
+                            : new() { Key = key, Flags = up ? 2u : 0u, Time = time } } }).ToArray();
+                    if (inputs.Length != 0)
+                    {
+                        var sent = Task.Run(() => (Count: SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<NativeInput>()), Error: Marshal.GetLastWin32Error()));
+                        Await(sent);
+                        if (sent.Result.Count != inputs.Length) throw new System.ComponentModel.Win32Exception(sent.Result.Error);
+                    }
+                }
+            }
+            if (scenario is "desktop-selection" or "desktop-fallback-selection")
+            {
+                Invoke("SwitchToolState", EditorTool.Select, false);
+                var local = new PointD(tile.Left + 160, tile.Top + 190) - editor.CanvasOrigin;
+                CanvasElement Rectangle(double x) => new() { Kind = ElementKind.Rectangle, Width = 40, Height = 40,
+                    Transform = Affine2D.Translation(local.X + x, local.Y), Style = new() { Background = 0xFFFF3300 } };
+                var first = Rectangle(0); var second = Rectangle(85);
+                editor.Session.Add(first); editor.Session.Add(second); editor.Session.SetSelection([]);
+                if (scenario == "desktop-fallback-selection")
+                {
+                    var fallback = session.PrepareDesktopFallbackAsync();
+                    Await(fallback);
+                    var saved = fallback.GetAwaiter().GetResult();
+                    session.Dispose();
+                    host = (OverlayHost)Activator.CreateInstance(typeof(OverlayHost), Private, null,
+                        [OverlayMonitorScope.PrimaryScreen, provider, false], null)!;
+                    session = new DesktopSession(app, host, fallbackState: saved);
+                    Field<System.Windows.Forms.NotifyIcon>(session, "_tray").Visible = false;
+                    Invoke("RestoreFallbackWorkspace", saved);
+                    Invoke("OnMonitorsChanged");
+                    editor = Field<EditorController>(session, "_editor");
+                    observedEditor = editor;
+                    toolbar = Field<Window>(session, "_toolbar");
+                    AttachWindows();
+                    toolbar.Show(); Pump(60);
+                    ActivateOwnWindow(new WindowInteropHelper(toolbar).Handle);
+                    check("ordinary editing enters again after switching backends", (bool)Invoke("SetEditing", true, false)!);
+                    toolbar.Top = (primary.WorkArea.Top + 20) * 96d / primary.DpiY;
+                }
+                check("selection fixture uses the ordinary desktop backend", !host.UsesSystemInput);
+                check("ordinary selection has the restored visible canvas", host.IsVisible);
+                Pump(650);
+                var target = host.Diagnostics.Single().InputHandle;
+                var singleEdge = new PixelPoint(tile.Left + 160, tile.Top + 200);
+                var groupEdge = new PixelPoint(tile.Left + 285, tile.Top + 200);
+                var marqueeEdge = new PixelPoint(tile.Left + 130, tile.Top + 200);
+                var singleBefore = ReadScreenEdge(target, singleEdge);
+                var groupBefore = ReadScreenEdge(target, groupEdge);
+                var marqueeBefore = ReadScreenEdge(target, marqueeEdge);
+                host.Pointer += pointer => Console.WriteLine($"DESKTOP_SELECTION_POINTER {pointer.Kind} {pointer.Button} {pointer.Position}");
+                Console.WriteLine($"DESKTOP_SELECTION before origin={editor.CanvasOrigin} viewport={editor.CanvasViewport} local={local}" +
+                    $" suspended={Field<bool>(editor, "presentedPickingSuspended")} revision={editor.Session.PreviewRevision}/{Field<long>(editor, "presentedContentRevision")}" +
+                    $" hasEditable={Field<bool>(session, "_hasEditableCanvasOccurrence")} rendered={Field<SceneDocument?>(editor, "presentedScene")?.Elements.Count}");
+                DriveOwnPointer(target, new(tile.Left + 180, tile.Top + 210), new(tile.Left + 180, tile.Top + 210));
+                Pump(250);
+                Console.WriteLine($"DESKTOP_SELECTION after count={editor.Session.Selection.Count} corners={editor.SelectionScreenCorners.Count}" +
+                    $" tool={editor.Tool} suspended={Field<bool>(editor, "presentedPickingSuspended")} revision={editor.Session.PreviewRevision}/{Field<long>(editor, "presentedContentRevision")}");
+                check("ordinary canvas click selects one object and exposes its frame",
+                    editor.Session.Selection.SetEquals([first.Id]) && editor.SelectionScreenCorners.Count == 4);
+                CheckVisibleEdge("single-selection frame", singleEdge, singleBefore);
+                SendShift(true);
+                try
+                {
+                    DriveOwnPointer(target, new(tile.Left + 265, tile.Top + 210), new(tile.Left + 265, tile.Top + 210));
+                }
+                finally { SendShift(false); }
+                Pump(250);
+                check("ordinary canvas Shift click adds a second selection", editor.Session.Selection.SetEquals([first.Id, second.Id]));
+                CheckVisibleEdge("multi-selection frame", groupEdge, groupBefore);
+                editor.Session.SetSelection([]);
+                bool marqueeSeen = false;
+                host.Pointer += args => { if (args.Kind == OverlayPointerKind.Move && editor.MarqueeScreenPolygon is { Count: 4 }) marqueeSeen = true; };
+                DriveOwnPointer(target, new(tile.Left + 130, tile.Top + 165), new(tile.Left + 300, tile.Top + 255),
+                    beforeRelease: () => CheckVisibleEdge("drag marquee", marqueeEdge, marqueeBefore));
+                Pump(350);
+                check("ordinary canvas drag displays a marquee while held", marqueeSeen);
+                check("marquee selects both ordinary-canvas objects", editor.Session.Selection.SetEquals([first.Id, second.Id]));
+                return;
+
+                void CheckVisibleEdge(string label, PixelPoint edge, uint[] before)
+                {
+                    int changedBlue = CountNewBluePixels(before, ReadScreenEdge(target, edge));
+                    Console.WriteLine($"DESKTOP_SELECTION_VISIBLE {label} blue={changedBlue}");
+                    check($"ordinary canvas paints the {label} on the desktop", changedBlue >= 8);
+                }
+
+                void SendShift(bool held)
+                {
+                    if (held && GetForegroundWindow() != target)
+                        throw new InvalidOperationException("Canvas is not the owned foreground; no modifier pressed.");
+                    if (SendInput(1, [new() { Type = 1, Data = new() { Keyboard = new() { Key = 0xA0, Flags = held ? 0u : 2u } } }],
+                        Marshal.SizeOf<NativeInput>()) != 1)
+                        throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+                    Pump(40);
+                }
+            }
             if (scenario is "toolbar-delete-cancel" or "toolbar-delete-confirm")
             {
                 var shelf = Field<StampShelfControl>(session, "_stampShelf");
@@ -469,33 +686,69 @@ internal static class FocusSessionRoutingFixture
     }
     private static void DrawOwnCanvas(nint target, PixelBounds bounds, int offsetX)
         => DriveOwnPointer(target, new(bounds.Left + 80 + offsetX, bounds.Top + 100), new(bounds.Left + 220 + offsetX, bounds.Top + 200));
-    private static void DriveOwnPointer(nint target, PixelPoint start, PixelPoint end, bool right = false)
+    private static uint[] ReadScreenEdge(nint target, PixelPoint top)
+    {
+        const int width = 3;
+        const int height = 20;
+        int left = top.X - 1;
+        var colors = new uint[width * height];
+        for (int i = 0; i < colors.Length; i++)
+        {
+            if (WindowFromPhysicalPoint(new(left + i % width, top.Y + i / width)) != target)
+                throw new InvalidOperationException("Selection frame sample is outside the owned test canvas.");
+        }
+        using var bitmap = new System.Drawing.Bitmap(width, height);
+        using var graphics = System.Drawing.Graphics.FromImage(bitmap);
+        graphics.CopyFromScreen(left, top.Y, 0, 0, bitmap.Size);
+        for (int i = 0; i < colors.Length; i++)
+            colors[i] = unchecked((uint)bitmap.GetPixel(i % width, i / width).ToArgb());
+        return colors;
+    }
+    private static int CountNewBluePixels(uint[] before, uint[] after) => before.Zip(after).Count(pair =>
+    {
+        uint color = pair.Second;
+        int red = (int)(color >> 16 & 255), green = (int)(color >> 8 & 255), blue = (int)(color & 255);
+        return pair.First != color && blue >= 150 && blue > red + 48 && blue > green + 32;
+    });
+    internal static void DriveOwnPointer(nint target, PixelPoint start, PixelPoint end, bool right = false, bool allowDelegatedInput = false, Action? beforeRelease = null)
     {
         nint previousDpi = SetThreadDpiAwarenessContext(-4);
         GetCursorPos(out var original); bool held = false;
         try
         {
             Move(start.X, start.Y);
+            if (GetCursorPos(out var pressedAt) && !MatchesClickPoint(pressedAt, start))
+                throw new InvalidOperationException($"Pointer moved before the test press. Expected {start}, actual {pressedAt}.");
             Send(right ? 8u : 2u); held = true; Pump(75);
-            Move(end.X, end.Y);
+            if (end != start) Move(end.X, end.Y);
+            else if (GetCursorPos(out var releasedAt) && !MatchesClickPoint(releasedAt, end))
+                throw new InvalidOperationException($"Pointer moved before the test release. Expected {end}, actual {releasedAt}.");
+            beforeRelease?.Invoke();
             Send(right ? 16u : 4u); held = false; Pump(75);
         }
         finally
         {
-            if (IsOwnForeground())
+            if (allowDelegatedInput || IsOwnForeground())
             {
                 if (held) Send(right ? 16u : 4u);
                 SetCursorPos(original.X, original.Y);
             }
             if (previousDpi != 0) SetThreadDpiAwarenessContext(previousDpi);
         }
+        // Normalized SendInput coordinates can land one pixel off after rounding.
+        static bool MatchesClickPoint(PixelPoint actual, PixelPoint expected) =>
+            Math.Abs(actual.X - expected.X) <= 1 && Math.Abs(actual.Y - expected.Y) <= 1;
         void Move(int x, int y)
         {
             nint actual = WindowFromPhysicalPoint(new(x, y));
-            if (!IsOwnForeground() || actual != target)
+            if ((!allowDelegatedInput && !IsOwnForeground()) || actual != target)
             {
                 GetWindowRect(target, out var rectangle);
-                throw new InvalidOperationException($"Physical regression point is not its own surface; no input injected. point={x},{y} actual={actual:X} expected={target:X} native={rectangle.Left},{rectangle.Top},{rectangle.Right},{rectangle.Bottom}");
+                var title = new System.Text.StringBuilder(256);
+                _ = GetWindowText(actual, title, title.Capacity);
+                uint actualProcess = 0;
+                _ = GetWindowThreadProcessId(actual, out actualProcess);
+                throw new InvalidOperationException($"Physical regression point is not its own surface; no input injected. point={x},{y} actual={actual:X} expected={target:X} native={rectangle.Left},{rectangle.Top},{rectangle.Right},{rectangle.Bottom} actualTitle={title} actualProcess={actualProcess}");
             }
             int left = GetSystemMetrics(76), top = GetSystemMetrics(77), width = GetSystemMetrics(78), height = GetSystemMetrics(79);
             Send(0xC001, (int)Math.Round((x - left) * 65535d / (width - 1)), (int)Math.Round((y - top) * 65535d / (height - 1)));
@@ -503,7 +756,7 @@ internal static class FocusSessionRoutingFixture
         }
         void Send(uint flags, int x = 0, int y = 0)
         {
-            if (!IsOwnForeground()) throw new InvalidOperationException("Physical regression lost its foreground; no input injected.");
+            if (!allowDelegatedInput && !IsOwnForeground()) throw new InvalidOperationException("Physical regression lost its foreground; no input injected.");
             nint capture = GetCapture();
             if (capture != 0 && (GetWindowThreadProcessId(capture, out uint process) == 0 || process != Environment.ProcessId))
                 throw new InvalidOperationException("Physical regression capture belongs to another process; no input injected.");
@@ -511,6 +764,7 @@ internal static class FocusSessionRoutingFixture
                 throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
         }
     }
+    internal static nint WindowAtPhysicalPoint(int x, int y) => WindowFromPhysicalPoint(new(x, y));
     private static void InvokeButton(Button button) => typeof(Button).GetMethod("OnClick", Private)!.Invoke(button, null);
     private static void PressOwnEscape(Window window)
     {
@@ -542,19 +796,39 @@ internal static class FocusSessionRoutingFixture
     private static bool IsOwnForeground() => GetWindowThreadProcessId(GetForegroundWindow(), out uint process) != 0 && process == Environment.ProcessId;
     private static void ActivateOwnWindow(nint window)
     {
-        if (!SetForegroundWindow(window) && GetForegroundWindow() != window) throw new InvalidOperationException("Fixture could not acquire its own foreground.");
-        SetFocus(window);
+        nint foreground = GetForegroundWindow();
+        if (foreground != window)
+        {
+            uint currentThread = GetCurrentThreadId();
+            uint foregroundThread = foreground == 0 ? 0 : GetWindowThreadProcessId(foreground, out _);
+            bool attached = foregroundThread != 0 && foregroundThread != currentThread &&
+                AttachThreadInput(currentThread, foregroundThread, true);
+            try
+            {
+                SetForegroundWindow(window);
+                SetFocus(window);
+            }
+            finally
+            {
+                if (attached) AttachThreadInput(currentThread, foregroundThread, false);
+            }
+        }
+        if (GetForegroundWindow() != window)
+            throw new InvalidOperationException("Fixture could not acquire its own foreground.");
     }
     [DllImport("user32.dll")] private static extern nint GetForegroundWindow();
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowText(nint window, System.Text.StringBuilder text, int maximum);
     [DllImport("user32.dll")] private static extern nint GetCapture();
     [DllImport("user32.dll")] private static extern bool IsWindowEnabled(nint window);
     [DllImport("user32.dll")] private static extern bool IsWindow(nint window);
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(nint window);
+    [DllImport("user32.dll")] private static extern bool AttachThreadInput(uint attach, uint attachTo, bool value);
     [DllImport("user32.dll")] private static extern bool AllowSetForegroundWindow(uint process);
     [DllImport("user32.dll")] private static extern nint SetFocus(nint window);
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(nint window, out uint process);
+    [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
     [DllImport("user32.dll")] private static extern nint SendMessage(nint window, uint message, nuint wparam, nint lparam);
-    [StructLayout(LayoutKind.Sequential)] private readonly record struct PixelPoint(int X, int Y);
+    [StructLayout(LayoutKind.Sequential)] internal readonly record struct PixelPoint(int X, int Y);
     [StructLayout(LayoutKind.Sequential)] private struct PixelRect { public int Left, Top, Right, Bottom; }
     [StructLayout(LayoutKind.Sequential)] private struct NativeInput { public uint Type; public InputUnion Data; }
     [StructLayout(LayoutKind.Explicit)] private struct InputUnion
@@ -564,6 +838,9 @@ internal static class FocusSessionRoutingFixture
     }
     [StructLayout(LayoutKind.Sequential)] private struct MouseInput { public int X, Y; public uint Data, Flags, Time; public nuint Extra; }
     [StructLayout(LayoutKind.Sequential)] private struct KeyboardInput { public ushort Key, Scan; public uint Flags, Time; public nuint Extra; }
+    [StructLayout(LayoutKind.Sequential)] private struct HookKeyboardEvent { public uint VirtualKey, Scan, Flags, Time; public nuint Extra; }
+    [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int key);
+    [DllImport("user32.dll")] private static extern bool UnhookWindowsHookEx(nint hook);
     [DllImport("user32.dll")] private static extern nint WindowFromPhysicalPoint(PixelPoint point);
     [DllImport("user32.dll")] private static extern bool GetCursorPos(out PixelPoint point);
     [DllImport("user32.dll")] private static extern bool SetCursorPos(int x, int y);

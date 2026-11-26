@@ -1,5 +1,6 @@
 using L = FloatCanvas.Localization.AppText;
 using System.IO.Compression;
+using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using FloatCanvas.Core;
@@ -23,10 +24,26 @@ internal static class PackageCodec
         public required string MediaType { get; set; }
         public required long Length { get; set; }
     }
+    private sealed class SaveIntent
+    {
+        public required string Schema { get; set; }
+        public required string Kind { get; set; }
+        public required string TargetPath { get; set; }
+        public required string ExpectedSha256 { get; set; }
+        public required string WrittenSha256 { get; set; }
+        public string? SidecarPath { get; set; }
+    }
     private static readonly JsonSerializerOptions JsonOptions = new() { MaxDepth = 128, UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow };
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> PathGates =
+        new(StringComparer.OrdinalIgnoreCase);
     private const long MaxPackageBytes = 2L * 1024 * 1024 * 1024;
     private const long MaxExpandedBytes = 1024L * 1024 * 1024;
     private const long MaxAssetBytes = 512L * 1024 * 1024;
+    internal static Action<string>? BeforeVersionedReplaceForTesting { get; set; }
+    internal static Action<string>? AfterVersionedReplaceForTesting { get; set; }
+    internal static Action<string>? BeforeVersionedRollbackForTesting { get; set; }
+    internal static Action<string>? BeforeCommittedCacheReadForTesting { get; set; }
+    internal static bool PreserveSaveIntentForTesting { get; set; }
     public static bool IsAssetId(string? id) => id is { Length: 64 } && id.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f');
     public static AssetResource[] ResolveResources(IEnumerable<string> ids, AssetLibrary assets) => ids.Distinct(StringComparer.Ordinal).Select(id =>
         assets.TryGet(id, out var resource) ? resource : throw new InvalidDataException(L.Format("Assets.MissingResource", id))).ToArray();
@@ -59,9 +76,23 @@ internal static class PackageCodec
         EnsureExpandedCapacity(resources.Sum(r => (long)r.Data.Length), manifestBytes.LongLength, payloadBytes.LongLength);
         path = Path.GetFullPath(path);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var pathGate = PathGates.GetOrAdd(path, _ => new(1, 1));
+        await pathGate.WaitAsync(ct).ConfigureAwait(false);
+        string? saveIntent = null;
+        FileStream? writeLease = null;
         string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
+            if (kind is "project" or "prefab")
+            {
+                // All profiles of this Windows user share the lease. Keep lock files
+                // in app-owned storage and leave project directories alone on reads.
+                string digest = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(path.ToUpperInvariant())));
+                string leasePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "FloatCanvas", "package-save-leases", digest + ".lock");
+                writeLease = await FileLease.AcquireAsync(leasePath, ct).ConfigureAwait(false);
+            }
+            await ReconcileSaveIntentAsync<T>(path, kind, ct).ConfigureAwait(false);
             await using var output = new FileStream(temporary, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.Read | FileShare.Delete, 81920, FileOptions.Asynchronous | FileOptions.WriteThrough);
             using (var archive = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true))
             {
@@ -88,22 +119,91 @@ internal static class PackageCodec
             ct.ThrowIfCancellationRequested();
             if (expectedVersion is not null && await ProjectFileVersion.ReadAsync(path, ct).ConfigureAwait(false) != expectedVersion)
                 throw new ProjectFileConflictException();
-            if (expectedVersion is not null && File.Exists(path))
+            string? preservedPrevious = null;
+            if (expectedVersion is { Sha256: null })
+            {
+                // A null digest is the compare-and-swap expectation for "does not exist".
+                // File.Replace requires an existing target, so create the path without
+                // overwrite and treat a file appearing after validation as a conflict.
+                BeforeVersionedReplaceForTesting?.Invoke(path);
+                try { File.Move(temporary, path, overwrite: false); }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                {
+                    throw new ProjectFileConflictException(File.Exists(path) ? path : null);
+                }
+                AfterVersionedReplaceForTesting?.Invoke(path);
+                var installedNewVersion = await ReadPostCommitVersionAsync(path, path).ConfigureAwait(false);
+                if (installedNewVersion != writtenVersion)
+                    throw new ProjectFileConflictException(path);
+            }
+            else if (expectedVersion is not null)
             {
                 // Preserve the replaced generation until its identity is verified. This also
                 // retains an external write racing the final comparison instead of losing it.
                 string previous = path + "." + Guid.NewGuid().ToString("N") + ".save-backup";
-                File.Replace(temporary, path, previous);
-                if (await ProjectFileVersion.ReadAsync(previous, ct).ConfigureAwait(false) != expectedVersion)
-                    throw new ProjectFileConflictException(previous);
-                File.Delete(previous);
+                preservedPrevious = previous;
+                saveIntent = IntentPath(path);
+                await WriteSaveIntentAsync(path, kind, expectedVersion, writtenVersion, previous).ConfigureAwait(false);
+                BeforeVersionedReplaceForTesting?.Invoke(path);
+                try { File.Replace(temporary, path, previous); }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                {
+                    // The target can change after the version comparison but before
+                    // Replace. Report that race as a project conflict, not a generic
+                    // storage failure, so the caller can explain the external change.
+                    throw new ProjectFileConflictException(File.Exists(previous) ? previous : null);
+                }
+                AfterVersionedReplaceForTesting?.Invoke(path);
+                // Commit is a non-cancellable boundary. Once Replace succeeds, finish
+                // verification and cleanup rather than reporting cancellation for a
+                // save that is already visible on disk.
+                var installedVersion = await ReadPostCommitVersionAsync(path, previous).ConfigureAwait(false);
+                if (installedVersion != writtenVersion)
+                {
+                    // Keep a displaced valid generation when the external target is not a
+                    // complete package. A valid newer package safely supersedes it.
+                    bool externalValid = false;
+                    try
+                    {
+                        if (!IsKnownValid(path, kind))
+                            await LoadAsync<T>(path, kind, CancellationToken.None).ConfigureAwait(false);
+                        externalValid = true;
+                    }
+                    catch (Exception error) when (error is InvalidDataException or IOException or UnauthorizedAccessException or
+                        JsonException or NotSupportedException or EndOfStreamException) { }
+                    if (externalValid) TryDelete(previous);
+                    throw new ProjectFileConflictException(externalValid ? null :
+                        File.Exists(previous) ? previous : path);
+                }
+                var previousVersion = await ReadPostCommitVersionAsync(previous, previous).ConfigureAwait(false);
+                if (previousVersion != expectedVersion)
+                {
+                    BeforeVersionedRollbackForTesting?.Invoke(path);
+                    await RestoreExternalGenerationAsync(path, kind, expectedVersion, writtenVersion,
+                        previous, previousVersion).ConfigureAwait(false);
+                    throw new InvalidOperationException("External generation restoration must end in a conflict.");
+                }
             }
             else File.Move(temporary, path, overwrite: expectedVersion is null);
-            await using (var committed = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete, 81920, FileOptions.Asynchronous | FileOptions.SequentialScan))
+            BeforeCommittedCacheReadForTesting?.Invoke(path);
+            try
             {
-                string committedHash = Convert.ToHexString(await System.Security.Cryptography.SHA256.HashDataAsync(committed, ct).ConfigureAwait(false));
-                if (committedHash == writtenVersion.Sha256) ValidatedPackageCache.Remember(committed.SafeFileHandle, kind);
+                await using (var committed = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete, 81920, FileOptions.Asynchronous | FileOptions.SequentialScan))
+                {
+                    string committedHash = Convert.ToHexString(await System.Security.Cryptography.SHA256.HashDataAsync(committed, CancellationToken.None).ConfigureAwait(false));
+                    if (committedHash != writtenVersion.Sha256)
+                        throw new ProjectFileConflictException(preservedPrevious is not null && File.Exists(preservedPrevious)
+                            ? preservedPrevious : path);
+                    ValidatedPackageCache.Remember(committed.SafeFileHandle, kind);
+                }
             }
+            catch (ProjectFileConflictException) { throw; }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+                throw new ProjectFileConflictException(
+                    preservedPrevious is not null && File.Exists(preservedPrevious) ? preservedPrevious : null);
+            }
+            if (preservedPrevious is not null) TryDelete(preservedPrevious);
             // The origin object is shared with editor/undo snapshots, but is excluded
             // from scene content. Failed writes never establish or alter its identity.
             Provenance(value).RecordSuccessfulSave(writerVersion);
@@ -111,7 +211,193 @@ internal static class PackageCodec
             if (value is PrefabPackage package) package.RecordResourceIdentityPersistence();
             return writtenVersion;
         }
-        finally { if (File.Exists(temporary)) File.Delete(temporary); }
+        finally
+        {
+            try { if (File.Exists(temporary)) File.Delete(temporary); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+            if (saveIntent is not null && !PreserveSaveIntentForTesting) TryDelete(saveIntent);
+            writeLease?.Dispose();
+            pathGate.Release();
+        }
+    }
+    private static async Task RestoreExternalGenerationAsync(string path, string kind,
+        ProjectFileVersion expectedVersion, ProjectFileVersion writtenVersion, string pending, ProjectFileVersion pendingVersion)
+    {
+        var knownOlder = new HashSet<ProjectFileVersion> { pendingVersion };
+        for (int attempt = 0; attempt < 4; attempt++)
+        {
+            string captured = path + "." + Guid.NewGuid().ToString("N") + ".save-rejected";
+            await WriteSaveIntentAsync(path, kind, expectedVersion, writtenVersion, captured).ConfigureAwait(false);
+            try { File.Replace(pending, path, captured); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            { throw new ProjectFileConflictException(File.Exists(pending) ? pending : null); }
+            var capturedVersion = await ReadPostCommitVersionAsync(captured, captured).ConfigureAwait(false);
+            if (capturedVersion == writtenVersion || knownOlder.Contains(capturedVersion))
+            {
+                TryDelete(captured);
+                throw new ProjectFileConflictException();
+            }
+            knownOlder.Add(pendingVersion);
+            pending = captured;
+            pendingVersion = capturedVersion;
+        }
+        // A writer that never yields a stable target leaves its latest captured
+        // generation as an explicit recovery path instead of deleting it.
+        throw new ProjectFileConflictException(pending);
+    }
+    private static string IntentPath(string path) => path + ".save-intent.json";
+    private static async Task WriteSaveIntentAsync(string path, string kind, ProjectFileVersion expectedVersion,
+        ProjectFileVersion writtenVersion, string sidecar)
+    {
+        if (expectedVersion.Sha256 is not { Length: 64 } expected || writtenVersion.Sha256 is not { Length: 64 } written)
+            throw new InvalidOperationException("A versioned save intent requires both content identities.");
+        string intentPath = IntentPath(path);
+        var intent = new SaveIntent
+        {
+            Schema = "FloatCanvas.SaveIntent.v1",
+            Kind = kind,
+            TargetPath = path,
+            ExpectedSha256 = expected,
+            WrittenSha256 = written,
+            SidecarPath = sidecar
+        };
+        byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(intent, JsonOptions);
+        string temporary = intentPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            await using (var output = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None,
+                4096, FileOptions.Asynchronous | FileOptions.WriteThrough))
+            {
+                await output.WriteAsync(bytes).ConfigureAwait(false);
+                await output.FlushAsync().ConfigureAwait(false);
+                output.Flush(true);
+            }
+            File.Move(temporary, intentPath, true);
+        }
+        finally { TryDelete(temporary); }
+    }
+    private static async Task ReconcileSaveIntentAsync<T>(string path, string kind, CancellationToken ct)
+    {
+        string intentPath = IntentPath(path);
+        if (!File.Exists(intentPath)) return;
+        SaveIntent intent;
+        try
+        {
+            var info = new FileInfo(intentPath);
+            if (info.Length is <= 0 or > 16 * 1024) throw new InvalidDataException(L.Get("Project.InvalidManifest"));
+            intent = JsonSerializer.Deserialize<SaveIntent>(await File.ReadAllBytesAsync(intentPath, ct).ConfigureAwait(false),
+                JsonOptions) ?? throw new InvalidDataException(L.Get("Project.InvalidManifest"));
+        }
+        catch (JsonException error) { throw new InvalidDataException(L.Get("Project.InvalidManifest"), error); }
+        if (intent.Schema != "FloatCanvas.SaveIntent.v1" || intent.Kind != kind ||
+            !string.Equals(Path.GetFullPath(intent.TargetPath), path, StringComparison.OrdinalIgnoreCase) ||
+            intent.ExpectedSha256 is not { Length: 64 } || intent.WrittenSha256 is not { Length: 64 })
+            throw new InvalidDataException(L.Get("Project.InvalidManifest"));
+        string? sidecar = intent.SidecarPath is { } candidate ? Path.GetFullPath(candidate) : null;
+        if (sidecar is not null && (!string.Equals(Path.GetDirectoryName(sidecar), Path.GetDirectoryName(path), StringComparison.OrdinalIgnoreCase) ||
+            !Path.GetFileName(sidecar).StartsWith(Path.GetFileName(path) + ".", StringComparison.OrdinalIgnoreCase) ||
+            !(sidecar.EndsWith(".save-backup", StringComparison.OrdinalIgnoreCase) ||
+              sidecar.EndsWith(".save-rejected", StringComparison.OrdinalIgnoreCase))))
+            throw new InvalidDataException(L.Get("Project.InvalidManifest"));
+        var expected = new ProjectFileVersion(intent.ExpectedSha256);
+        var written = new ProjectFileVersion(intent.WrittenSha256);
+        var targetVersion = await ProjectFileVersion.ReadAsync(path, ct).ConfigureAwait(false);
+        var sidecarVersion = sidecar is null ? new ProjectFileVersion(null) :
+            await ProjectFileVersion.ReadAsync(sidecar, ct).ConfigureAwait(false);
+        if (targetVersion == written)
+        {
+            if (sidecar is not null && sidecarVersion == expected)
+            {
+                TryDelete(sidecar);
+                TryDelete(intentPath);
+                return;
+            }
+            if (sidecar is not null && sidecarVersion.Sha256 is not null)
+            {
+                string captured = path + "." + Guid.NewGuid().ToString("N") + ".save-rejected";
+                try { File.Replace(sidecar, path, captured); }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                { throw new ProjectFileConflictException(File.Exists(sidecar) ? sidecar : intentPath); }
+                TryDelete(intentPath);
+                throw new ProjectFileConflictException(File.Exists(captured) ? captured : intentPath);
+            }
+            TryDelete(intentPath);
+            return;
+        }
+        if (targetVersion == expected)
+        {
+            if (sidecarVersion.Sha256 is null || sidecarVersion == expected)
+            {
+                if (sidecarVersion == expected) TryDelete(sidecar!);
+                TryDelete(intentPath);
+                return;
+            }
+            throw new ProjectFileConflictException(sidecar ?? intentPath);
+        }
+        bool targetReadable = false;
+        if (targetVersion.Sha256 is not null)
+        {
+            try
+            {
+                if (!IsKnownValid(path, kind)) await LoadAsync<T>(path, kind, ct).ConfigureAwait(false);
+                targetReadable = true;
+            }
+            catch (Exception error) when (error is InvalidDataException or IOException or UnauthorizedAccessException or
+                JsonException or NotSupportedException or EndOfStreamException) { }
+        }
+        if (targetReadable)
+        {
+            // A valid independent generation superseded the interrupted attempt.
+            // Preserve any displaced bytes that do not match our expected generation.
+            if (sidecarVersion == expected) TryDelete(sidecar!);
+            TryDelete(intentPath);
+            return;
+        }
+        if (sidecarVersion == expected)
+        {
+            string? captured = null;
+            if (targetVersion.Sha256 is null) File.Move(sidecar!, path, overwrite: false);
+            else
+            {
+                captured = path + "." + Guid.NewGuid().ToString("N") + ".save-rejected";
+                try { File.Replace(sidecar!, path, captured); }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                { throw new ProjectFileConflictException(File.Exists(sidecar) ? sidecar : intentPath); }
+            }
+            TryDelete(intentPath);
+            if (captured is not null) throw new ProjectFileConflictException(captured);
+            return;
+        }
+        throw new ProjectFileConflictException(sidecar is not null && File.Exists(sidecar) ? sidecar : intentPath);
+    }
+    public static async Task<(ProjectFileVersion Version, T Value, AssetLibrary Assets)> LoadVersionedAsync<T>(
+        string path, string kind, CancellationToken ct)
+    {
+        path = Path.GetFullPath(path);
+        var pathGate = PathGates.GetOrAdd(path, _ => new(1, 1));
+        await pathGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var version = await ProjectFileVersion.ReadAsync(path, ct).ConfigureAwait(false);
+            var result = await LoadAsync<T>(path, kind, ct).ConfigureAwait(false);
+            if (version != await ProjectFileVersion.ReadAsync(path, ct).ConfigureAwait(false))
+                throw new ProjectFileConflictException();
+            return (version, result.Value, result.Assets);
+        }
+        finally { pathGate.Release(); }
+    }
+    private static async Task<ProjectFileVersion> ReadPostCommitVersionAsync(string path,string preserved)
+    {
+        try { return await ProjectFileVersion.ReadAsync(path, CancellationToken.None).ConfigureAwait(false); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            throw new ProjectFileConflictException(File.Exists(preserved) ? preserved : null);
+        }
+    }
+    private static void TryDelete(string path)
+    {
+        try { File.Delete(path); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
     }
     public static async Task<(T Value, AssetLibrary Assets)> LoadAsync<T>(string path, string kind, CancellationToken ct)
     {

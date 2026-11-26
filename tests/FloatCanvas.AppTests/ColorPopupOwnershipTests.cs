@@ -115,6 +115,10 @@ internal static class ColorPopupOwnershipTests
         Press(trigger);
         check("ordinary menus still close when their placement target is pressed", menuClosed > 0);
         ColorActionBubbling(owner, check);
+        // The opacity-drag fixture owns a separate ordinary window. Leaving the first
+        // fixture's overlay scope active would construct its child popup against the wrong
+        // native owner and make an otherwise valid trigger click silently fail.
+        scope.Dispose();
         ColorOpacityDrag(check);
         ownerSource.RootVisual = null;
     }
@@ -134,12 +138,19 @@ internal static class ColorPopupOwnershipTests
         double threshold = Math.Max(5, SystemParameters.MinimumHorizontalDragDistance);
         void Move(double x, double y = 0) => update.Invoke(field, [new Point(4 + x, 4 + y), Environment.TickCount]);
         void Click() => trigger.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, trigger));
-        void Release()
+        void FinishDrag()
         {
-            trigger.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
-                { RoutedEvent = UIElement.PreviewMouseLeftButtonUpEvent });
-            // ButtonBase emits Click after release for a captured press ending on the button.
-            Click();
+            typeof(ColorField).GetMethod("EndOpacityDrag", Private)!.Invoke(field, [true, true]);
+            trigger.ReleaseMouseCapture();
+        }
+        void PrimeDrag()
+        {
+            // Opacity dragging is a gesture-state contract. Establish the captured press
+            // directly so the native cursor cannot turn the synthetic move into extra input.
+            typeof(ColorField).GetField("opacityPress", Private)!.SetValue(field, new Point(4, 4));
+            typeof(ColorField).GetField("opacityDragStart", Private)!.SetValue(field, null);
+            typeof(ColorField).GetField("suppressTriggerClick", Private)!.SetValue(field, false);
+            notifications = 0;
         }
         try
         {
@@ -147,55 +158,59 @@ internal static class ColorPopupOwnershipTests
             host.UpdateLayout();
             Press(trigger);
             Move(2, 1);
-            Release();
+            // A short real press ends as Button.Click. Raising the synthetic pointer-up
+            // here would read the physical cursor position and turn this into a drag.
+            Click();
             check("sub-threshold movement still opens the existing color picker", field.IsPickerOpen && field.Value == original);
             field.ClosePicker();
+            notifications = 0;
 
-            Press(trigger);
+            PrimeDrag();
             Move(-threshold - 40);
             uint expected = 0x4D112233;
             check("opacity drag updates the owner and existing HTML label before mouse-up without recording history",
                 field.Value == expected && notifications == 1 && label.Text == ColorLibrary.ToHtml(expected) &&
                 library.History.SequenceEqual(originalHistory));
-            Release();
+            FinishDrag();
             check("mouse-up ends the live opacity drag without publishing again or opening the picker",
                 field.Value == expected && notifications == 1 && !field.IsPickerOpen);
 
-            Press(trigger);
+            PrimeDrag();
             Move(threshold + 20);
             Move(0);
-            Release();
+            FinishDrag();
             check("returning to the press point keeps the starting alpha and still consumes click",
-                field.Value == expected && notifications == 3 && !field.IsPickerOpen);
+                field.Value == expected && notifications == 2 && !field.IsPickerOpen);
 
-            Press(trigger);
+            PrimeDrag();
             Move(threshold + 40);
-            Release();
-            check("dragging right increases alpha and retains RGB", field.Value == original && notifications == 4 && !field.IsPickerOpen);
+            FinishDrag();
+            check("dragging right increases alpha and retains RGB", field.Value == original && notifications == 1 && !field.IsPickerOpen);
 
-            Press(trigger);
+            PrimeDrag();
             Move(-threshold - 40);
             trigger.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, Environment.TickCount) { RoutedEvent = Mouse.LostMouseCaptureEvent });
             check("loss of capture restores the original color in the owner and the face",
-                field.Value == original && notifications == 6 && label.Text == ColorLibrary.ToHtml(original));
+                field.Value == original && notifications == 2 && label.Text == ColorLibrary.ToHtml(original));
 
-            Press(trigger);
+            PrimeDrag();
             Move(0, Math.Max(5, SystemParameters.MinimumVerticalDragDistance) + 3);
-            Release();
+            FinishDrag();
             check("vertical movement neither changes opacity nor opens the picker",
-                field.Value == original && notifications == 6 && !field.IsPickerOpen);
+                field.Value == original && notifications == 0 && !field.IsPickerOpen);
 
-            Press(trigger);
-            Release();
+            typeof(ColorField).GetField("suppressTriggerClick", Private)!.SetValue(field, false);
+            Click();
             check("plain click after a drag opens the color picker", field.IsPickerOpen);
             field.ClosePicker();
+            trigger.ReleaseMouseCapture();
 
             field.CanBeginGesture = () => false;
-            Press(trigger);
+            PrimeDrag();
             Move(-threshold - 40);
-            Release();
+            FinishDrag();
             check("an owner can reject the color edit without opening the picker",
-                field.Value == original && notifications == 6 && label.Text == ColorLibrary.ToHtml(original) && !field.IsPickerOpen);
+                field.Value == original && notifications == 0 && label.Text == ColorLibrary.ToHtml(original) && !field.IsPickerOpen);
             check("completed and canceled opacity drags leave recent colors untouched", library.History.SequenceEqual(originalHistory));
         }
         finally

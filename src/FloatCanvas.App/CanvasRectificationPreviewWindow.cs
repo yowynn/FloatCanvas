@@ -74,7 +74,8 @@ internal sealed class CanvasRectificationPreviewWindow : Window
         {
             field.ValueChanged += _ => { if (field.IsInteracting) Commit(); };
             field.Input.LostKeyboardFocus += (_, _) => Commit();
-            field.Input.KeyDown += (_, e) => { if (e.Key == Key.Enter) { Commit(); e.Handled = true; } };
+            field.ConfirmText = Commit;
+            field.InvalidInput += () => status.Text = L.Get("Canvas.InvalidPlaneSize");
             field.SliderValueCommitted += () => Commit();
         }
         var buttons = new WrapPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new(0, 12, 0, 0) };
@@ -82,8 +83,9 @@ internal sealed class CanvasRectificationPreviewWindow : Window
         void Button(string key, Action action)
         {
             var button = new Button { Content = L.Get(key), MinHeight = PropertyPanelLayout.ControlHeight,
-                IsDefault = key == "Canvas.ApplyCanvasSize", IsCancel = key == "Dialog.Cancel", Margin = new(6, 0, 0, 0) };
+                IsCancel = key == "Dialog.Cancel", Margin = new(6, 0, 0, 0) };
             button.Click += (_, _) => action(); buttons.Children.Add(button);
+            if (key == "Canvas.ApplyCanvasSize") AppInputPolicy.AttachFormSubmit(this, button);
         }
         Button("Canvas.ApplyCanvasSize", () => { if (!Commit()) return; Applied = true; SessionWindowCoordinator.Close(this); });
         Button("Canvas.InsertRectifiedCapture", () => { if (!Commit()) return; Applied = InsertScreenshot = true; SessionWindowCoordinator.Close(this); });

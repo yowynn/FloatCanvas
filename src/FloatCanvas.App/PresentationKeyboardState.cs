@@ -21,11 +21,14 @@ internal sealed class PresentationKeyboardState
     {
         foreach (var key in held.Keys.ToArray()) Release(key, changed, cancelled: true);
     }
-    internal void RemoveDevice(long device, Action<Change> changed)
+    internal void RemoveDevice(long device, PresentationDeviceKind kind, Action<Change> changed)
     {
-        // Low-level hooks have no device handle (Device=0). On device removal we
-        // cannot safely attribute such a held key to a surviving keyboard.
-        foreach (var key in held.Keys.Where(key => key.Device == device || key.Device == 0).ToArray()) Release(key, changed, cancelled: true);
+        // Low-level hooks have no device handle (Device=0). Release those keys only
+        // when Windows positively identifies a removed keyboard. Unknown can be an
+        // uncached mouse removal and must not manufacture a keyboard release.
+        bool anonymous = kind == PresentationDeviceKind.Keyboard;
+        foreach (var key in held.Keys.Where(key => key.Device == device || anonymous && key.Device == 0).ToArray())
+            Release(key, changed, cancelled: true);
     }
     internal void Apply(PresentationObservedInput input, bool allPhysicalKeys, Action<Change> changed)
     {
@@ -55,5 +58,7 @@ internal sealed class PresentationKeyboardState
     { if (held.Remove(key, out var cap)) changed(new(cancelled ? ChangeKind.Cancelled : ChangeKind.Released, key, cap)); }
     internal static bool IsModifier(int vk) => vk is 0x10 or 0x11 or 0x12 or 0x5B or 0x5C or >= 0xA0 and <= 0xA5;
     private bool HasShortcutModifier() => held.Values.Any(cap => cap.VirtualKey is 0x11 or 0x12 or 0x5B or 0x5C or >= 0xA2 and <= 0xA5);
-    private static bool IsNamedControl(int vk) => vk is 8 or 9 or 13 or 19 or 20 or 27 or 32 or >= 33 and <= 46 or >= 0x70 and <= 0x87 or 0x90 or 0x91;
+    private static bool IsNamedControl(int vk) => vk is 8 or 9 or 13 or 19 or 20 or 27 or 32 or >= 33 and <= 46 or
+        >= 0x60 and <= 0x6F or >= 0x70 and <= 0x87 or
+        0x90 or 0x91 or 0x5F or >= 0xA6 and <= 0xB7;
 }

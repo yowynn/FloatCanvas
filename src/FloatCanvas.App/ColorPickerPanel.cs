@@ -53,7 +53,7 @@ internal sealed class ColorPickerPanel : UserControl
         }
     }
 
-    public ColorPickerPanel(ColorRole role, ColorLibrary library)
+    public ColorPickerPanel(ColorRole role, ColorLibrary library, bool showEyedropper = true)
     {
         alpha = alphaField.Slider;
         this.library = library;
@@ -98,7 +98,8 @@ internal sealed class ColorPickerPanel : UserControl
         alphaField.SetLabel(alphaName); AutomationProperties.SetName(alphaField.Input, L.Get("Color.Alpha"));
         AutomationProperties.SetName(alpha, L.Get("Color.Alpha"));
         var actions = new WrapPanel();
-        actions.Children.Add(IconButton(PanelActionIcon.Eyedropper, "Color.Eyedropper", () => EyedropperRequested?.Invoke()));
+        if (showEyedropper)
+            actions.Children.Add(IconButton(PanelActionIcon.Eyedropper, "Color.Eyedropper", () => EyedropperRequested?.Invoke()));
         actions.Children.Add(IconButton(PanelActionIcon.Transparent, "Color.Transparent", () => Choose(0)));
         var original = new Grid { Width = 16, Height = 16, IsHitTestVisible = false };
         var rim = new System.Windows.Shapes.Ellipse { Margin = new Thickness(.5), StrokeThickness = 1.5 };

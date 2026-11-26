@@ -4,7 +4,8 @@ namespace FloatCanvas.Windows;
 internal sealed class SystemInputEntryTiming
 {
     private long? acknowledgementDeadline;
-    internal void Begin() => acknowledgementDeadline=null;
+    internal void Begin() => Acknowledged();
+    internal void Acknowledged() => acknowledgementDeadline=null;
     internal bool TimedOut(bool waitingForEntryKeys,long now)
     {
         if(waitingForEntryKeys)return false;

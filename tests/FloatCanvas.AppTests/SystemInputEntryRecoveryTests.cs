@@ -1,10 +1,12 @@
 using System.IO;
+using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Interop;
 using System.Windows.Threading;
 using FloatCanvas.App;
 using FloatCanvas.Core;
@@ -30,6 +32,7 @@ internal static class SystemInputEntryRecoveryTests
                 string ownProfile = Path.Combine(profile, mode.ToString());
                 ApplicationPaths.Configure(["--profile", ownProfile]);
                 new UserSettings { Language = "zh-CN", PreferGpuAcceleration = false, ShowFloatingLogo = true }.Save();
+                using var receiver = ForegroundReceiver.Start(Path.Combine(profile, "receiver-" + mode));
                 using var host = HiddenHost();
                 var protection = new OverlayBackendProtection(ownProfile, mode, () => new(true, "entry recovery fixture"));
                 check(mode + " entry fixture initializes its hidden enhanced backend", protection.TryEnable(host.EnableSystemInput));
@@ -48,6 +51,9 @@ internal static class SystemInputEntryRecoveryTests
                 using var pending = new PendingEntryFixture(host);
                 pending.Begin();
                 check(mode + " native entry begins pending with its queued blocker", host.IsEditing && !host.HasEditingInput);
+                Invoke(session, "RefreshPassThroughLauncher");
+                check(mode + " pending entry does not expose the passive launcher before the toolbar",
+                    Field<PassThroughLauncherWindow?>(session, "_passThroughLauncher") is not { IsVisible: true });
                 // Exercise the exact fixture hazard deterministically: a queue
                 // refresh between Begin and the first production timer callback.
                 if (!SetKeyboardState(new byte[256])) throw new InvalidOperationException("Could not refresh fixture queue state.");
@@ -59,7 +65,7 @@ internal static class SystemInputEntryRecoveryTests
                 check(mode + " blocked entry preserves scene and undo history", ReferenceEquals(original, editor.Session) &&
                     JsonSerializer.Serialize(editor.Session.Document) == content && original.UndoCount == undo);
                 check(mode + " blocked entry does not raise a generic backend failure", unavailable == 0 && !protection.IsDisabled &&
-                    !Field<bool>(session, "_desktopFallbackPending") && backendState == (File.Exists(marker) ? File.ReadAllText(marker) : null));
+                    !Field<bool>(session, "_overlaySwitchPending") && backendState == (File.Exists(marker) ? File.ReadAllText(marker) : null));
                 var launcher = Field<PassThroughLauncherWindow>(session, "_passThroughLauncher");
                 // The thread-local fixture controls digit 2, while the production
                 // reader must also retain any real async keys held by the human.
@@ -68,6 +74,7 @@ internal static class SystemInputEntryRecoveryTests
                     Equals(launcher.Launcher.ToolTip, message) && AutomationProperties.GetHelpText(launcher.Launcher) == message &&
                     AutomationProperties.GetHelpText(launcher) == message && Field<TextBlock>(session, "_status").Text == message);
                 Invoke(session, "RefreshPassThroughLauncher");
+                launcher = Field<PassThroughLauncherWindow>(session, "_passThroughLauncher");
                 check(mode + " refreshing the launcher retains its recovery hint", Equals(launcher.Launcher.ToolTip, message));
 
                 // The registered app event also preserves the older capture session,
@@ -81,8 +88,10 @@ internal static class SystemInputEntryRecoveryTests
                 check(mode + " application recovery retains the active legacy capture", ReferenceEquals(capture, editor.Session) &&
                     JsonSerializer.Serialize(capture.Document) == captured && editor.ScreenOrigin == new PointD(3, 4));
                 RaiseBlocked(host, []);
+                launcher = Field<PassThroughLauncherWindow>(session, "_passThroughLauncher");
                 check(mode + " empty blocker state still explains timeout and retry", Equals(launcher.Launcher.ToolTip, L.Get("Input.EntryRecovery.Unknown")));
                 RaiseBlocked(host, [0x32]);
+                launcher = Field<PassThroughLauncherWindow>(session, "_passThroughLauncher");
                 var activated = (Action)typeof(OverlayHost).GetField("InputActivated", Private)!.GetValue(host)!;
                 activated();
                 check(mode + " actual input activation clears the persistent recovery hint", Equals(launcher.Launcher.ToolTip, L.Get("Settings.PassThroughLauncherHint")) &&
@@ -91,9 +100,9 @@ internal static class SystemInputEntryRecoveryTests
                 {
                     ((Action)typeof(OverlayHost).GetField("SystemInputUnavailable", Private)!.GetValue(host)!)();
                     check("forced enhancement reports generic input failure without silently swallowing it", Field<TextBlock>(session, "_status").Text == L.Get("Desktop.InputInterrupted") &&
-                        !protection.IsDisabled && !Field<bool>(session, "_desktopFallbackPending"));
+                        !protection.IsDisabled && !Field<bool>(session, "_overlaySwitchPending"));
                 }
-                check(mode + " entry recovery never takes external foreground or opens a modal", pending.OwnForegroundEvents == 0 &&
+                check(mode + " entry recovery leaves the external foreground in place and opens no modal",
                     !IsOwnForeground() && !System.Windows.Interop.ComponentDispatcher.IsThreadModal);
             }
         }
@@ -176,6 +185,8 @@ internal static class SystemInputEntryRecoveryTests
         {
             target = GetForegroundWindow(); targetChanged = false;
             if (target == 0 || IsOwnForeground()) throw new InvalidOperationException("The hidden entry fixture requires an existing external foreground.");
+            var system = typeof(OverlayHost).GetField("_systemInput", Private)!.GetValue(host)!;
+            system.GetType().GetMethod("SetEntryKeyProbeForTesting", Private)!.Invoke(system, [true]);
             SetBlocker();
             if (!host.TryEnterEditing(out var error)) throw new InvalidOperationException("Fixture entry failed: " + error + Diagnostics());
             Record("begin");
@@ -261,7 +272,8 @@ internal static class SystemInputEntryRecoveryTests
             timer.Start(); try { Dispatcher.PushFrame(frame); } finally { timer.Stop(); }
             if (failure is not null) throw new InvalidOperationException("Entry fixture failed." + Diagnostics(), failure);
             if (!ready()) throw new TimeoutException("Native pending entry did not reach its recoverable timeout." + Diagnostics());
-            if (activations != 0 || OwnForegroundEvents != 0) throw new InvalidOperationException("The pending fixture must never acquire input or foreground." + Diagnostics());
+            if (activations != 0 || GetForegroundWindow() != target)
+                throw new InvalidOperationException("The pending fixture must never acquire input or leave the external target foreground." + Diagnostics());
             Console.WriteLine("INFO native entry fixture:" + Diagnostics());
         }
 
@@ -270,6 +282,8 @@ internal static class SystemInputEntryRecoveryTests
             try { if (host.IsEditing) host.ExitEditing(restorePreviousForeground: false); }
             finally
             {
+                var system = typeof(OverlayHost).GetField("_systemInput", Private)!.GetValue(host)!;
+                system.GetType().GetMethod("SetEntryKeyProbeForTesting", Private)!.Invoke(system, [false]);
                 UnhookWinEvent(foregroundHook); RemoveWindowSubclass(host.SystemWindowOwner, timerObserver, 1);
                 host.EditingFocusLost -= OnFocusLost; host.InputActivated -= OnActivated;
                 try
@@ -280,6 +294,146 @@ internal static class SystemInputEntryRecoveryTests
             }
         }
     }
+
+    private sealed class ForegroundReceiver : IDisposable
+    {
+        private readonly Process process;
+        private readonly string directory;
+        private readonly nint originalForeground;
+
+        private ForegroundReceiver(Process process, string directory, nint originalForeground)
+        {
+            this.process = process;
+            this.directory = directory;
+            this.originalForeground = originalForeground;
+        }
+
+        internal static ForegroundReceiver Start(string directory)
+        {
+            Directory.CreateDirectory(directory);
+            nint original = GetForegroundWindow();
+            var start = new ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = false, CreateNoWindow = true };
+            start.ArgumentList.Add("--focus-external-helper");
+            start.ArgumentList.Add("--focus-helper-directory");
+            start.ArgumentList.Add(directory);
+            var process = Process.Start(start) ?? throw new InvalidOperationException("Could not start the foreground receiver.");
+            try
+            {
+                WaitForFile(Path.Combine(directory, "external-ready.json"), "foreground receiver readiness");
+                using var ready = JsonDocument.Parse(File.ReadAllText(Path.Combine(directory, "external-ready.json")));
+                if (ready.RootElement.GetProperty("Process").GetInt32() != process.Id)
+                    throw new InvalidDataException("The foreground receiver reported another process.");
+                nint receiver = (nint)ready.RootElement.GetProperty("Handle").GetInt64();
+
+                var gate = new Window
+                {
+                    Title = "FloatCanvas Input Entry Test Gate",
+                    Width = 220,
+                    Height = 80,
+                    WindowStartupLocation = WindowStartupLocation.CenterScreen,
+                    ShowInTaskbar = true,
+                    Topmost = true
+                };
+                gate.Show();
+                try
+                {
+                    ActivateOwnWindow(new WindowInteropHelper(gate).Handle);
+                    uint currentThread = GetCurrentThreadId();
+                    uint receiverThread = GetWindowThreadProcessId(receiver, out _);
+                    bool attached = receiverThread != 0 && receiverThread != currentThread &&
+                        AttachThreadInput(currentThread, receiverThread, true);
+                    try
+                    {
+                        SetForegroundWindow(receiver);
+                        SetFocus(receiver);
+                    }
+                    finally
+                    {
+                        if (attached) AttachThreadInput(currentThread, receiverThread, false);
+                    }
+                    File.WriteAllText(Path.Combine(directory, "external-activate"), "activate");
+                    WaitUntil(() => GetForegroundWindow() == receiver, "foreground receiver activation");
+                }
+                finally { gate.Close(); }
+                return new(process, directory, original);
+            }
+            catch
+            {
+                if (!process.HasExited)
+                {
+                    File.WriteAllText(Path.Combine(directory, "external-exit"), "exit");
+                    process.WaitForExit(3000);
+                    if (!process.HasExited) process.Kill(true);
+                }
+                process.Dispose();
+                throw;
+            }
+        }
+
+        public void Dispose()
+        {
+            try
+            {
+                File.WriteAllText(Path.Combine(directory, "external-exit"), "exit");
+                if (!process.WaitForExit(3000)) process.Kill(true);
+            }
+            finally
+            {
+                process.Dispose();
+                if (originalForeground != 0 && IsWindow(originalForeground))
+                    SetForegroundWindow(originalForeground);
+            }
+        }
+    }
+
+    private static void WaitForFile(string path, string operation)
+    {
+        WaitUntil(() => File.Exists(path), operation);
+    }
+
+    private static void WaitUntil(Func<bool> condition, string operation, int timeoutMilliseconds = 8000)
+    {
+        long deadline = Environment.TickCount64 + timeoutMilliseconds;
+        while (!condition())
+        {
+            if (Environment.TickCount64 >= deadline) throw new TimeoutException(operation + " timed out.");
+            Pump(20);
+        }
+    }
+
+    private static void Pump(int milliseconds)
+    {
+        var frame = new DispatcherFrame();
+        var timer = new DispatcherTimer(
+            TimeSpan.FromMilliseconds(milliseconds),
+            DispatcherPriority.Background,
+            (_, _) => frame.Continue = false,
+            Dispatcher.CurrentDispatcher);
+        timer.Start();
+        try { Dispatcher.PushFrame(frame); }
+        finally { timer.Stop(); }
+    }
+
+    private static void ActivateOwnWindow(nint window)
+    {
+        nint foreground = GetForegroundWindow();
+        uint thread = GetCurrentThreadId();
+        uint foregroundThread = foreground == 0 ? 0 : GetWindowThreadProcessId(foreground, out _);
+        bool attached = foregroundThread != 0 && foregroundThread != thread &&
+            AttachThreadInput(thread, foregroundThread, true);
+        try
+        {
+            SetForegroundWindow(window);
+            SetFocus(window);
+        }
+        finally
+        {
+            if (attached) AttachThreadInput(thread, foregroundThread, false);
+        }
+        if (GetForegroundWindow() != window)
+            throw new InvalidOperationException("The test gate could not acquire foreground.");
+    }
+
     private static bool IsOwnForeground() => GetWindowThreadProcessId(GetForegroundWindow(), out uint process) != 0 && process == Environment.ProcessId;
     private delegate nint SubclassProcedure(nint window, uint message, nuint wParam, nint lParam, nuint id, nuint data);
     private delegate void WinEventProcedure(nint hook, uint eventId, nint window, int objectId, int childId, uint thread, uint time);
@@ -294,4 +448,9 @@ internal static class SystemInputEntryRecoveryTests
     [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int key);
     [DllImport("user32.dll")] private static extern bool GetKeyboardState(byte[] state);
     [DllImport("user32.dll")] private static extern bool SetKeyboardState(byte[] state);
+    [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
+    [DllImport("user32.dll")] private static extern bool AttachThreadInput(uint attach, uint attachTo, bool value);
+    [DllImport("user32.dll")] private static extern bool SetFocus(nint window);
+    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(nint window);
+    [DllImport("user32.dll")] private static extern bool IsWindow(nint window);
 }

@@ -207,7 +207,7 @@ internal static class AuditUxTests
                 Console.WriteLine($"AUDIT UX SCROLL count={count} offset={scroll.VerticalOffset} extent={scroll.ExtentHeight} viewport={scroll.ViewportHeight} tags={string.Join(',', Visuals(list).OfType<ListBoxItem>().Select(tile => Array.FindIndex(items, entry => Equals(tile.Tag, entry.Id))))}");
                 check("audit continuous scrolling reaches the final stamp " + count,
                     Visuals(list).OfType<ListBoxItem>().Any(tile => Equals(tile.Tag, items[^1].Id)) && Visuals(list).OfType<ListBoxItem>().Count() <= 40);
-                list.SelectedItem = items[^1];
+                list.SelectedItem = list.Items.Cast<StampEntry>().Single(item => item.Id == items[^1].Id);
                 check("audit recycled stamp selection retains catalog identity " + count, Field<Guid?>(window, "selected") == items[^1].Id);
                 scroll.ScrollToHome(); root.UpdateLayout();
                 check("audit scrolling home reuses a bounded viewport " + count,

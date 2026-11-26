@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Interop;
 using FloatCanvas.Windows;
 using L = FloatCanvas.Localization.AppText;
 
@@ -72,13 +73,20 @@ internal sealed partial class DesktopSession
         RefreshMascotVisibility(_host.IsVisible);
         if (!_settings.ShowPassThroughLauncher || _host.IsSystemScreenshotActive)
         { _passThroughLauncher?.Hide(); return; }
-        // An editing request can still be waiting for entry keys, input acknowledgement or
-        // the toolbar's first current frame. Keep the launcher until its replacement is
-        // visible, then conceal it so returning to pass-through presents current pixels.
-        if (_host.IsEditing && _toolbar.IsVisible)
+        // Keep the passive HWND out of the handoff even while the toolbar is waiting
+        // for input acknowledgement or its first frame.
+        if (_host.IsEditing)
         {
-            if (WindowRevealGate.IsPresented(_toolbar)) _passThroughLauncher?.Conceal();
+            _passThroughLauncher?.HideForEditing();
             return;
+        }
+        // Windows may refuse an in-place downgrade of a reused enhanced-band HWND.
+        if (_passThroughLauncher is { } existing &&
+            new WindowInteropHelper(existing).Handle is var existingHandle && existingHandle != 0 &&
+            OverlayCoordinates.TryGetWindowBand(existingHandle, out uint band) && band != 1)
+        {
+            existing.Close();
+            _passThroughLauncher = null;
         }
         if (_passThroughLauncher is null)
         {
@@ -88,6 +96,7 @@ internal sealed partial class DesktopSession
             _passThroughLauncher.ToggleVisibilityRequested += () => RunUiAction(ToggleCanvasVisibility);
             _passThroughLauncher.PositionChanged += origin =>
             {
+                _toolbarOriginEstablished = true;
                 _settings.ToolbarX = origin.X; _settings.ToolbarY = origin.Y;
             };
         }
@@ -103,6 +112,10 @@ internal sealed partial class DesktopSession
         _passThroughLauncher.SetEntryHint(_systemInputEntryHint);
         _passThroughLauncher.ShowAt(origin, _host.IsVisible);
         if (SessionWindowLayout.TryOrigin(_passThroughLauncher, out var actual))
-        { _settings.ToolbarX = actual.X; _settings.ToolbarY = actual.Y; }
+        {
+            if (Math.Abs(actual.X - origin.X) <= 1 && Math.Abs(actual.Y - origin.Y) <= 1)
+                _toolbarOriginEstablished = true;
+            _settings.ToolbarX = actual.X; _settings.ToolbarY = actual.Y;
+        }
     }
 }

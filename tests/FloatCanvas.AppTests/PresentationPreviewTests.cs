@@ -9,7 +9,8 @@ internal static class PresentationPreviewTests
 {
     internal static void Run(Action<string, bool> check)
     {
-        DirtyAndCache(check); OverflowDamage(check); BudgetClears(check); LargeFrozenScene(check);
+        DirtyAndCache(check); OverflowDamage(check); OverflowDirections(check); VerticalOverflowDirections(check);
+        KeyboardCache(check); BudgetClears(check); LargeFrozenScene(check);
     }
 
     private static void DirtyAndCache(Action<string, bool> check)
@@ -96,6 +97,98 @@ internal static class PresentationPreviewTests
             Resources = [], Outputs = [new(0, 0, 400, 300)], Revision = 1, Transaction = 0, ContentRevision = 1,
             PresentationFrame = frame, PresentationOrigin = default
         };
+    }
+
+    private static void OverflowDirections(Action<string, bool> check)
+    {
+        foreach (var style in new[] { PresentationDisplayStyle.Log, PresentationDisplayStyle.Keycaps })
+        foreach (var alignment in Enum.GetValues<PresentationPanelAlignment>())
+        {
+            var element = new CanvasElement
+            {
+                Kind = ElementKind.Presentation, Width = 120, Height = 90, Transform = Affine2D.Translation(180, 70),
+                Style = new() { Foreground = 0xFFFFFFFF, Background = 0xFF203040, FontSize = 22 },
+                Presentation = new() { DisplayStyle = style, KeyDisplay = PresentationKeyDisplayMode.AllPhysicalKeys,
+                    KeyPanelAlignment = alignment, RecentChordLimit = 1 }
+            };
+            var frame = new PresentationFrame(1, 1, TimeSpan.FromSeconds(1), recentChords:
+                [new([new(0x11, "Ctrl", true), new(0x41, new string('W', 64))], TimeSpan.FromSeconds(1), true)]);
+            using var renderer = new SceneRenderer { PresentationFrame = frame };
+            using var bitmap = SKBitmap.Decode(renderer.ExportPng(new SceneDocument { Viewport = new(0, 0, 500, 240), Elements = [element] },
+                new AssetLibrary(), true));
+            bool left = Ink(bitmap, 0, 165, 0, bitmap.Height);
+            bool right = Ink(bitmap, 315, 500, 0, bitmap.Height);
+            bool horizontal = alignment switch
+            {
+                PresentationPanelAlignment.BottomLeft or PresentationPanelAlignment.TopLeft => right,
+                PresentationPanelAlignment.BottomRight or PresentationPanelAlignment.TopRight => left,
+                _ => left && right
+            };
+            check($"{style} {alignment} content overflows its selection frame in the aligned direction", horizontal);
+        }
+        static bool Ink(SKBitmap bitmap, int startX, int endX, int startY, int endY) =>
+            Enumerable.Range(Math.Max(0, startX), Math.Max(0, Math.Min(bitmap.Width, endX) - Math.Max(0, startX)))
+                .Any(x => Enumerable.Range(Math.Max(0, startY), Math.Max(0, Math.Min(bitmap.Height, endY) - Math.Max(0, startY)))
+                    .Any(y => bitmap.GetPixel(x, y).Alpha > 0));
+    }
+
+    private static void VerticalOverflowDirections(Action<string, bool> check)
+    {
+        foreach (var style in new[] { PresentationDisplayStyle.Log, PresentationDisplayStyle.Keycaps })
+        foreach (var alignment in Enum.GetValues<PresentationPanelAlignment>())
+        {
+            var element = new CanvasElement
+            {
+                Kind = ElementKind.Presentation, Width = 120, Height = 44, Transform = Affine2D.Translation(180, 150),
+                Style = new() { Foreground = 0xFFFFFFFF, Background = 0xFF203040, FontSize = 22 },
+                Presentation = new() { DisplayStyle = style, KeyDisplay = PresentationKeyDisplayMode.AllPhysicalKeys,
+                    KeyPanelAlignment = alignment, RecentChordLimit = 5 }
+            };
+            var frame = new PresentationFrame(1, 1, TimeSpan.FromSeconds(1), recentChords:
+            [
+                new([new(0x41, "A")], TimeSpan.FromSeconds(1), true),
+                new([new(0x42, "B")], TimeSpan.FromSeconds(1), true),
+                new([new(0x43, "C")], TimeSpan.FromSeconds(1), true),
+                new([new(0x44, "D")], TimeSpan.FromSeconds(1), true),
+                new([new(0x45, "E")], TimeSpan.FromSeconds(1), true)
+            ]);
+            using var renderer = new SceneRenderer { PresentationFrame = frame };
+            using var bitmap = SKBitmap.Decode(renderer.ExportPng(new SceneDocument { Viewport = new(0, 0, 500, 360), Elements = [element] },
+                new AssetLibrary(), true));
+            bool above = Ink(bitmap, 160, 340, 70, 148);
+            bool below = Ink(bitmap, 160, 340, 202, 280);
+            bool vertical = alignment switch
+            {
+                PresentationPanelAlignment.TopLeft or PresentationPanelAlignment.TopCenter or PresentationPanelAlignment.TopRight => below,
+                _ => above
+            };
+            check($"{style} {alignment} content overflows its selection frame in the aligned direction", vertical);
+        }
+        static bool Ink(SKBitmap bitmap, int startX, int endX, int startY, int endY) =>
+            Enumerable.Range(Math.Max(0, startX), Math.Max(0, Math.Min(bitmap.Width, endX) - Math.Max(0, startX)))
+                .Any(x => Enumerable.Range(Math.Max(0, startY), Math.Max(0, Math.Min(bitmap.Height, endY) - Math.Max(0, startY)))
+                    .Any(y => bitmap.GetPixel(x, y).Alpha > 0));
+    }
+
+    private static void KeyboardCache(Action<string, bool> check)
+    {
+        var keyboard = new CanvasElement
+        {
+            Kind = ElementKind.Presentation, Width = 760, Height = 260, Transform = Affine2D.Translation(40, 40),
+            Style = new() { Foreground = 0xFFFFFFFF, Background = 0xFF203040, FontSize = 18 },
+            Presentation = new() { DisplayStyle = PresentationDisplayStyle.Keyboard, KeyDisplay = PresentationKeyDisplayMode.AllPhysicalKeys }
+        };
+        var document = new SceneDocument { Viewport = new(0, 0, 900, 360), Elements = [keyboard] };
+        var runtimeDocument = SceneEvaluation.Build(document).RenderDocument;
+        using var renderer = new SceneRenderer();
+        renderer.PresentationFrame = new(1, 1, TimeSpan.FromSeconds(1),
+            pressedKeys: [new(0x70, "F1")], recentChords: [new([new(0x70, "F1")], TimeSpan.FromSeconds(1), true)]);
+        _ = renderer.PreparePresentation(runtimeDocument);
+        renderer.PresentationFrame = new(1, 2, TimeSpan.FromSeconds(2),
+            pressedKeys: [new(0x71, "F2")], recentChords: [new([new(0x71, "F2")], TimeSpan.FromSeconds(2), true)]);
+        _ = renderer.PreparePresentation(runtimeDocument);
+        check($"a live keyboard reuses static key geometry and fitted text metrics across input frames (layout={renderer.PresentationKeyboardLayoutBuildCount}, plan={renderer.PresentationPlanBuildCount})",
+            renderer.PresentationKeyboardLayoutBuildCount == 1 && renderer.PresentationPlanBuildCount == 1);
     }
 
     private static void LargeFrozenScene(Action<string, bool> check)

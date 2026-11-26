@@ -17,11 +17,14 @@ internal sealed class PresentationRuntimeBroker : IDisposable
     private readonly PresentationTimeline outsideTimeline = new(), insideTimeline = new();
     private bool? observedInternalInput;
     private readonly DispatcherTimer animation;
+    private readonly ushort[] gamepadState = new ushort[PresentationDeviceButtons.GamepadSlots];
+    private readonly Func<int, ushort> readGamepad;
     private IPresentationInputSource? input;
     private CancellationTokenSource? starting;
     private PresentationRuntimeDemand demand = PresentationRuntimeDemand.Empty;
     private object? context;
     private long connection, epoch, sequence;
+    private bool keyboardPixelsMayBeRetained;
     private int notification;
     private bool allowed, disposed, faulted;
     private PresentationKeyboardScope keyboardScope;
@@ -52,13 +55,14 @@ internal sealed class PresentationRuntimeBroker : IDisposable
 
     internal PresentationRuntimeBroker(Dispatcher dispatcher, Action changed,
         Func<long, bool, bool, CancellationToken, Task<IPresentationInputSource>>? start = null, Func<TimeSpan>? clock = null,
-        Func<bool>? isInternalInput = null, Func<bool>? keyboardAvailable = null)
+        Func<bool>? isInternalInput = null, Func<bool>? keyboardAvailable = null, Func<int, ushort>? readGamepad = null)
     {
         this.dispatcher = dispatcher; this.changed = changed;
         this.start = start ?? (async (id, keyboard, pointer, token) => await PresentationInputObserver.StartAsync(id, keyboard, pointer, token));
         this.clock = clock ?? (() => PresentationTimeline.FromMilliseconds(Environment.TickCount64));
         this.isInternalInput = isInternalInput ?? (() => false);
         this.keyboardAvailable = keyboardAvailable ?? (() => true);
+        this.readGamepad = readGamepad ?? PresentationDeviceButtons.ReadGamepad;
         animation = new(DispatcherPriority.Background, dispatcher) { Interval = TimeSpan.FromMilliseconds(33) };
         animation.Tick += (_, _) => Tick();
     }
@@ -75,10 +79,15 @@ internal sealed class PresentationRuntimeBroker : IDisposable
     {
         dispatcher.VerifyAccess(); if (disposed) return;
         bool newContext = !ReferenceEquals(context, identity);
-        bool registrationChanged = demand.Keyboard != next.Keyboard;
+        bool registrationChanged = demand.Keyboard != next.Keyboard || demand.Pointer != next.Pointer ||
+            demand.MouseButtons != next.MouseButtons || demand.GamepadButtons != next.GamepadButtons;
         bool preservePointer = !newContext && registrationChanged && allowed && canObserve && demand.Pointer && next.Pointer &&
             demand.Clicks == next.Clicks && demand.Trail == next.Trail && demand.ClickMilliseconds == next.ClickMilliseconds && demand.TrailMilliseconds == next.TrailMilliseconds;
-        if (newContext || registrationChanged) { Stop(retainTrail: false, preservePointer: preservePointer); faulted = false; context = identity; }
+        if (newContext || registrationChanged)
+        {
+            Stop(retainTrail: false, preservePointer: preservePointer, preserveKeyboardSuppression: true);
+            faulted = false; context = identity;
+        }
         demand = next; pausedStatus = pauseStatus;
         if (allowed && !canObserve) Stop(retainTrail: true);
         allowed = canObserve;
@@ -121,7 +130,7 @@ internal sealed class PresentationRuntimeBroker : IDisposable
         BeforeInput?.Invoke(batch);
         if (!Observing || batch.Epoch != InputEpoch) return;
         if (!editingInput)
-            batch = new(batch.Epoch, batch.Changes.Where(value => value.Kind is PresentationObservedKind.KeyDown or PresentationObservedKind.KeyUp), null, batch.Overflowed);
+            batch = new(batch.Epoch, batch.Changes.Where(value => value.Kind is PresentationObservedKind.KeyDown or PresentationObservedKind.KeyUp or PresentationObservedKind.LockStateChanged), null, batch.Overflowed);
         ApplyObservedInput(batch);
     }
     internal void Pause(bool retainTrail)
@@ -134,7 +143,15 @@ internal sealed class PresentationRuntimeBroker : IDisposable
     {
         dispatcher.VerifyAccess(); if (timeline.KeyboardSuppressed == protectedInput) return;
         timeline.SetKeyboardSuppressed(protectedInput); outsideTimeline.SetKeyboardSuppressed(protectedInput);
-        insideTimeline.SetKeyboardSuppressed(protectedInput); PixelContinuity = new(); NewLifetime(); Publish(force: true);
+        insideTimeline.SetKeyboardSuppressed(protectedInput);
+        // Retire a composited frame immediately when it may still contain key
+        // history. A protected or input-free frame is safe to keep on screen.
+        if (protectedInput && keyboardPixelsMayBeRetained)
+        {
+            PixelContinuity = new();
+            keyboardPixelsMayBeRetained = false;
+        }
+        NewLifetime(); Publish(force: true);
     }
     internal void ClearKeyboardForFocusChange()
     { dispatcher.VerifyAccess(); ResetKeyboardState(); keyboardScopeAllowed = KeyboardScopeAllowsInput(); PixelContinuity = new(); NewLifetime(); Publish(force: true); Schedule(); }
@@ -169,7 +186,7 @@ internal sealed class PresentationRuntimeBroker : IDisposable
     {
         long expected = ++connection; var request = new CancellationTokenSource(); starting = request; PausedTrail = null; NewLifetime(); NotifyChanged();
         Task<IPresentationInputSource> pending;
-        try { pending = start(expected, demand.Keyboard, true, request.Token); }
+        try { pending = start(expected, demand.Keyboard, demand.Pointer || demand.MouseButtons, request.Token); }
         catch (Exception exception) { CompleteStart(expected, request, null, exception); return; }
         _ = ObserveStartAsync(pending, expected, request);
     }
@@ -226,12 +243,20 @@ internal sealed class PresentationRuntimeBroker : IDisposable
         if (!ReferenceEquals(input, service) || !allowed || !Armed) return;
         if (editingInput)
         {
-            if (batch.Changes.Any(value => value.Kind == PresentationObservedKind.DeviceRemoved))
-            { ReleaseHeldKeys(clock()); Publish(force: true); }
-            batch = new(batch.Epoch, [], batch.Cursor, false);
+            // Keep raw mouse edges for keycaps, while the hook owns editing-mode
+            // click effects. Side buttons are reported only by the raw source.
+            batch = new(batch.Epoch, batch.Changes
+                .Where(value => value.Kind is PresentationObservedKind.DeviceRemoved or PresentationObservedKind.LockStateChanged ||
+                    demand.MouseButtons && value.DeviceKind == PresentationDeviceKind.Mouse)
+                .Select(value => value.DeviceKind == PresentationDeviceKind.Mouse &&
+                    value.Kind is PresentationObservedKind.ButtonDown or PresentationObservedKind.ButtonUp
+                    ? value with { HasPosition = false } : value),
+                batch.Cursor, demand.MouseButtons && batch.Overflowed);
         }
         else if (rawTransitionCutoff >= 0)
-            batch = new(batch.Epoch, batch.Changes.Where(value => value.Kind == PresentationObservedKind.DeviceRemoved || value.Milliseconds > rawTransitionCutoff), batch.Cursor, batch.Overflowed);
+            batch = new(batch.Epoch, batch.Changes.Where(value => value.Kind is PresentationObservedKind.DeviceRemoved or PresentationObservedKind.LockStateChanged ||
+                demand.MouseButtons && value is { Kind: PresentationObservedKind.ButtonUp, DeviceKind: PresentationDeviceKind.Mouse } ||
+                value.Milliseconds > rawTransitionCutoff), batch.Cursor, batch.Overflowed);
         ApplyObservedInput(batch);
     }
     private void ApplyObservedInput(PresentationObservedBatch batch)
@@ -266,7 +291,16 @@ internal sealed class PresentationRuntimeBroker : IDisposable
                 outsideTimeline.Apply(removed, keyboardDemand, now); insideTimeline.Apply(removed, keyboardDemand, now);
                 continue;
             }
-            if (value.Kind is not (PresentationObservedKind.KeyDown or PresentationObservedKind.KeyUp)) continue;
+            if (value.Kind == PresentationObservedKind.LockStateChanged)
+            {
+                FlushScopedKeys();
+                var locks = new PresentationObservedBatch(batch.Epoch, [value], null, false);
+                outsideTimeline.Apply(locks, keyboardDemand, now); insideTimeline.Apply(locks, keyboardDemand, now);
+                continue;
+            }
+            if (value.Kind is not (PresentationObservedKind.KeyDown or PresentationObservedKind.KeyUp) &&
+                !(value.Kind is PresentationObservedKind.ButtonDown or PresentationObservedKind.ButtonUp or PresentationObservedKind.Wheel &&
+                  value.DeviceKind is PresentationDeviceKind.Mouse or PresentationDeviceKind.Gamepad)) continue;
             if (value.InputOwner == PresentationInputOwner.Unspecified && !sampledOwner) { fallbackOwner = CurrentInternalInput(); sampledOwner = true; }
             bool? internalInput = value.InputOwner switch
             {
@@ -293,6 +327,7 @@ internal sealed class PresentationRuntimeBroker : IDisposable
         if (demand.Keyboard && !keyboardAvailable())
         { faulted = true; Stop(retainTrail: false); NotifyChanged(); return; }
         bool scopeChanged = RefreshKeyboardScope();
+        if (demand.GamepadButtons) PollGamepads();
         bool transient = HasTransients; var now = clock();
         if (demand.ScopedKeyboard) scopeChanged |= TransitionScopedOwner(CurrentInternalInput(), now);
         timeline.Trim(now, demand); outsideTimeline.Trim(now, demand); insideTimeline.Trim(now, demand);
@@ -300,10 +335,29 @@ internal sealed class PresentationRuntimeBroker : IDisposable
         Schedule();
     }
     private void Schedule()
-    { if (Observing && (HasTransients || HasHeldKeys || demand.Keyboard && (demand.ScopedKeyboard || keyboardScope != PresentationKeyboardScope.AllApplications))) animation.Start(); else animation.Stop(); }
+    { if (Observing && (HasTransients || demand.GamepadButtons)) animation.Start(); else animation.Stop(); }
+    private void PollGamepads()
+    {
+        List<PresentationObservedInput>? transitions = null;
+        long timestamp = clock().Ticks / TimeSpan.TicksPerMillisecond;
+        for (int slot = 0; slot < gamepadState.Length; slot++)
+        {
+            ushort previous = gamepadState[slot], current = readGamepad(slot);
+            gamepadState[slot] = current;
+            uint changedButtons = (uint)(previous ^ current);
+            while (changedButtons != 0)
+            {
+                int button = System.Numerics.BitOperations.TrailingZeroCount(changedButtons);
+                bool down = (current & (1 << button)) != 0;
+                (transitions ??= []).Add(new(down ? PresentationObservedKind.ButtonDown : PresentationObservedKind.ButtonUp,
+                    timestamp, Device: slot, Button: button, DeviceKind: PresentationDeviceKind.Gamepad));
+                changedButtons &= changedButtons - 1;
+            }
+        }
+        if (transitions is not null) ApplyObservedInput(new(InputEpoch, transitions, null, false));
+    }
     private long Revision => timeline.Revision + outsideTimeline.Revision + insideTimeline.Revision;
     private bool HasTransients => timeline.HasTransients || outsideTimeline.HasTransients || insideTimeline.HasTransients;
-    private bool HasHeldKeys => timeline.HasHeldKeys || outsideTimeline.HasHeldKeys || insideTimeline.HasHeldKeys;
     private bool? CurrentInternalInput()
     { try { return isInternalInput(); } catch { return null; } }
     private bool TransitionScopedOwner(bool? inside, TimeSpan now)
@@ -316,8 +370,15 @@ internal sealed class PresentationRuntimeBroker : IDisposable
     }
     private void ReleaseHeldKeys(TimeSpan now)
     { timeline.ReleaseHeldKeys(now); outsideTimeline.ReleaseHeldKeys(now); insideTimeline.ReleaseHeldKeys(now); }
-    private void ClearTimelines()
-    { timeline.Clear(); outsideTimeline.Clear(); insideTimeline.Clear(); observedInternalInput = null; }
+    private void ClearTimelines(bool preserveKeyboardSuppression = false)
+    {
+        bool suppressed = preserveKeyboardSuppression && timeline.KeyboardSuppressed;
+        timeline.Clear(); outsideTimeline.Clear(); insideTimeline.Clear(); observedInternalInput = null;
+        if (!suppressed) return;
+        timeline.SetKeyboardSuppressed(true);
+        outsideTimeline.SetKeyboardSuppressed(true);
+        insideTimeline.SetKeyboardSuppressed(true);
+    }
     private bool KeyboardScopeAllowsInput()
     {
         if (keyboardScope == PresentationKeyboardScope.AllApplications) return true;
@@ -345,19 +406,24 @@ internal sealed class PresentationRuntimeBroker : IDisposable
     {
         if (!force) return;
         var now = clock(); sequence++;
-        Frame = PresentationFrame.WithKeyboardScopes(timeline.Capture(epoch, sequence, now),
-            outsideTimeline.Capture(epoch, sequence, now), insideTimeline.Capture(epoch, sequence, now)); NotifyChanged();
+        var all = timeline.Capture(epoch, sequence, now);
+        var outside = outsideTimeline.Capture(epoch, sequence, now);
+        var inside = insideTimeline.Capture(epoch, sequence, now);
+        keyboardPixelsMayBeRetained |= HasKeyboardInput(all) || HasKeyboardInput(outside) || HasKeyboardInput(inside);
+        Frame = PresentationFrame.WithKeyboardScopes(all, outside, inside); NotifyChanged();
     }
-    private void Stop(bool retainTrail, bool preservePointer = false)
+    private static bool HasKeyboardInput(PresentationFrame frame) => frame.PressedKeys.Count > 0 || frame.RecentChords.Count > 0;
+    private void Stop(bool retainTrail, bool preservePointer = false, bool preserveKeyboardSuppression = false)
     {
         editingInput = false;
         rawTransitionCutoff = -1;
+        Array.Clear(gamepadState);
         ++connection; starting?.Cancel(); starting = null; animation.Stop();
         if (retainTrail && Frame.Trail.Count > 1) PausedTrail = Frame;
         else if (!retainTrail) PausedTrail = null;
         var old = input; input = null;
         if (old is not null) { old.Available -= OnAvailable; old.Stop(); old.Dispose(); }
-        if (preservePointer) ResetKeyboardState(); else ClearTimelines();
+        if (preservePointer) ResetKeyboardState(); else ClearTimelines(preserveKeyboardSuppression);
         NewLifetime(); Publish(force: true);
     }
     private void NewLifetime() { epoch++; Lifetime = new object(); }

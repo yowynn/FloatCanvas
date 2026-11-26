@@ -78,6 +78,7 @@ struct Host {
     ULONGLONG entryDeadline{};
     BYTE entryBlockers[32]{};
     bool entryTimedOut{};
+    bool forceUntrustedEntryForTesting{};
     unsigned entryClearSamples{};
 };
 void Destroy(Host* host);
@@ -287,7 +288,8 @@ LRESULT CALLBACK Procedure(HWND hwnd,UINT message,WPARAM wparam,LPARAM lparam) {
         return 0;
     }
     if(message==WM_TIMER&&wparam==EntryKeysTimer) {
-        if(host->waiting)ContinueEntry(*host,GetForegroundWindow(),RefreshEntryKeys(*host,CanQueryEntryKeys(host->target,&host->entryTrustReason)));
+        if(host->waiting)ContinueEntry(*host,GetForegroundWindow(),RefreshEntryKeys(*host,
+            !host->forceUntrustedEntryForTesting&&CanQueryEntryKeys(host->target,&host->entryTrustReason)));
         return 0;
     }
     if(message==AckMessage) {
@@ -336,7 +338,8 @@ EXPORT HRESULT WINAPI FcSystemCreate(int x,int y,int width,int height,Host** res
     auto user=GetModuleHandleW(L"user32.dll");
     auto create=reinterpret_cast<CreateBand>(GetProcAddress(user,"CreateWindowInBand"));
     auto band=reinterpret_cast<GetBand>(GetProcAddress(user,"GetWindowBand"));
-    if(!create||!band) return HRESULT_FROM_WIN32(ERROR_PROC_NOT_FOUND);
+    auto setBand=GetProcAddress(user,"SetWindowBand");
+    if(!create||!band||!setBand) return HRESULT_FROM_WIN32(ERROR_PROC_NOT_FOUND);
     auto host=new(std::nothrow) Host;
     if(!host) return E_OUTOFMEMORY;
     WNDCLASSW wc{}; wc.lpfnWndProc=Procedure; wc.hInstance=GetModuleHandleW(nullptr); wc.lpszClassName=ClassName;
@@ -447,6 +450,11 @@ EXPORT HRESULT WINAPI FcSystemGetEntryTrace(Host* host,char* buffer,UINT capacit
     text<<"]}";auto value=text.str();
     if(value.size()+1>capacity)return HRESULT_FROM_WIN32(ERROR_INSUFFICIENT_BUFFER);
     memcpy(buffer,value.c_str(),value.size()+1);return S_OK;
+}
+EXPORT HRESULT WINAPI FcSystemSetEntryKeyProbeForTesting(Host* host,BOOL forceUntrusted) {
+    if(!host||GetCurrentThreadId()!=host->thread)return E_INVALIDARG;
+    host->forceUntrustedEntryForTesting=forceUntrusted!=FALSE;
+    return S_OK;
 }
 struct FcSystemStatus { unsigned generation,pid; BOOL requested,acknowledged,waiting; HRESULT last; };
 static_assert(sizeof(FcSystemStatus)==24);

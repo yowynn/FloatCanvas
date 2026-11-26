@@ -216,6 +216,49 @@ for (int i = 1; i <= 6; i++)
 }
 await Task.WhenAll(saveCalls);
 Check((await orderedRecovery.LoadAsync())!.State.LiveDocument.NextNumber == 6, "concurrent recovery snapshots preserve invocation order");
+    string sharedRecoveryDirectory = Path.Combine(root, "shared-recovery");
+    var sharedRecoveryStores = new[]
+    {
+        new RecoveryStore(sharedRecoveryDirectory),
+        new RecoveryStore(sharedRecoveryDirectory.ToUpperInvariant())
+    };
+    var sharedSaveCalls = new List<Task>();
+    for (int i = 11; i <= 16; i++)
+    {
+        var snapshot = state.Clone(); snapshot.LiveDocument.NextNumber = i;
+        sharedSaveCalls.Add(sharedRecoveryStores[(i - 11) % sharedRecoveryStores.Length].SaveAsync(snapshot, loaded.Assets));
+    }
+    await Task.WhenAll(sharedSaveCalls);
+    var sharedCurrent = (await new RecoveryStore(sharedRecoveryDirectory).LoadGenerationAsync(false))!;
+    var sharedBackup = (await new RecoveryStore(sharedRecoveryDirectory).LoadGenerationAsync(true))!;
+    Check(sharedCurrent.State.LiveDocument.NextNumber != sharedBackup.State.LiveDocument.NextNumber &&
+        sharedCurrent.State.LiveDocument.NextNumber is >= 11 and <= 16 &&
+        sharedBackup.State.LiveDocument.NextNumber is >= 11 and <= 16,
+        "separate recovery stores for one path serialize generation rotation");
+    await using (var externalLease = new FileStream(Path.Combine(sharedRecoveryDirectory, ".recovery.lock"),
+        FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None, 1, FileOptions.DeleteOnClose))
+    {
+        var waitingSnapshot = state.Clone();
+        waitingSnapshot.LiveDocument.NextNumber = 17;
+        Task waitingSave = new RecoveryStore(sharedRecoveryDirectory).SaveAsync(waitingSnapshot, loaded.Assets);
+        await Task.Delay(50);
+        Check(!waitingSave.IsCompleted, "recovery operations wait for another process's directory lease");
+        externalLease.Dispose();
+        await waitingSave;
+    }
+    Check((await new RecoveryStore(sharedRecoveryDirectory).LoadAsync())!.State.LiveDocument.NextNumber == 17,
+        "recovery save resumes after the external directory lease is released");
+    string invalidLeaseDirectory = Path.Combine(root, "invalid-recovery-lease");
+    Directory.CreateDirectory(Path.Combine(invalidLeaseDirectory, ".recovery.lock"));
+    bool invalidLeaseRejected = false;
+    var invalidLeaseClock = System.Diagnostics.Stopwatch.StartNew();
+    try
+    {
+        await new RecoveryStore(invalidLeaseDirectory).SaveAsync(state.Clone(), loaded.Assets).WaitAsync(TimeSpan.FromSeconds(2));
+    }
+    catch (Exception error) when (error is IOException or UnauthorizedAccessException) { invalidLeaseRejected = true; }
+    Check(invalidLeaseRejected && invalidLeaseClock.Elapsed < TimeSpan.FromSeconds(1.5),
+        "a permanent recovery lease error fails promptly instead of retrying forever");
 
 await ArrowHeadStorageTests.RunAsync(store, root, Check);
 await EditablePresetStorageTests.RunAsync(store, root, Check);

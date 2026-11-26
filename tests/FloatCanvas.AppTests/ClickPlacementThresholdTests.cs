@@ -6,7 +6,7 @@ using FloatCanvas.Windows;
 internal static class ClickPlacementThresholdTests
 {
     private static readonly EditorTool[] Tools = [EditorTool.Rectangle, EditorTool.RoundedRectangle,
-        EditorTool.Ellipse, EditorTool.Triangle, EditorTool.Symbol];
+        EditorTool.Ellipse];
 
     internal static void Run(Action<string, bool> check)
     {
@@ -17,10 +17,13 @@ internal static class ClickPlacementThresholdTests
             Send(editor, OverlayPointerKind.Move, new(103, 102));
             Send(editor, OverlayPointerKind.Up, new(103, 102));
             var item = session.Document.Elements.Single();
+            var clickBounds = ElementGeometry.Bounds(item, false);
+            var expectedClick = ExpectedClickBounds(tool);
             check(tool + " small physical jitter keeps the configured click size instead of a tiny drag",
-                item.Width == 90 && item.Height == 40 && item.Transform == Affine2D.Translation(55, 80) &&
+                NearlyRect(clickBounds, expectedClick) &&
                 session.UndoCount == 1 && !session.IsTransactionActive);
         }
+        SymbolPlacements(check);
         SizedPlacements(check);
 
         foreach (double threshold in new[] { 6d, 9d, 12d })
@@ -38,16 +41,18 @@ internal static class ClickPlacementThresholdTests
             check($"{tool} Shift inside the click tolerance updates the default preview without starting a drag",
                 preview.Width == 90 && preview.Height == 90);
             Send(editor, OverlayPointerKind.Up, new(100 + threshold - .01, 100), OverlayModifiers.Shift);
+            var shiftedClick = ExpectedShiftedClickBounds(tool);
             check($"{tool} threshold={threshold} keeps click geometry on release and one undo",
-                preview.Width == 90 && preview.Height == 90 && preview.Transform == Affine2D.Translation(55, 55) && session.UndoCount == 1);
+                NearlyRect(ElementGeometry.Bounds(preview, false), shiftedClick) && session.UndoCount == 1);
 
             (session, editor) = Create(tool); Threshold(editor, threshold);
             Send(editor, OverlayPointerKind.Down, new(100, 100));
             Send(editor, OverlayPointerKind.Move, new(100 + threshold, 100));
             Send(editor, OverlayPointerKind.Up, new(100 + threshold, 100));
             var item = session.Document.Elements.Single();
+            var thresholdBounds = ElementGeometry.Bounds(item, false);
             check($"{tool} exact threshold={threshold} starts explicit drag geometry",
-                item.Width == threshold && item.Height == 1 && item.Transform == Affine2D.Translation(100, 100));
+                NearlyRect(thresholdBounds, new RectD(100, 100, threshold, 1)));
 
             (session, editor) = Create(tool); Threshold(editor, threshold);
             Send(editor, OverlayPointerKind.Down, new(100, 100));
@@ -55,9 +60,67 @@ internal static class ClickPlacementThresholdTests
             Send(editor, OverlayPointerKind.Up, new(160, 135));
             item = session.Document.Elements.Single();
             check($"{tool} threshold={threshold} retains free sizing for a deliberate drag",
-                item.Width == 60 && item.Height == 35 && item.Transform == Affine2D.Translation(100, 100));
+                NearlyRect(ElementGeometry.Bounds(item, false), new RectD(100, 100, 60, 35)));
         }
         StartThresholdIsStable(check); ScreenSpaceThreshold(check); OtherGestures(check); DpiSelection(check);
+        InvalidBoxDefaultsDoNotCommit(check);
+    }
+
+    private static void SymbolPlacements(Action<string, bool> check)
+    {
+        var (session, editor) = Create(EditorTool.Symbol);
+        Send(editor, OverlayPointerKind.Down, new(100, 100));
+        Send(editor, OverlayPointerKind.Move, new(103, 102));
+        Send(editor, OverlayPointerKind.Up, new(103, 102));
+        check("Symbol small jitter uses the configured long-edge size with natural heart proportions",
+            NearlyRect(ElementGeometry.Bounds(session.Document.Elements.Single(), false), ExpectedSymbolBounds(100, 100, 90)) &&
+            session.UndoCount == 1 && !session.IsTransactionActive);
+
+        foreach (double threshold in new[] { 6d, 9d, 12d })
+        {
+            (session, editor) = Create(EditorTool.Symbol); Threshold(editor, threshold);
+            Send(editor, OverlayPointerKind.Down, new(100, 100));
+            var initial = ExpectedSymbolBounds(100, 100, 90);
+            check($"Symbol threshold={threshold} starts a natural-size reversible preview",
+                NearlyRect(ElementGeometry.Bounds(session.Document.Elements.Single(), false), initial) && session.IsTransactionActive);
+            Send(editor, OverlayPointerKind.Move, new(100 + threshold - .01, 100));
+            check($"Symbol threshold={threshold} preserves its natural preview inside the click tolerance",
+                NearlyRect(ElementGeometry.Bounds(session.Document.Elements.Single(), false), initial));
+            Send(editor, OverlayPointerKind.Up, new(100 + threshold - .01, 100));
+            check($"Symbol threshold={threshold} commits one unchanged click placement",
+                NearlyRect(ElementGeometry.Bounds(session.Document.Elements.Single(), false), initial) && session.UndoCount == 1);
+
+            (session, editor) = Create(EditorTool.Symbol); Threshold(editor, threshold);
+            Send(editor, OverlayPointerKind.Down, new(100, 100));
+            Send(editor, OverlayPointerKind.Move, new(160, 135));
+            Send(editor, OverlayPointerKind.Up, new(160, 135));
+            var size = SymbolGeometry.Shape(SymbolKind.Heart).SizeAtLongEdge(60);
+            check($"Symbol threshold={threshold} retains natural proportions for a deliberate drag",
+                NearlyRect(ElementGeometry.Bounds(session.Document.Elements.Single(), false), new RectD(100, 100, size.X, size.Y)));
+        }
+    }
+
+    private static void InvalidBoxDefaultsDoNotCommit(Action<string, bool> check)
+    {
+        foreach (var tool in Tools.Append(EditorTool.Symbol))
+        foreach (var pair in new[] { (Width: 0d, Height: 0d), (Width: -10d, Height: -5d), (Width: double.NaN, Height: 40d) })
+        {
+            var session = new EditorSession();
+            var editor = new EditorController(session)
+            {
+                Tool = tool,
+                Symbol = SymbolKind.Heart,
+                DefaultWidth = pair.Width,
+                DefaultHeight = pair.Height
+            };
+            Send(editor, OverlayPointerKind.Down, new(100, 100));
+            bool rejectedOnPress = editor.IsPointerBlocked && session.Document.Elements.Count == 0 &&
+                session.UndoCount == 0 && !session.IsTransactionActive;
+            Send(editor, OverlayPointerKind.Up, new(100, 100));
+            check($"{tool} invalid default {pair.Width}/{pair.Height} never commits a degenerate layer",
+                rejectedOnPress && session.Document.Elements.Count == 0 && session.UndoCount == 0 &&
+                !session.IsTransactionActive);
+        }
     }
 
     private static void SizedPlacements(Action<string, bool> check)
@@ -188,6 +251,24 @@ internal static class ClickPlacementThresholdTests
     }
     private static (EditorSession Session, EditorController Editor) Create(EditorTool tool)
     { var session = new EditorSession(); return (session, new(session) { Tool = tool, DefaultWidth = 90, DefaultHeight = 40, Symbol = SymbolKind.Heart }); }
+    private static RectD ExpectedClickBounds(EditorTool tool) => tool switch
+    {
+        _ when tool is EditorTool.Rectangle or EditorTool.RoundedRectangle or EditorTool.Ellipse => new(55, 80, 90, 40),
+        _ => throw new ArgumentOutOfRangeException(nameof(tool))
+    };
+    private static RectD ExpectedShiftedClickBounds(EditorTool tool) => tool switch
+    {
+        _ when tool is EditorTool.Rectangle or EditorTool.RoundedRectangle or EditorTool.Ellipse => new(55, 55, 90, 90),
+        _ => throw new ArgumentOutOfRangeException(nameof(tool))
+    };
+    private static RectD ExpectedSymbolBounds(double centerX, double centerY, double longEdge)
+    {
+        var size = SymbolGeometry.Shape(SymbolKind.Heart).SizeAtLongEdge(longEdge);
+        return new(centerX - size.X / 2, centerY - size.Y / 2, size.X, size.Y);
+    }
+    private static bool NearlyRect(RectD actual, RectD expected) =>
+        Math.Abs(actual.X - expected.X) < 1e-6 && Math.Abs(actual.Y - expected.Y) < 1e-6 &&
+        Math.Abs(actual.Width - expected.Width) < 1e-6 && Math.Abs(actual.Height - expected.Height) < 1e-6;
     private static void Threshold(EditorController editor, double threshold) => typeof(EditorController)
         .GetProperty("ClickPlacementDragThreshold", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(editor, threshold);
     private static void Send(EditorController editor, OverlayPointerKind kind, OverlayPoint point, OverlayModifiers modifiers = OverlayModifiers.None) =>

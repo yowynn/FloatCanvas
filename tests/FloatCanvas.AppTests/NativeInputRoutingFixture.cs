@@ -220,7 +220,11 @@ internal static class NativeInputRoutingFixture
             if (scenario == "launcher-tab") LauncherTabRuntimeTests.Run(check, session, host, toolbar, dispatch);
             if (scenario == "feedback4-workspace") Feedback4Workspace(check, session, host, toolbar, editor);
             if (scenario == "preview4-settings") Preview4SettingsRuntimeFixture.Run(check, session, host, toolbar, action => ActivateFixtureWindow(new WindowInteropHelper(toolbar).Handle, action));
-            if (scenario == "preview4-menu") Preview4MenuRuntimeFixture.Run(check, session, host, toolbar);
+            if (scenario == "preview4-menu")
+            {
+                typeof(DesktopSession).GetMethod("EnsureTrayMenu", PrivateInstance)!.Invoke(session, [true]);
+                Preview4MenuRuntimeFixture.Run(check, session, host, toolbar);
+            }
             if (scenario == "avatar-right-release") AvatarRightReleaseTests.Run(check,session,host,toolbar);
             if (scenario == "root-menu-layer") RootMenuLayerRuntimeTests.Run(check,session,host,toolbar);
             if (scenario == "popup-window-acceptance") PopupInteractionAcceptanceTests.RunSession(check, session, host, toolbar);

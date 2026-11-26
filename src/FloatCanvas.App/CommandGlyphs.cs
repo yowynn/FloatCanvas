@@ -1,9 +1,9 @@
-using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
+using Drawing2D = System.Drawing.Drawing2D;
 using Forms = System.Windows.Forms;
 
 namespace FloatCanvas.App;
@@ -136,24 +136,65 @@ internal static class CommandGlyphs
         return new Viewbox { Width = 16, Height = 16, Stretch = Stretch.Uniform, Child = canvas, IsHitTestVisible = false };
     }
 
-    internal static Forms.ToolStripMenuItem TrayItem(string label, string geometry, EventHandler click)
+    internal static Forms.ToolStripMenuItem TrayItem(string label, string geometry, EventHandler click, bool deferImage = false)
+    {
+        System.Drawing.Bitmap? image = null;
+        var item = new Forms.ToolStripMenuItem(label);
+        item.Click += click;
+        void LoadImage()
+        {
+            if (image is not null) return;
+            image = CreateTrayImage(geometry);
+            item.Image = image;
+        }
+        item.Tag = new Action(LoadImage);
+        item.Disposed += (_, _) => image?.Dispose();
+        if (!deferImage) LoadImage();
+        return item;
+    }
+
+    private static System.Drawing.Bitmap CreateTrayImage(string geometry)
     {
         var color = System.Drawing.SystemColors.MenuText;
-        var visual = new DrawingVisual();
-        using (var context = visual.RenderOpen())
+        var image = new System.Drawing.Bitmap(36, 36, System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+        using (var graphics = System.Drawing.Graphics.FromImage(image))
         {
-            var pen = new Pen(new SolidColorBrush(Color.FromRgb(color.R, color.G, color.B)), 1.5)
-                { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round };
-            context.PushTransform(new ScaleTransform(2, 2));
-            context.DrawGeometry(null, pen, Geometry.Parse(geometry)); context.Pop();
+            graphics.SmoothingMode = Drawing2D.SmoothingMode.AntiAlias;
+            graphics.PixelOffsetMode = Drawing2D.PixelOffsetMode.HighQuality;
+            graphics.ScaleTransform(2, 2);
+            using var path = new Drawing2D.GraphicsPath();
+            var flattened = Geometry.Parse(geometry).GetFlattenedPathGeometry(.01, ToleranceType.Absolute);
+            foreach (var figure in flattened.Figures)
+            {
+                path.StartFigure();
+                var current = figure.StartPoint;
+                foreach (var segment in figure.Segments)
+                {
+                    if (segment is PolyLineSegment polyline)
+                    {
+                        foreach (var point in polyline.Points)
+                        {
+                            path.AddLine((float)current.X, (float)current.Y, (float)point.X, (float)point.Y);
+                            current = point;
+                        }
+                    }
+                    else if (segment is LineSegment line)
+                    {
+                        path.AddLine((float)current.X, (float)current.Y, (float)line.Point.X, (float)line.Point.Y);
+                        current = line.Point;
+                    }
+                    else throw new InvalidOperationException("Tray geometry did not flatten to line segments.");
+                }
+                if (figure.IsClosed) path.CloseFigure();
+            }
+            using var pen = new System.Drawing.Pen(color, 1.5f)
+            {
+                StartCap = Drawing2D.LineCap.Round,
+                EndCap = Drawing2D.LineCap.Round,
+                LineJoin = Drawing2D.LineJoin.Round
+            };
+            graphics.DrawPath(pen, path);
         }
-        var bitmap = new RenderTargetBitmap(36, 36, 96, 96, PixelFormats.Pbgra32); bitmap.Render(visual);
-        var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
-        using var stream = new MemoryStream(); encoder.Save(stream); stream.Position = 0;
-        using var decoded = new System.Drawing.Bitmap(stream);
-        var image = new System.Drawing.Bitmap(decoded);
-        var item = new Forms.ToolStripMenuItem(label, image, click);
-        item.Disposed += (_, _) => image.Dispose();
-        return item;
+        return image;
     }
 }

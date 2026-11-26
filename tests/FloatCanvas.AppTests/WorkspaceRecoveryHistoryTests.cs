@@ -66,8 +66,11 @@ internal static class WorkspaceRecoveryHistoryTests
         nextLaunch.WorkspaceRestored();
         assert("an explicit history selection can be saved even when selected workspace is empty", nextLaunch.ShouldWrite(new WorkspaceState()));
 
+        await EmptyCurrentBackupPolicyAsync(assert).ConfigureAwait(false);
         await ClearPolicyAsync(assert).ConfigureAwait(false);
         await VersionPolicyAsync(assert).ConfigureAwait(false);
+        await ZeroLimitPreservationAsync(assert).ConfigureAwait(false);
+        await SharedStorePolicyAsync(assert).ConfigureAwait(false);
 
         using var cancelled = new CancellationTokenSource();
         cancelled.Cancel();
@@ -76,6 +79,27 @@ internal static class WorkspaceRecoveryHistoryTests
         catch (OperationCanceledException) { rejected = true; }
         assert("cancelled archive does not authorize replacement or change existing packages", rejected &&
             (await store.LoadAsync().ConfigureAwait(false))!.State.LiveDocument.Elements.Count == 0);
+    }
+    private static async Task EmptyCurrentBackupPolicyAsync(Action<string, bool> check)
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "FloatCanvas-EmptyCurrentRecovery", Guid.NewGuid().ToString("N"));
+        var store = new RecoveryStore(directory);
+        var assets = new AssetLibrary();
+        var authored = new WorkspaceState { LiveDocument = new() { Elements = [new() { Kind = ElementKind.Text, Text = "still recoverable" }] } };
+        await store.SaveAsync(authored, assets);
+        authored.LiveDocument.Elements[0].Text = "latest authored";
+        await store.SaveAsync(authored, assets);
+        var emptyPreview = WorkspacePreview.Render(new WorkspaceState().LiveDocument, assets);
+        await store.SaveWithPreviewAsync(new WorkspaceState(), assets, emptyPreview);
+        var history = new WorkspaceRecoveryHistory(store);
+        history.BeginFreshWorkspace(new WorkspaceState());
+        await history.PreserveBeforeFirstWriteAsync();
+        var archived = history.GetEntries().FirstOrDefault(entry => !entry.IsCurrent);
+        check("a valid empty current does not hide authored backup content from recovery history",
+            archived is not null && (await history.LoadAsync(archived))!.State.LiveDocument.Elements.Single().Text == "latest authored");
+        var preview = archived is null ? null : await history.LoadPreviewAsync(archived);
+        check("history preview follows the same generation as restore instead of showing an empty current",
+            preview is not null && emptyPreview is not null && !preview.SequenceEqual(emptyPreview));
     }
     private static async Task ClearPolicyAsync(Action<string,bool> check)
     {
@@ -168,5 +192,60 @@ internal static class WorkspaceRecoveryHistoryTests
         check("corrupt prior recovery is quarantined byte-exact before a new write", Directory.GetFiles(Path.Combine(brokenDirectory, "quarantine"), "workspace.floatcanvas", SearchOption.AllDirectories).Any(path => File.ReadAllBytes(path).SequenceEqual(new byte[] {1,2,3})));
         var settings = new UserSettings { HistoryVersionLimit = 12 };
         check("history limit survives settings serialization", System.Text.Json.JsonSerializer.Deserialize<UserSettings>(System.Text.Json.JsonSerializer.Serialize(settings))!.HistoryVersionLimit == 12);
+    }
+    private static async Task ZeroLimitPreservationAsync(Action<string,bool> check)
+    {
+        string directory=Path.Combine(Path.GetTempPath(),"FloatCanvas-ZeroLimit",Guid.NewGuid().ToString("N"));
+        var store=new RecoveryStore(directory);var assets=new AssetLibrary();
+        var old=new WorkspaceState();old.LiveDocument.Elements.Add(new(){Kind=ElementKind.Text,Text="before history"});
+        await store.SaveAsync(old,assets);
+        var history=new WorkspaceRecoveryHistory(store);history.BeginFreshWorkspace(new());history.MaximumVersions=0;
+        await history.PreserveBeforeFirstWriteAsync();
+        var after=new WorkspaceState();after.LiveDocument.Elements.Add(new(){Kind=ElementKind.Text,Text="after history enabled"});
+        await store.SaveAsync(after,assets);
+        byte[] oldBackup=await File.ReadAllBytesAsync(store.BackupPath);
+        history.MaximumVersions=10;
+        await history.PreserveBeforeFirstWriteAsync();
+        var entry=history.GetEntries().Single(item=>!item.IsCurrent);
+        check("zero-limit preservation keeps the launch obligation until history is enabled",
+            oldBackup.AsEnumerable().SequenceEqual(await File.ReadAllBytesAsync(Path.Combine(entry.DirectoryPath,"workspace.previous.floatcanvas"))));
+        var restored=(await history.LoadAsync(entry))!;
+        check("the deferred launch archive also preserves the current generation",
+            restored.State.CaptureDocument is null && restored.State.LiveDocument.Elements.Single().Text=="after history enabled");
+    }
+    private static async Task SharedStorePolicyAsync(Action<string, bool> check)
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "FloatCanvas-SharedRecoveryHistory",
+            Guid.NewGuid().ToString("N"));
+        var store = new RecoveryStore(directory);
+        var assets = new AssetLibrary();
+        var seed = new WorkspaceState();
+        seed.LiveDocument.Elements.Add(new() { Kind = ElementKind.Text, Text = "seed" });
+        await store.SaveAsync(seed, assets);
+
+        var first = new WorkspaceRecoveryHistory(store);
+        var second = new WorkspaceRecoveryHistory(new RecoveryStore(directory.ToUpperInvariant()));
+        first.EnterWorkspace(new WorkspaceState());
+        second.EnterWorkspace(new WorkspaceState());
+        var shared = new WorkspaceState();
+        shared.LiveDocument.Elements.Add(new() { Kind = ElementKind.Text, Text = "shared" });
+        await Task.WhenAll(
+            first.ArchiveAsync(shared.Clone(), assets, null, null, force: true),
+            second.ArchiveAsync(shared.Clone(), assets, null, null, force: true));
+        string historyDirectory = Path.Combine(directory, "history");
+        string[] published = Directory.GetDirectories(historyDirectory)
+            .Where(path => !Path.GetFileName(path).StartsWith('.'))
+            .ToArray();
+        var loaded = (await first.LoadAsync(first.GetEntries().Single(entry => !entry.IsCurrent)))!;
+        check("separate recovery histories serialize one shared archive operation",
+            published.Length == 1 && loaded.State.LiveDocument.Elements.Single().Text == "shared");
+
+        await Task.WhenAll(Enumerable.Range(0, 20).Select(index => Task.Run(() =>
+            (index % 2 == 0 ? first : second).WriteCurrentInfo(shared, "source-" + index))));
+        string infoPath = Path.Combine(directory, "history-info.json");
+        var info = JsonSerializer.Deserialize<JsonElement>(await File.ReadAllTextAsync(infoPath));
+        check("concurrent history index writers leave one complete metadata file and no shared temp",
+            info.TryGetProperty("Fingerprint", out var fingerprint) && fingerprint.GetString()?.Length == 64 &&
+            !Directory.EnumerateFiles(directory, "history-info.json.*.tmp").Any());
     }
 }

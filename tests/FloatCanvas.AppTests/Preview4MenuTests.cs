@@ -109,6 +109,11 @@ internal static class Preview4MenuTests
             bool hasInk = false;
             for (int y = 0; y < image.Height; y++) for (int x = 0; x < image.Width; x++) hasInk |= image.GetPixel(x, y).A > 0;
             check("tray vector icons decode into independent visible bitmaps", image.Width == 36 && image.Height == 36 && hasInk);
+            using var deferred = CommandGlyphs.TrayItem("Deferred update", CommandGlyphs.Updates, (_, _) => { }, deferImage: true);
+            check("deferred tray artwork starts without a bitmap", deferred.Image is null && deferred.Tag is Action);
+            ((Action)deferred.Tag!).Invoke();
+            check("deferred tray artwork loads lazily into the original menu item",
+                deferred.Image is System.Drawing.Bitmap { Width: 36, Height: 36 });
         }
         finally { L.Initialize(language); AppTheme.Apply("light"); SynchronizationContext.SetSynchronizationContext(context); }
     }

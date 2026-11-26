@@ -205,7 +205,7 @@ internal static class LayersWorkflowQaTests
             var target = Descendants(tree).OfType<TreeViewItem>().Single(i => i.Tag is ValueTuple<RootCanvasKind,Guid?,string,string?> value && value.Item2 == destination);
             target.IsSelected = true; tree.UpdateLayout();
             Observe("move dialog searches full destination paths without navigating the source", owner.EditScopeId is null && owner.Selection.SetEquals([organized.Id]));
-            Descendants(dialog).OfType<Button>().Single(b => b.IsDefault).RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            Descendants(dialog).OfType<Button>().Single(b => Equals(b.Content, L.Get("Layers.MoveTo"))).RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
             Observe("move dialog closes after one atomic move", !dialog.IsVisible && owner.UndoCount == beforeMove + 1 && new SceneGraph(owner.Document).ParentId(organized.Id) == destination && owner.EditScopeId is null && owner.Selection.Count == 0);
         });
         var viewTarget = Field<Button>(layers,"viewMoveTarget");
@@ -224,7 +224,7 @@ internal static class LayersWorkflowQaTests
             var target = Descendants(tree).OfType<TreeViewItem>().Single(i => i.Tag is ValueTuple<RootCanvasKind,Guid?,string,string?> value && value.Item2 == destination);
             target.IsSelected = true;
             owner.SetNodeLocked(destination,true); int history = owner.UndoCount;
-            Descendants(dialog).OfType<Button>().Single(b => b.IsDefault).RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            Descendants(dialog).OfType<Button>().Single(b => Equals(b.Content, L.Get("Layers.MoveTo"))).RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
             Observe("stale move refuses changed locks without a partial write", dialog.IsVisible && owner.UndoCount == history && new SceneGraph(owner.Document).ParentId(organized.Id) is null);
             dialog.Close();
         });
@@ -234,7 +234,7 @@ internal static class LayersWorkflowQaTests
             var tree = Descendants(dialog).OfType<TreeView>().Single(); tree.UpdateLayout();
             Descendants(tree).OfType<TreeViewItem>().Single(i => i.Tag is ValueTuple<RootCanvasKind,Guid?,string,string?> value && value.Item1 == RootCanvasKind.Foreground && value.Item2 is null).IsSelected = true;
             Observe("cross-canvas dialog explains logical coordinate behavior", Descendants(dialog).OfType<TextBlock>().Any(t => t.Text.Contains(L.Get("Layers.CrossCanvasNotice"), StringComparison.Ordinal)));
-            Descendants(dialog).OfType<Button>().Single(b => b.IsDefault).RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            Descendants(dialog).OfType<Button>().Single(b => Equals(b.Content, L.Get("Layers.MoveTo"))).RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
         });
         owner.Undo(); Layout();
         Observe("undo expires an unvisited destination link", viewTarget.Visibility == Visibility.Collapsed && owner.ActiveRootCanvas == RootCanvasKind.Main);

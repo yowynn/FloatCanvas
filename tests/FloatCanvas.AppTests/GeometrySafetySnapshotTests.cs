@@ -62,7 +62,9 @@ internal static class GeometrySafetySnapshotTests
             ReferenceEquals(line, session.Document.Elements.Single()) && line.Points[1].DistanceTo(new(400, 1700)) < 1e-6 &&
             originalPoints.SequenceEqual([new PointD(0, 0), new(200, 100)]));
         Send(editor, OverlayPointerKind.Move, unsafeExtent);
-        check("unsafe endpoint sample restores the previous accepted geometry on the source entity", editor.IsPointerBlocked &&
+        check($"unsafe endpoint sample restores the previous accepted geometry on the source entity " +
+            $"(blocked={editor.IsPointerBlocked} same={ReferenceEquals(line, session.Document.Elements.Single())} " +
+            $"points={string.Join(';', line.Points)} accepted={string.Join(';', accepted)})", editor.IsPointerBlocked &&
             ReferenceEquals(line, session.Document.Elements.Single()) && line.Points.SequenceEqual(accepted) && mapping.IsElementSafe(line) &&
             originalPoints.SequenceEqual([new PointD(0, 0), new(200, 100)]));
         Send(editor, OverlayPointerKind.Up, unsafeExtent);

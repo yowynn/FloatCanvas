@@ -1,16 +1,18 @@
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.IO;
 using System.Windows;
 using System.Windows.Threading;
 using FloatCanvas.App;
 using FloatCanvas.Core;
+using FloatCanvas.Storage;
 using FloatCanvas.Windows;
 using SkiaSharp;
 
 internal static class OverlayProtectionRuntimeTests
 {
     private const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
-    internal static void Run(Action<string, bool> check)
+    internal static void Run(Action<string, bool> check, bool manual = false)
     {
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         new UserSettings { Toggle = new(7, 0x79), Hide = new(7, 0x7A), ShowFloatingLogo = false }.Save();
@@ -41,9 +43,20 @@ internal static class OverlayProtectionRuntimeTests
             int oldChanges = 0;
             editor.Changed += () => oldChanges++;
             bool requested = false;
-            old.DesktopFallbackRequested += _ => requested = true;
-            check("typed native failure queues a one-way desktop fallback", old.TryRequestDesktopFallback(new COMException("fixture input failure")) && protection.IsDisabled);
+            string? reason = null;
+            old.OverlaySwitchRequested += (mode, error) => { requested = mode == OverlayBackendMode.Desktop; reason = error; };
+            if (manual)
+            {
+                typeof(DesktopSession).GetMethod("EnsureTrayMenu", Private)!.Invoke(old, [true]);
+                var tray = Get<System.Windows.Forms.NotifyIcon>(old, "_tray");
+                tray.ContextMenuStrip!.Items.OfType<System.Windows.Forms.ToolStripMenuItem>()
+                    .Single(item => item.Text == FloatCanvas.Localization.AppText.Get("OverlaySafety.DesktopCommand")).PerformClick();
+            }
+            else check("typed native failure queues a one-way desktop fallback", old.TryRequestDesktopFallback(new COMException("fixture input failure")) && protection.IsDisabled);
             PumpUntil(() => requested);
+            check("only an automatic failure sets the diagnostic failure and warning path", manual
+                ? reason is null && protection.Failure is null && !protection.IsDisabled
+                : reason == "fixture input failure" && protection.Failure == reason);
             var capture = old.PrepareDesktopFallbackAsync();
             Wait(capture);
             var state = capture.GetAwaiter().GetResult();
@@ -79,6 +92,105 @@ internal static class OverlayProtectionRuntimeTests
         check("failed initialization never shows candidate or restored windows", rollbackHost.Diagnostics.All(pair => !pair.DisplayVisible && !pair.InputVisible));
         typeof(OverlayHost).GetProperty(nameof(OverlayHost.IsVisible))!.SetValue(rollbackHost, false);
         check("initialization rollback also preserves external foreground", GetForegroundWindow() == foreground);
+    }
+
+    internal static void RoundTrip(Action<string, bool> check)
+    {
+        var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+        SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(app.Dispatcher));
+        new UserSettings { Toggle = new(7, 0x79), Hide = new(7, 0x7A), OverlayMode = "desktop", ShowFloatingLogo = false }.Save();
+        string profile = ApplicationPaths.ProfileDirectory;
+        string[] args = ["--profile", profile, "--startup"];
+        string path = Path.Combine(profile, "switch-project.floatcanvas");
+        var current = new DesktopSession(app, HiddenHost(), new(profile, OverlayBackendMode.Desktop));
+        try
+        {
+            Start(current);
+            var viewport = Get<EditorController>(current, "_editor").Session.Document.Viewport;
+            Wait(new ProjectStore().SaveAsync(path, new SceneDocument { Viewport = viewport }, new AssetLibrary()));
+            Wait((Task)typeof(DesktopSession).GetMethod("OpenProjectPathCoreAsync", Private)!.Invoke(current, [path, false])!);
+            var live = Get<EditorController>(current, "_editor").Session;
+            live.Add(new CanvasElement { Kind = ElementKind.Rectangle, Width = 40, Height = 30 });
+            var second = new CanvasElement { Kind = ElementKind.Rectangle, Width = 70, Height = 50 };
+            live.Add(second);
+            check("round-trip fixture has a real file binding and both undo and redo", FilePath(current, live) == path && live.Undo() && live.CanUndo && live.CanRedo);
+            var document = live.Document;
+            var original = current;
+            var foreground = GetForegroundWindow();
+
+            Switch(OverlayBackendMode.Enhanced, available: false);
+            check("a failed enhanced check keeps the exact ordinary session and foreground", ReferenceEquals(current, original) &&
+                !current.UsesEnhancedOverlay && GetForegroundWindow() == foreground);
+            CheckDocument();
+
+            Switch(OverlayBackendMode.Enhanced, available: true, prepareInput: candidate =>
+            {
+                check("input preparation fixture has already initialized actual enhanced windows", candidate.UsesSystemInput);
+                throw new System.ComponentModel.Win32Exception("simulated keyboard hook initialization failure");
+            });
+            check("a post-native input initialization failure keeps the original ordinary host running", ReferenceEquals(current, original) &&
+                !current.UsesEnhancedOverlay && Get<OverlayHost>(current, "_host").IsKeyboardIsolationEnabled);
+            CheckDocument();
+
+            Switch(OverlayBackendMode.Enhanced, available: true);
+            check("the ordinary tray command installs the actual enhanced windows", current.UsesEnhancedOverlay &&
+                Get<OverlayHost>(current, "_host").SystemWindowOwner != 0);
+            CheckDocument();
+
+            Switch(OverlayBackendMode.Desktop, available: true);
+            check("the enhanced tray command goes back to ordinary windows", !current.UsesEnhancedOverlay &&
+                Get<OverlayHost>(current, "_host").IsKeyboardIsolationEnabled);
+            CheckDocument();
+
+            Switch(OverlayBackendMode.Enhanced, available: true);
+            CheckDocument();
+            check("undo and redo work after repeated switches", live.Redo() && live.Document.Elements.Any(item => item.Id == second.Id) && live.Undo());
+            check("tray switches leave the saved startup mode and hotkeys as set", UserSettings.Load() is { OverlayMode: "desktop", Toggle.VirtualKey: 0x79 });
+
+            void CheckDocument() => check("the switch keeps the active canvas, file binding and both history stacks", ReferenceEquals(Get<EditorController>(current, "_editor").Session, live) &&
+                ReferenceEquals(live.Document, document) && FilePath(current, live) == path && live.CanUndo && live.CanRedo);
+
+            void Switch(OverlayBackendMode target, bool available, Action<OverlayHost>? prepareInput = null)
+            {
+                var old = current;
+                Task<DesktopSession>? switching = null;
+                int requests = 0;
+                void Request(OverlayBackendMode requested, string? failure)
+                {
+                    requests++;
+                    switching = old.SwitchOverlayAsync(requested, failure, () => { }, () => new(available, "round-trip fixture"), prepareInput);
+                }
+                string label = FloatCanvas.Localization.AppText.Get(target == OverlayBackendMode.Enhanced ? "OverlaySafety.EnhancedCommand" : "OverlaySafety.DesktopCommand");
+                var item = Get<System.Windows.Forms.NotifyIcon>(old, "_tray").ContextMenuStrip!.Items.OfType<System.Windows.Forms.ToolStripMenuItem>()
+                    .Single(entry => entry.Text == label);
+                old.OverlaySwitchRequested += Request;
+                try
+                {
+                    item.PerformClick();
+                    item.PerformClick();
+                    PumpUntil(() => switching is not null);
+                    Wait(switching!);
+                    current = switching!.GetAwaiter().GetResult();
+                }
+                finally { old.OverlaySwitchRequested -= Request; }
+                check("one switch request is accepted per handoff", requests == 1);
+                if (!ReferenceEquals(old, current)) Start(current);
+            }
+
+            void Start(DesktopSession session)
+            {
+                Get<System.Windows.Forms.NotifyIcon>(session, "_tray").Visible = false;
+                session.Start(args);
+                PumpUntil(() => Get<bool>(session, "_trayMenuReady"));
+            }
+        }
+        finally { current.Dispose(); current.BackendProtection?.Complete(); }
+    }
+
+    private static string? FilePath(DesktopSession session, EditorSession editor)
+    {
+        object binding = typeof(DesktopSession).GetMethod("FileState", Private)!.Invoke(session, [editor])!;
+        return (string?)binding.GetType().GetField("Path")!.GetValue(binding);
     }
 
     private static T Get<T>(object value, string field) => (T)value.GetType().GetField(field, Private)!.GetValue(value)!;
